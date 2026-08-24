@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # ClickHouse OLAP Event Spine
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: cinespine-clickhouse
+    ports:
+      - "8123:8123" # HTTP
+      - "9000:9000" # Native client
+    environment:
+      CLICKHOUSE_DB: cinespine
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: password
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  # Redpanda / Kafka Event Stream (Lightweight, Kafka API-compatible)
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v23.3.11
+    container_name: cinespine-kafka
+    command:
+      - redpanda start
+      - --smp 1
+      - --memory 512M
+      - --reserve-memory 0M
+      - --overprovisioned
+      - --node-id 0
+      - --kafka-addr PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
+      - --advertise-kafka-addr PLAINTEXT://redpanda:9092,OUTSIDE://localhost:19092
+    ports:
+      - "19092:19092"
+      - "9644:9644" # Admin API
+
+  # Grafana Lighthouse Dashboards
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: cinespine-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  clickhouse_data:
+  grafana_data:

@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cinespine"
+version = "0.1.0"
+description = "Append-Only Event Spine & 3-Axis Discrepancy Reconciliation Engine for Film & TV"
+authors = [{ name = "Francisco Tena", email = "ftenaf@yahoo.es" }]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.28.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.0",
+    "clickhouse-connect>=0.7.0",
+    "confluent-kafka>=2.3.0",
+    "google-generativeai>=0.5.0",
+    "python-multipart>=0.0.9",
+    "prometheus-client>=0.20.0",
+    "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.3.0",
+    "mypy>=1.9.0",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["backend/tests"]
+python_files = ["test_*.py"]
+addopts = "-ra -q --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
