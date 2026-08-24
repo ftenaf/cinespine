@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Film, AlertTriangle, CheckCircle2, Upload, MessageSquare, 
-  RefreshCw, Activity, Layers, Database, ShieldAlert, Sparkles, 
-  FileText, Clapperboard, Plus, Calendar
+  Film, AlertTriangle, CheckCircle2, Upload, 
+  RefreshCw, Layers, Sparkles, 
+  FileText, Clapperboard, Calendar, Search,
+  HardDrive, Eye, FileCode, Check, AlertCircle
 } from 'lucide-react';
-import { TakeRecord, Discrepancy, Production } from './types';
+import { TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument } from './types';
 import { 
-  fetchTakes, fetchDiscrepancies, fetchProductions, 
-  createProduction, uploadDocument, uploadFile, askAssistant 
+  fetchTakes, fetchDiscrepancies, fetchProductions, fetchDocuments,
+  fetchDocumentContent, uploadDocument, uploadFile, askAssistant 
 } from './api';
 
 export default function App() {
@@ -16,14 +17,24 @@ export default function App() {
   const [selectedDay, setSelectedDay] = useState('31');
   const [takes, setTakes] = useState<TakeRecord[]>([]);
   const [discrepancies, setDiscrepancies] = useState<Discrepancy[]>([]);
+  const [documents, setDocuments] = useState<SourceDocumentSummary[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selectedTake, setSelectedTake] = useState<{ slate: string; take_id: string } | null>(null);
+
+  // Active View & Filters
+  const [activeTab, setActiveTab] = useState<'scenes' | 'discrepancies' | 'documents'>('scenes');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCircledOnly, setFilterCircledOnly] = useState(false);
+  const [filterDiscrepancyOnly, setFilterDiscrepancyOnly] = useState(false);
+
+  // Selected Take for Detailed Inspector Drawer
+  const [inspectedTake, setInspectedTake] = useState<TakeRecord | null>(null);
   const [assistantExplanation, setAssistantExplanation] = useState<string | null>(null);
-  
+
+  // Source Document Previewer Modal
+  const [previewDoc, setPreviewDoc] = useState<SourceDocument | null>(null);
+
   // Modals
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [isManageProdOpen, setIsManageProdOpen] = useState(false);
-  const [isNewProdOpen, setIsNewProdOpen] = useState(false);
 
   // Upload Form State
   const [uploadMode, setUploadMode] = useState<'file' | 'text'>('file');
@@ -31,11 +42,6 @@ export default function App() {
   const [uploadFilename, setUploadFilename] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
-
-  // New Production Form
-  const [newProdId, setNewProdId] = useState('');
-  const [newProdName, setNewProdName] = useState('');
-  const [newProdDirector, setNewProdDirector] = useState('');
 
   const loadProductions = async () => {
     try {
@@ -52,12 +58,14 @@ export default function App() {
   const loadSpineData = async () => {
     setLoading(true);
     try {
-      const [t, d] = await Promise.all([
+      const [t, d, docs] = await Promise.all([
         fetchTakes(selectedProductionId, selectedDay),
         fetchDiscrepancies(selectedProductionId, selectedDay),
+        fetchDocuments(selectedProductionId, selectedDay),
       ]);
       setTakes(t);
       setDiscrepancies(d);
+      setDocuments(docs);
     } catch (e) {
       console.error(e);
     } finally {
@@ -84,9 +92,9 @@ export default function App() {
 
   const handleSeedDemoDay = async (dayToSeed: string = '31') => {
     setLoading(true);
-    const sampleCamera = `Slate,Take,Roll,FPS,Lens,ISO,Start TC,End TC,Clip Name\n27/7,1,A120,24,50mm,800,10:14:22:00,10:15:10:00,A120_C001_260728.MOV\n27/7,2PK,A120,24,50mm,800,10:16:05:00,10:17:00:00,A120_C002_260728.MOV\n27/7,3 VFX,A120,24,50mm,800,10:18:12:00,10:19:30:00,A120_C003_260728.MOV`;
-    const sampleSound = `SOUND REPORT\nProject:,"GREAT HALL",\nDate:,"28/07/26",\nSound Mixer:,"SOUND MIXER",\nFile Name,Scene,Take,Length,Start TC,Trk 1,Trk 2,Notes\n27-7T01.WAV,27-7,01,00:03:00,10:14:22:00,"MixL","MixR",""\n27-7T02.WAV,27-7,02,00:03:32,10:16:05:00,"MixL","MixR",""\n27-7T03.WAV,27-7,03,00:03:32,10:18:12:05,"MixL","MixR",""`;
-    const sampleSilverstack = `<?xml version="1.0" encoding="UTF-8"?><SilverstackReport version="1.0"><Volume name="MAG_A_120"><Clip><FileName>A120_C001_260728.MOV</FileName><Reel>A_0120</Reel><Bytes>4294967296</Bytes><Hash type="MD5">e99a18c428cb38d5f260853678922e03</Hash><DurationFrames>1152</DurationFrames></Clip></Volume></SilverstackReport>`;
+    const sampleCamera = `Slate,Take,Roll,FPS,Lens,ISO,Start TC,End TC,Clip Name\n27/7,1,A120,24,50mm,800,10:14:22:00,10:15:10:00,A120_C001_260728.MOV\n27/7,2PK,A120,24,50mm,800,10:16:05:00,10:17:00:00,A120_C002_260728.MOV\n27/7,3 VFX,A120,24,50mm,800,10:18:12:00,10:19:30:00,A120_C003_260728.MOV\n49/1,1,A120,24,50mm,800,10:41:57:00,10:43:00:00,A120_C004_260728.MOV`;
+    const sampleSound = `SOUND REPORT\nProject:,"GREAT HALL",\nDate:,"28/07/26",\nSound Mixer:,"SOUND MIXER",\nFile Name,Scene,Take,Length,Start TC,Trk 1,Trk 2,Notes\n27-7T01.WAV,27-7,01,00:03:00,10:14:22:00,"MixL","MixR",""\n27-7T02.WAV,27-7,02,00:03:32,10:16:05:00,"MixL","MixR",""\n27-7T03.WAV,27-7,03,00:03:32,10:18:12:05,"MixL","MixR",""\n49-1T01.WAV,49-1,01,00:03:02,10:41:57:00,"MixL","MixR",""`;
+    const sampleSilverstack = `<?xml version="1.0" encoding="UTF-8"?><SilverstackReport version="1.0"><Volume name="MAG_A_120"><Clip><FileName>A120_C001_260728.MOV</FileName><Reel>A_0120</Reel><Bytes>4294967296</Bytes><Hash type="MD5">e99a18c428cb38d5f260853678922e03</Hash><DurationFrames>1152</DurationFrames></Clip><Clip><FileName>A120_C002_260728.MOV</FileName><Reel>A_0120</Reel><Bytes>5368709120</Bytes><Hash type="MD5">9e107d9d372bb6826bd81d3542a419d6</Hash><DurationFrames>1320</DurationFrames></Clip></Volume></SilverstackReport>`;
 
     try {
       await uploadDocument({ raw_content: sampleCamera, filename: `DemoProduction-2026-7-28_CAM_A.csv`, production_id: selectedProductionId, shoot_day: dayToSeed });
@@ -101,28 +109,31 @@ export default function App() {
     }
   };
 
-  const handleCreateProduction = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newProdId.trim() || !newProdName.trim()) return;
+  const handleOpenPreviewDoc = async (docId?: string, filename?: string) => {
     try {
-      const created = await createProduction({
-        production_id: newProdId.trim().toUpperCase().replace(/\s+/g, '_'),
-        name: newProdName.trim(),
-        director: newProdDirector.trim(),
-      });
-      setIsNewProdOpen(false);
-      setNewProdId('');
-      setNewProdName('');
-      setNewProdDirector('');
-      await loadProductions();
-      setSelectedProductionId(created.production_id);
-    } catch (err: any) {
-      alert(`Failed to create production: ${err.message}`);
+      if (docId) {
+        const doc = await fetchDocumentContent(docId);
+        setPreviewDoc(doc);
+      } else if (filename) {
+        const match = documents.find(d => d.filename === filename);
+        if (match) {
+          const doc = await fetchDocumentContent(match.doc_id);
+          setPreviewDoc(doc);
+        } else {
+          alert(`Document ${filename} is an external reference.`);
+        }
+      }
+    } catch (e: any) {
+      alert(`Could not load document preview: ${e.message}`);
     }
   };
 
+  const handleInspectTake = (take: TakeRecord) => {
+    setInspectedTake(take);
+    handleAskAssistant(take.slate, take.take_id);
+  };
+
   const handleAskAssistant = async (slate: string, takeId: string) => {
-    setSelectedTake({ slate, take_id: takeId });
     setAssistantExplanation('Querying Gemini Discrepancy Agent via ClickHouse MCP...');
     try {
       const exp = await askAssistant(selectedProductionId, selectedDay, slate, takeId);
@@ -140,7 +151,7 @@ export default function App() {
     try {
       if (uploadMode === 'file' && selectedFile) {
         const res = await uploadFile(selectedFile);
-        setUploadFeedback(`✅ Ingested to ${res.production_id} (Day ${res.shoot_day}) as ${res.detected_doc_type} [${res.detected_department.toUpperCase()}]`);
+        setUploadFeedback(`✅ Ingested ${res.filename} to ${res.production_id} (Day ${res.shoot_day}) [${res.detected_department.toUpperCase()}]`);
         if (res.production_id) setSelectedProductionId(res.production_id);
         if (res.shoot_day) setSelectedDay(res.shoot_day);
       } else if (uploadMode === 'text' && uploadContent.trim()) {
@@ -148,7 +159,7 @@ export default function App() {
           raw_content: uploadContent,
           filename: uploadFilename || 'manual_drop.txt',
         });
-        setUploadFeedback(`✅ Ingested to ${res.production_id} (Day ${res.shoot_day}) as ${res.detected_doc_type} [${res.detected_department.toUpperCase()}]`);
+        setUploadFeedback(`✅ Ingested to ${res.production_id} (Day ${res.shoot_day}) [${res.detected_department.toUpperCase()}]`);
         if (res.production_id) setSelectedProductionId(res.production_id);
         if (res.shoot_day) setSelectedDay(res.shoot_day);
       }
@@ -164,25 +175,54 @@ export default function App() {
     }
   };
 
+  // Filtered Takes
+  const filteredTakes = useMemo(() => {
+    return takes.filter(t => {
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesSlate = t.slate.toLowerCase().includes(q);
+        const matchesScene = t.scene?.toLowerCase().includes(q);
+        const matchesTake = t.take_id.toLowerCase().includes(q);
+        const matchesCards = t.camera_cards.some(c => c.toLowerCase().includes(q)) || t.sound_cards.some(s => s.toLowerCase().includes(q));
+        const matchesVolume = t.storage_volumes.some(v => v.toLowerCase().includes(q));
+        const matchesClips = t.matched_media_files.some(m => m.file_name.toLowerCase().includes(q));
+        if (!matchesSlate && !matchesScene && !matchesTake && !matchesCards && !matchesVolume && !matchesClips) {
+          return false;
+        }
+      }
+
+      if (filterCircledOnly && !t.is_starred) return false;
+
+      if (filterDiscrepancyOnly) {
+        const hasDisc = discrepancies.some(d => d.entity_id.includes(t.slate) && d.entity_id.includes(t.take_id));
+        if (!hasDisc) return false;
+      }
+
+      return true;
+    });
+  }, [takes, discrepancies, searchQuery, filterCircledOnly, filterDiscrepancyOnly]);
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      {/* Top Navigation */}
-      <header className="border-b border-slate-800 bg-slate-900/70 backdrop-blur-md px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-20">
+      {/* Top Navigation Bar */}
+      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md px-6 py-3 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-20">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-3">
             <div className="bg-blue-600/20 p-2 rounded-xl border border-blue-500/30 text-blue-400">
               <Film className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+              <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
                 CineSpine
-                <span className="text-[10px] bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono px-2 py-0.2 rounded-full">v0.1</span>
+                <span className="text-[10px] bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono px-1.5 py-0.2 rounded">v0.1</span>
               </h1>
-              <p className="text-[11px] text-slate-400">3-Axis Production Reconciliation</p>
+              <p className="text-[10px] text-slate-400">
+                {activeProduction.name} — Assistant Editor Card & Discrepancy Hub
+              </p>
             </div>
           </div>
 
-          {/* Production Selector Hub */}
+          {/* Production Selector */}
           <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-xl p-1 px-2.5">
             <Clapperboard className="w-4 h-4 text-blue-400" />
             <select
@@ -196,23 +236,17 @@ export default function App() {
                 </option>
               ))}
             </select>
-            <button
-              onClick={() => setIsManageProdOpen(true)}
-              className="text-[11px] text-blue-400 hover:text-blue-300 ml-1 pl-2 border-l border-slate-700 font-medium"
-            >
-              Manage
-            </button>
           </div>
 
           {/* Shoot Day Selector */}
-          <div className="flex items-center gap-1.5 bg-slate-900/80 border border-slate-800 rounded-xl p-1 px-2">
-            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+          <div className="flex items-center gap-1 bg-slate-900/80 border border-slate-800 rounded-xl p-1 px-2">
+            <Calendar className="w-3.5 h-3.5 text-slate-400 mr-1" />
             <span className="text-xs text-slate-400 font-semibold">Day:</span>
             {['31', '39'].map(day => (
               <button
                 key={day}
                 onClick={() => setSelectedDay(day)}
-                className={`px-2.5 py-0.5 rounded-lg text-xs font-mono font-medium transition ${
+                className={`px-2 py-0.5 rounded-lg text-xs font-mono font-medium transition ${
                   selectedDay === day 
                     ? 'bg-blue-600 text-white shadow-sm' 
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -253,359 +287,547 @@ export default function App() {
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/20 transition"
           >
             <Upload className="w-3.5 h-3.5" />
-            Drop Paperwork
+            Drop Paperwork (PDF/CSV)
           </button>
         </div>
       </header>
 
-      {/* Main Workspace */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
-        {/* Production Title Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-bold text-white flex items-center gap-2.5">
-              {activeProduction.name}
-              <span className="text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full font-normal">
-                Shooting Day {selectedDay}
-              </span>
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {activeProduction.description || 'Active studio production'}
-            </p>
+      {/* Main Content Area */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-5">
+        {/* Navigation Tabs & Quick Status */}
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab('scenes')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                activeTab === 'scenes'
+                  ? 'bg-blue-600/20 text-blue-300 border border-blue-500/40'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+              }`}
+            >
+              <Layers className="w-4 h-4" />
+              Scene & Take Card Index ({takes.length})
+            </button>
+
+            <button
+              onClick={() => setActiveTab('discrepancies')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                activeTab === 'discrepancies'
+                  ? 'bg-red-600/20 text-red-300 border border-red-500/40'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+              }`}
+            >
+              <AlertTriangle className="w-4 h-4 text-red-400" />
+              Active Discrepancies ({discrepancies.length})
+            </button>
+
+            <button
+              onClick={() => setActiveTab('documents')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                activeTab === 'documents'
+                  ? 'bg-purple-600/20 text-purple-300 border border-purple-500/40'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+              }`}
+            >
+              <FileCode className="w-4 h-4" />
+              Source Documents ({documents.length})
+            </button>
+          </div>
+
+          {/* Quick Search & Filters */}
+          <div className="flex items-center gap-2.5">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search scene, slate, card (A120), clip..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-xs pl-8 pr-3 py-1.5 rounded-lg text-white font-mono w-64 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <button
+              onClick={() => setFilterCircledOnly(!filterCircledOnly)}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition flex items-center gap-1 ${
+                filterCircledOnly 
+                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-300' 
+                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              ⭐ Circled Only
+            </button>
+
+            <button
+              onClick={() => setFilterDiscrepancyOnly(!filterDiscrepancyOnly)}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition flex items-center gap-1 ${
+                filterDiscrepancyOnly 
+                  ? 'bg-red-500/20 border-red-500/50 text-red-300' 
+                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              <AlertCircle className="w-3.5 h-3.5" />
+              Discrepancies Only
+            </button>
           </div>
         </div>
 
-        {/* Lighthouse Telemetry Strip */}
-        <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-400 uppercase tracking-wider">Active Discrepancies</p>
-              <p className="text-2xl font-bold text-red-400 mt-1">{discrepancies.length}</p>
+        {/* TAB 1: SCENES & TAKES CARD/VOLUME LOCATOR */}
+        {activeTab === 'scenes' && (
+          <section className="bg-slate-900/40 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+            <div className="px-6 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <HardDrive className="w-4 h-4 text-blue-400" />
+                  Physical Card, Roll & Storage Volume Map
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Cross-referenced locations across ZoeLog Camera cards, Sound ALE rolls, and DIT hard drives
+                </p>
+              </div>
+              <span className="text-xs font-mono text-slate-400">{filteredTakes.length} Takes Matching</span>
             </div>
-            <ShieldAlert className="w-8 h-8 text-red-500/30" />
-          </div>
 
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-400 uppercase tracking-wider">Reconciled Takes</p>
-              <p className="text-2xl font-bold text-blue-400 mt-1">{takes.length}</p>
-            </div>
-            <Layers className="w-8 h-8 text-blue-500/30" />
-          </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-950/80 text-slate-400 border-b border-slate-800 uppercase font-mono text-[10px]">
+                  <tr>
+                    <th className="px-4 py-3">Scene & Slate</th>
+                    <th className="px-4 py-3">Take & Status</th>
+                    <th className="px-4 py-3">Camera Card(s)</th>
+                    <th className="px-4 py-3">Sound Roll & TC</th>
+                    <th className="px-4 py-3">DIT Storage Volume & Clip</th>
+                    <th className="px-4 py-3">Discrepancy Status</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/80">
+                  {filteredTakes.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
+                        No takes found for Shoot Day {selectedDay}. Click "Seed Day {selectedDay}" or drop PDF/CSV files to populate the spine.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredTakes.map((t, idx) => {
+                      const hasDiscrepancy = discrepancies.some(
+                        d => d.entity_id.includes(t.slate) && d.entity_id.includes(t.take_id)
+                      );
 
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-400 uppercase tracking-wider">ClickHouse Spine</p>
-              <p className="text-sm font-mono text-emerald-400 mt-2 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                Append-Only (OK)
-              </p>
-            </div>
-            <Database className="w-8 h-8 text-emerald-500/30" />
-          </div>
+                      return (
+                        <tr key={idx} className="hover:bg-slate-800/40 transition">
+                          {/* Scene & Slate */}
+                          <td className="px-4 py-3.5 font-mono">
+                            <span className="text-slate-400 font-normal">Sc {t.scene || 'N/A'} / </span>
+                            <span className="text-white font-bold text-sm">{t.slate}</span>
+                          </td>
 
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-400 uppercase tracking-wider">Lighthouse Observability</p>
-              <p className="text-sm font-mono text-cyan-400 mt-2 flex items-center gap-1.5">
-                <Activity className="w-4 h-4 text-cyan-400" />
-                Grafana Ready
-              </p>
-            </div>
-            <Activity className="w-8 h-8 text-cyan-500/30" />
-          </div>
-        </section>
+                          {/* Take & Flags */}
+                          <td className="px-4 py-3.5 font-mono">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-white font-bold">T{t.take_id}</span>
+                              {t.is_starred && (
+                                <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.2 rounded font-sans">
+                                  ⭐ Circled
+                                </span>
+                              )}
+                              {t.is_pickup && (
+                                <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/40 px-1.5 py-0.2 rounded font-sans">
+                                  Pickup
+                                </span>
+                              )}
+                            </div>
+                          </td>
 
-        {/* Discrepancy Alerts */}
-        {discrepancies.length > 0 && (
-          <section className="bg-red-950/20 border border-red-500/30 rounded-xl p-4 space-y-2">
-            <h2 className="text-sm font-bold text-red-400 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-red-400" />
-              Detected Production Disagreements ({discrepancies.length})
-            </h2>
-            <div className="space-y-2 pt-1">
-              {discrepancies.map((d, i) => (
-                <div key={i} className="bg-slate-900/80 border border-red-500/20 rounded-lg p-3 flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono ${
-                        d.severity === 'CRITICAL' ? 'bg-red-500/20 text-red-300 border border-red-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                      }`}>
-                        {d.discrepancy_type}
-                      </span>
-                      <span className="text-xs font-mono text-slate-400">{d.entity_id}</span>
-                    </div>
-                    <p className="text-xs text-slate-200 mt-1.5">{d.description}</p>
-                  </div>
-                  <button 
-                    onClick={() => {
-                      const parts = d.entity_id.split(' ');
-                      handleAskAssistant(parts[0] || '27/7', parts[2] || '1');
-                    }}
-                    className="px-2.5 py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 text-blue-300 border border-slate-700 flex items-center gap-1 shrink-0"
-                  >
-                    <MessageSquare className="w-3 h-3" />
-                    Ask Agent
-                  </button>
-                </div>
-              ))}
+                          {/* Camera Cards */}
+                          <td className="px-4 py-3.5 font-mono">
+                            <div className="flex flex-wrap gap-1">
+                              {t.camera_cards.length > 0 ? (
+                                t.camera_cards.map((c, i) => (
+                                  <span key={i} className="bg-blue-950/60 border border-blue-500/30 text-blue-300 px-2 py-0.5 rounded text-[11px] font-semibold">
+                                    🎴 {c}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-slate-600">--</span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Sound Roll */}
+                          <td className="px-4 py-3.5 font-mono">
+                            {t.belief.sound ? (
+                              <div>
+                                <span className="text-emerald-400 font-semibold">
+                                  🎙️ {t.belief.sound.sound_roll || 'SR'}
+                                </span>
+                                <div className="text-[10px] text-slate-500">{t.belief.sound.timecode_in || '--'}</div>
+                              </div>
+                            ) : (
+                              <span className="text-slate-600">--</span>
+                            )}
+                          </td>
+
+                          {/* Storage Volume & Clip */}
+                          <td className="px-4 py-3.5 font-mono">
+                            {t.matched_media_files.length > 0 ? (
+                              t.matched_media_files.map((m, i) => (
+                                <div key={i} className="flex items-center gap-1.5">
+                                  <span className="bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 px-1.5 py-0.2 rounded text-[10px]">
+                                    💾 {m.volume_name || 'Offload Vol'}
+                                  </span>
+                                  <span className="text-slate-300 text-[11px] truncate max-w-[140px]" title={m.file_name}>
+                                    {m.file_name}
+                                  </span>
+                                </div>
+                              ))
+                            ) : (
+                              <span className="text-slate-600 italic">No media offload</span>
+                            )}
+                          </td>
+
+                          {/* Discrepancy Status */}
+                          <td className="px-4 py-3.5">
+                            {hasDiscrepancy ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/40">
+                                <AlertTriangle className="w-3 h-3 text-red-400" />
+                                Mismatch Detected
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-emerald-400 text-xs">
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                Reconciled
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-4 py-3.5 text-right space-x-1.5">
+                            <button
+                              onClick={() => handleInspectTake(t)}
+                              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-blue-300 hover:text-white rounded text-xs border border-slate-700 transition"
+                            >
+                              Inspect Diff
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </section>
         )}
 
-        {/* 3-Axis Witness Diff Table */}
-        <section className="bg-slate-900/40 border border-slate-800 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-white">3-Axis Witness Inspector</h2>
-              <p className="text-xs text-slate-400">
-                Reconciling Intent (Office) vs Belief (Set) vs Existence (Post/DIT) for {activeProduction.name} — Day {selectedDay}
-              </p>
-            </div>
-            <span className="text-xs font-mono text-slate-400">{takes.length} Takes Indexed</span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-800 uppercase font-mono">
-                <tr>
-                  <th className="px-4 py-3">Slate & Take</th>
-                  <th className="px-4 py-3">1. Intent (Office)</th>
-                  <th className="px-4 py-3">2. Belief (Camera)</th>
-                  <th className="px-4 py-3">2. Belief (Sound)</th>
-                  <th className="px-4 py-3">3. Existence (Silverstack)</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {takes.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
-                      No takes found for {activeProduction.name} on Shoot Day {selectedDay}. Click "Seed Day {selectedDay}" or drop PDF/CSV files to ingest.
-                    </td>
-                  </tr>
-                ) : (
-                  takes.map((t, idx) => (
-                    <tr key={idx} className="hover:bg-slate-800/30 transition">
-                      <td className="px-4 py-3 font-mono font-bold text-white flex items-center gap-2">
-                        <span>{t.slate} T{t.take_id}</span>
-                        {t.is_starred && (
-                          <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.2 rounded font-sans">
-                            ⭐ Circled
-                          </span>
-                        )}
-                        {t.is_pickup && (
-                          <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/40 px-1.5 py-0.2 rounded font-sans">
-                            Pickup
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-slate-400">
-                        {t.intent ? JSON.stringify(t.intent) : <span className="text-slate-600 italic">Scheduled</span>}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-slate-300">
-                        {t.belief.camera ? (
-                          <div>
-                            <span className="text-blue-400 font-semibold">{t.belief.camera.camera_roll || 'No Roll'}</span>
-                            <span className="text-slate-500 ml-2">({t.belief.camera.fps}fps)</span>
-                            <div className="text-[10px] text-slate-500">{t.belief.camera.timecode_in || '--'}</div>
-                          </div>
-                        ) : (
-                          <span className="text-slate-600">--</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-slate-300">
-                        {t.belief.sound ? (
-                          <div>
-                            <span className="text-emerald-400 font-semibold">{t.belief.sound.sound_roll || 'SR'}</span>
-                            <span className="text-slate-500 ml-2">({t.belief.sound.tracks || '4ch'})</span>
-                            <div className="text-[10px] text-slate-500">{t.belief.sound.timecode_in || '--'}</div>
-                          </div>
-                        ) : (
-                          <span className="text-slate-600">--</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-slate-300">
-                        <span className="text-cyan-400 flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400" />
-                          Checksum Verified
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button 
-                          onClick={() => handleAskAssistant(t.slate, t.take_id)}
-                          className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-blue-400 transition"
-                          title="Ask Gemini Discrepancy Agent"
-                        >
-                          <MessageSquare className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </main>
-
-      {/* Productions Management Modal */}
-      {isManageProdOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="font-bold text-white flex items-center gap-2">
-                <Clapperboard className="w-5 h-5 text-blue-400" />
-                Studio Production Portfolio
-              </h3>
-              <button onClick={() => setIsManageProdOpen(false)} className="text-slate-400 hover:text-white">✕</button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 max-h-96 overflow-y-auto pr-1">
-              {productions.map(p => (
-                <div 
-                  key={p.production_id}
-                  className={`p-4 rounded-xl border transition ${
-                    selectedProductionId === p.production_id 
-                      ? 'bg-blue-950/30 border-blue-500/50' 
-                      : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
+        {/* TAB 2: ACTIVE DISCREPANCIES VIEW */}
+        {activeTab === 'discrepancies' && (
+          <section className="space-y-3">
+            {discrepancies.length === 0 ? (
+              <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-12 text-center text-slate-400">
+                <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
+                <h3 className="text-base font-bold text-white">All Documents 100% Reconciled</h3>
+                <p className="text-xs text-slate-400 mt-1">No discrepancies found across Sound, Script, Camera, and DIT logs.</p>
+              </div>
+            ) : (
+              discrepancies.map((d, idx) => (
+                <div key={idx} className="bg-slate-900/80 border border-red-500/30 rounded-xl p-5 space-y-3 shadow-lg">
+                  <div className="flex items-start justify-between gap-4">
                     <div>
                       <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-white text-sm">{p.name}</h4>
-                        <span className="text-[10px] font-mono bg-slate-800 px-2 py-0.5 rounded text-slate-400">
-                          {p.production_id}
+                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded font-mono ${
+                          d.severity === 'CRITICAL' 
+                            ? 'bg-red-500/20 text-red-300 border border-red-500/40' 
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        }`}>
+                          {d.discrepancy_type}
                         </span>
-                        <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded">
-                          {p.status || 'Active'}
-                        </span>
+                        <span className="text-sm font-mono font-bold text-white">{d.entity_id}</span>
                       </div>
-                      <p className="text-xs text-slate-400 mt-1">{p.description || `Director: ${p.director || 'N/A'}`}</p>
+                      <p className="text-xs text-slate-200 mt-2">{d.description}</p>
                     </div>
 
-                    <button
+                    <button 
                       onClick={() => {
-                        setSelectedProductionId(p.production_id);
-                        if (p.shoot_days.length > 0) setSelectedDay(p.shoot_days[0]);
-                        setIsManageProdOpen(false);
+                        const takeMatch = takes.find(t => d.entity_id.includes(t.slate) && d.entity_id.includes(t.take_id));
+                        if (takeMatch) handleInspectTake(takeMatch);
                       }}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold"
+                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shrink-0 transition"
                     >
-                      {selectedProductionId === p.production_id ? 'Current Workspace' : 'Select'}
+                      Diagnose Mismatch
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 font-mono">
-                    <div>Shoot Days: <span className="text-white font-bold">{p.shoot_days?.length ? p.shoot_days.join(', ') : 'None yet'}</span></div>
-                    <div>Takes Indexed: <span className="text-white font-bold">{p.total_takes || 0}</span></div>
-                    <div>Spine Events: <span className="text-white font-bold">{p.total_events || 0}</span></div>
+                  {/* Conflicting Witnesses Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+                    {d.witnesses?.map((w, wi) => (
+                      <div key={wi} className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400 font-bold uppercase text-[10px]">{(w.author || 'Dept').toUpperCase()}</span>
+                          <span className="text-blue-400 font-mono text-[10px]">{(w.axis || 'belief').toUpperCase()}</span>
+                        </div>
+                        <div className="text-slate-300 font-mono text-[11px]">
+                          {w.camera_roll && <div>Roll: <span className="text-white font-bold">{w.camera_roll}</span></div>}
+                          {w.sound_roll && <div>Sound Roll: <span className="text-white font-bold">{w.sound_roll}</span></div>}
+                          {w.is_starred !== undefined && (
+                            <div>Circled: <span className={w.is_starred ? 'text-amber-400 font-bold' : 'text-slate-500'}>{w.is_starred ? 'YES' : 'NO'}</span></div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ))}
+              ))
+            )}
+          </section>
+        )}
+
+        {/* TAB 3: SOURCE DOCUMENTS REPOSITORY */}
+        {activeTab === 'documents' && (
+          <section className="bg-slate-900/40 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+            <div className="px-6 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <FileCode className="w-4 h-4 text-purple-400" />
+                  Raw Source Paperwork Repository
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Inspect the original uploaded Sound ALEs, Camera CSVs, Script Editor Logs, and Silverstack XMLs
+                </p>
+              </div>
+              <span className="text-xs font-mono text-slate-400">{documents.length} Files Ingested</span>
             </div>
 
-            <div className="border-t border-slate-800 pt-3 flex justify-between items-center">
-              <button
-                onClick={() => setIsNewProdOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-medium border border-slate-700"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Register New Production
-              </button>
-              <button
-                onClick={() => setIsManageProdOpen(false)}
-                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs"
-              >
-                Close
-              </button>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-950/80 text-slate-400 border-b border-slate-800 uppercase font-mono text-[10px]">
+                  <tr>
+                    <th className="px-4 py-3">Filename</th>
+                    <th className="px-4 py-3">Department</th>
+                    <th className="px-4 py-3">Doc Type</th>
+                    <th className="px-4 py-3">Size</th>
+                    <th className="px-4 py-3">Uploaded At</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {documents.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
+                        No source documents uploaded for Shoot Day {selectedDay}. Drop files to preview.
+                      </td>
+                    </tr>
+                  ) : (
+                    documents.map((doc, i) => (
+                      <tr key={i} className="hover:bg-slate-800/30 transition">
+                        <td className="px-4 py-3 font-mono font-bold text-white flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-blue-400" />
+                          {doc.filename}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-800 text-slate-300 font-mono">
+                            {doc.department}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-slate-400">{doc.doc_type}</td>
+                        <td className="px-4 py-3 font-mono text-slate-400">{(doc.size_bytes / 1024).toFixed(1)} KB</td>
+                        <td className="px-4 py-3 font-mono text-slate-500">{doc.uploaded_at?.slice(0, 19).replace('T', ' ')}</td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => handleOpenPreviewDoc(doc.doc_id)}
+                            className="px-3 py-1 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 rounded text-xs font-semibold flex items-center gap-1 ml-auto"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            Preview File
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
-          </div>
-        </div>
-      )}
+          </section>
+        )}
+      </main>
 
-      {/* New Production Modal */}
-      {isNewProdOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleCreateProduction} className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-            <h3 className="font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
-              <Plus className="w-4 h-4 text-blue-400" />
-              Register New Production
-            </h3>
-
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">Production Code (e.g. DUNE_3)</label>
-              <input
-                type="text"
-                required
-                placeholder="DUNE_3"
-                value={newProdId}
-                onChange={e => setNewProdId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 text-xs px-2.5 py-1.5 rounded text-white font-mono uppercase focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">Production Title</label>
-              <input
-                type="text"
-                required
-                placeholder="Dune: Part Three"
-                value={newProdName}
-                onChange={e => setNewProdName(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 text-xs px-2.5 py-1.5 rounded text-white focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">Director / Unit</label>
-              <input
-                type="text"
-                placeholder="Denis Villeneuve"
-                value={newProdDirector}
-                onChange={e => setNewProdDirector(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 text-xs px-2.5 py-1.5 rounded text-white focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsNewProdOpen(false)}
-                className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold"
-              >
-                Create Production
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Gemini Assistant Explanation Modal */}
-      {selectedTake && assistantExplanation && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="font-bold text-white flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-blue-400" />
-                Gemini Agent Audit Report
-              </h3>
+      {/* DETAILED 3-AXIS WITNESS & CARD LOCATOR DRAWER */}
+      {inspectedTake && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex justify-end z-50">
+          <div className="bg-slate-900 border-l border-slate-800 w-full max-w-2xl h-full flex flex-col p-6 space-y-5 overflow-y-auto shadow-2xl animate-in slide-in-from-right">
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-slate-800 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xl font-bold text-white">
+                    Scene {inspectedTake.scene || 'N/A'} — Slate {inspectedTake.slate} T{inspectedTake.take_id}
+                  </h3>
+                  {inspectedTake.is_starred && (
+                    <span className="text-xs bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded">
+                      ⭐ Circled Take
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-400 mt-1">3-Axis Witness Diagnosis & Storage Card Breakdown</p>
+              </div>
               <button 
-                onClick={() => { setSelectedTake(null); setAssistantExplanation(null); }}
-                className="text-slate-400 hover:text-white"
+                onClick={() => { setInspectedTake(null); setAssistantExplanation(null); }}
+                className="text-slate-400 hover:text-white text-lg p-1"
               >
                 ✕
               </button>
             </div>
-            <div className="text-xs text-slate-300 whitespace-pre-line font-mono bg-slate-950 p-4 rounded-xl border border-slate-800">
-              {assistantExplanation}
+
+            {/* Physical Card & Volume Location Callout */}
+            <div className="bg-blue-950/40 border border-blue-500/30 rounded-xl p-4 space-y-2">
+              <h4 className="text-xs font-bold text-blue-300 uppercase tracking-wider flex items-center gap-1.5">
+                <HardDrive className="w-4 h-4 text-blue-400" />
+                Physical Media & Card Location
+              </h4>
+              <div className="grid grid-cols-2 gap-3 text-xs pt-1 font-mono">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Camera Cards:</span>
+                  <span className="text-white font-bold">{inspectedTake.camera_cards.join(', ') || 'No camera log'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Sound Rolls:</span>
+                  <span className="text-white font-bold">{inspectedTake.sound_cards.join(', ') || 'No sound log'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Storage Volumes:</span>
+                  <span className="text-cyan-300 font-bold">{inspectedTake.storage_volumes.join(', ') || 'Un-offloaded'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Files On Disk:</span>
+                  <span className="text-cyan-300 font-bold">{inspectedTake.matched_media_files.length} verified files</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Gemini Agent AI Audit Report */}
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
+              <h4 className="text-xs font-bold text-slate-300 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-blue-400" />
+                Discrepancy Synthesis & Explanation
+              </h4>
+              <p className="text-xs font-mono text-slate-300 whitespace-pre-line bg-slate-900/60 p-3 rounded-lg border border-slate-800/80">
+                {assistantExplanation || 'Analyzing 3-axis witnesses...'}
+              </p>
+            </div>
+
+            {/* Department Witness Breakdown with Preview Links */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Source Document Witness Claims</h4>
+
+              {/* 1. Camera Witness */}
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-blue-400">1. Camera Department (Belief)</span>
+                  {inspectedTake.belief.camera?.source_document && (
+                    <button
+                      onClick={() => handleOpenPreviewDoc(inspectedTake.belief.camera?.source_doc_id, inspectedTake.belief.camera?.source_document)}
+                      className="text-[11px] text-purple-400 hover:text-purple-300 flex items-center gap-1 font-medium underline"
+                    >
+                      <Eye className="w-3 h-3" />
+                      Preview {inspectedTake.belief.camera.source_document}
+                    </button>
+                  )}
+                </div>
+                <div className="text-xs font-mono text-slate-300 grid grid-cols-2 gap-2">
+                  <div>Card Roll: <span className="text-white font-bold">{inspectedTake.belief.camera?.camera_roll || '--'}</span></div>
+                  <div>Clip: <span className="text-white font-bold">{inspectedTake.belief.camera?.clip_name || '--'}</span></div>
+                  <div>FPS / ISO: <span className="text-white">{inspectedTake.belief.camera?.fps || 24}fps / {inspectedTake.belief.camera?.iso || 800}</span></div>
+                  <div>Lens: <span className="text-white">{inspectedTake.belief.camera?.lens || 'Standard'}</span></div>
+                </div>
+              </div>
+
+              {/* 2. Sound Witness */}
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-400">2. Sound Department (Belief)</span>
+                  {inspectedTake.belief.sound?.source_document && (
+                    <button
+                      onClick={() => handleOpenPreviewDoc(inspectedTake.belief.sound?.source_doc_id, inspectedTake.belief.sound?.source_document)}
+                      className="text-[11px] text-purple-400 hover:text-purple-300 flex items-center gap-1 font-medium underline"
+                    >
+                      <Eye className="w-3 h-3" />
+                      Preview {inspectedTake.belief.sound.source_document}
+                    </button>
+                  )}
+                </div>
+                <div className="text-xs font-mono text-slate-300 grid grid-cols-2 gap-2">
+                  <div>Sound Roll: <span className="text-white font-bold">{inspectedTake.belief.sound?.sound_roll || '--'}</span></div>
+                  <div>Timecode In: <span className="text-white">{inspectedTake.belief.sound?.timecode_in || '--'}</span></div>
+                  <div>Tracks: <span className="text-white">{inspectedTake.belief.sound?.tracks || '4ch Poly'}</span></div>
+                  <div>Wild Track: <span className="text-white">{inspectedTake.belief.sound?.is_wild_track ? 'YES' : 'NO'}</span></div>
+                </div>
+              </div>
+
+              {/* 3. DIT Physical Existence */}
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-cyan-400">3. DIT / Storage Reality (Existence)</span>
+                </div>
+                <div className="text-xs font-mono text-slate-300 space-y-1.5">
+                  {inspectedTake.matched_media_files.length > 0 ? (
+                    inspectedTake.matched_media_files.map((m, i) => (
+                      <div key={i} className="bg-slate-900 p-2.5 rounded border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <div className="text-white font-bold">{m.file_name}</div>
+                          <div className="text-[10px] text-slate-500">Volume: {m.volume_name} | {(m.file_size_bytes ? m.file_size_bytes / (1024*1024) : 0).toFixed(1)} MB</div>
+                        </div>
+                        <span className="text-[10px] text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-500/30">
+                          {m.checksum ? `Checksum OK (${m.checksum.slice(0, 8)}...)` : 'Verified'}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-slate-500 italic">No media offload files registered on DIT volumes yet.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SOURCE DOCUMENT PREVIEW MODAL */}
+      {previewDoc && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 z-50">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl">
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+              <div className="flex items-center gap-3">
+                <FileCode className="w-5 h-5 text-purple-400" />
+                <div>
+                  <h3 className="font-bold text-white text-sm">{previewDoc.filename}</h3>
+                  <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono mt-0.5">
+                    <span>Dept: {previewDoc.department.toUpperCase()}</span>
+                    <span>•</span>
+                    <span>Type: {previewDoc.doc_type}</span>
+                    <span>•</span>
+                    <span>Size: {(previewDoc.size_bytes / 1024).toFixed(1)} KB</span>
+                  </div>
+                </div>
+              </div>
+              <button 
+                onClick={() => setPreviewDoc(null)}
+                className="text-slate-400 hover:text-white text-lg p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 flex-1 overflow-y-auto font-mono text-xs bg-slate-950 text-slate-200 whitespace-pre">
+              {previewDoc.content}
+            </div>
+
+            <div className="px-6 py-3 border-t border-slate-800 flex justify-end">
+              <button
+                onClick={() => setPreviewDoc(null)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs"
+              >
+                Close Preview
+              </button>
             </div>
           </div>
         </div>

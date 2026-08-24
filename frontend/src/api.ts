@@ -1,4 +1,4 @@
-import { TakeRecord, Discrepancy, Production } from './types';
+import { TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument } from './types';
 
 const API_BASE = '/api';
 
@@ -20,6 +20,18 @@ export async function createProduction(payload: {
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error('Failed to create production');
+  return res.json();
+}
+
+export async function fetchDocuments(productionId: string, shootDay: string): Promise<SourceDocumentSummary[]> {
+  const res = await fetch(`${API_BASE}/documents?production_id=${productionId}&shoot_day=${shootDay}`);
+  if (!res.ok) throw new Error('Failed to fetch documents');
+  return res.json();
+}
+
+export async function fetchDocumentContent(docId: string): Promise<SourceDocument> {
+  const res = await fetch(`${API_BASE}/documents/${docId}`);
+  if (!res.ok) throw new Error('Failed to fetch document content');
   return res.json();
 }
 

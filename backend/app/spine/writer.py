@@ -1,8 +1,10 @@
 """
-ClickHouse Append-Only Event Writer & Multi-Production Store.
+ClickHouse Append-Only Event Writer, Multi-Production & Document Store.
 """
 import json
 import logging
+import uuid
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -38,6 +40,61 @@ class SpineWriter:
         self.client = clickhouse_client
         self._in_memory_spine: List[Dict[str, Any]] = []
         self._productions: Dict[str, Dict[str, Any]] = dict(DEFAULT_PRODUCTIONS)
+        self._documents: Dict[str, Dict[str, Any]] = {}
+
+    def store_document(
+        self,
+        production_id: str,
+        shoot_day: str,
+        filename: str,
+        doc_type: str,
+        department: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        Stores raw document text/content with metadata for in-app previewing.
+        """
+        doc_id = str(uuid.uuid4())
+        doc_record = {
+            "doc_id": doc_id,
+            "production_id": production_id,
+            "shoot_day": shoot_day,
+            "filename": filename,
+            "doc_type": doc_type,
+            "department": department,
+            "content": content,
+            "size_bytes": len(content.encode("utf-8")),
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            "metadata": metadata or {},
+        }
+        self._documents[doc_id] = doc_record
+        return doc_id
+
+    def list_documents(self, production_id: Optional[str] = None, shoot_day: Optional[str] = None) -> List[Dict[str, Any]]:
+        docs = list(self._documents.values())
+        if production_id:
+            docs = [d for d in docs if d.get("production_id") == production_id]
+        if shoot_day:
+            docs = [d for d in docs if d.get("shoot_day") == shoot_day]
+        
+        # Return summary without full heavy content
+        return [
+            {
+                "doc_id": d["doc_id"],
+                "production_id": d["production_id"],
+                "shoot_day": d["shoot_day"],
+                "filename": d["filename"],
+                "doc_type": d["doc_type"],
+                "department": d["department"],
+                "size_bytes": d["size_bytes"],
+                "uploaded_at": d["uploaded_at"],
+            }
+            for d in docs
+        ]
+
+    def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
+        return self._documents.get(doc_id)
 
     def append_event(self, event: Dict[str, Any]) -> None:
         """
