@@ -127,3 +127,20 @@ def test_api_document_raw_pdf_streaming(client):
     assert "inline" in raw_res.headers["content-disposition"]
     assert raw_res.content == dummy_pdf_bytes
 
+
+def test_api_seed_endpoint(client):
+    res = client.post("/api/seed", json={"production_id": "DEMO_PRODUCTION_TEST", "shoot_day": "31"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "SEEDED"
+    assert data["ingested_count"] > 0
+
+    # Fetch takes and verify thumbnails exist
+    takes_res = client.get("/api/takes?production_id=DEMO_PRODUCTION_TEST&shoot_day=31")
+    assert takes_res.status_code == 200
+    takes = takes_res.json()
+    assert len(takes) > 0
+    takes_with_thumb = [t for t in takes if t.get("thumbnail_url")]
+    assert len(takes_with_thumb) > 0
+
+

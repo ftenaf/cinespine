@@ -1,4 +1,5 @@
 import os
+import re
 import hashlib
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Response, UploadFile, File, Form
@@ -319,6 +320,129 @@ async def upload_document_file(
     }
 
 
+def is_take_media_match(media_info: Dict[str, Any], slate: str, take_id: str, camera_roll: Optional[str], clip_name: Optional[str]) -> bool:
+    """
+    Precise matching between a take slate/take_id and a DIT media file (Camera MXF or Sound WAV).
+    """
+    fn = media_info.get("file_name", "")
+    m_scene = media_info.get("scene")
+    m_shot = media_info.get("shot")
+    m_take = media_info.get("take_id")
+
+    slate_parts = slate.split("/")
+    sc = slate_parts[0]
+    sh = slate_parts[1] if len(slate_parts) > 1 else None
+
+    tk_norm = take_id.replace("VFX", "").replace("PK", "").replace("FC", "FALSE").strip()
+
+    # 1. Parsed scene/shot/take from Silverstack (Thumbnail or Volume report)
+    if m_scene and m_take:
+        m_tk_norm = m_take.replace("VFX", "").replace("PK", "").replace("FC", "FALSE").strip()
+        if tk_norm.isdigit() and m_tk_norm.isdigit():
+            tk_match = int(tk_norm) == int(m_tk_norm)
+        else:
+            tk_match = tk_norm.upper() == m_tk_norm.upper()
+
+        if sc.upper() == m_scene.upper() and tk_match:
+            if sh and m_shot:
+                if sh.upper() == m_shot.upper():
+                    return True
+            else:
+                return True
+
+    # 2. Camera Clip Name matching (e.g. ZoeLog 'A120_C001' vs Silverstack 'A_0120C001_260728_091309_h1EIC.mxf')
+    if clip_name:
+        m_c = re.match(r"^([A-Z])(\d{3,4})_C(\d{3,4})", clip_name)
+        if m_c:
+            cam_letter, roll_num, c_num = m_c.group(1), int(m_c.group(2)), int(m_c.group(3))
+            target_pattern = rf"{cam_letter}_0*{roll_num}C0*{c_num}"
+            if re.search(target_pattern, fn):
+                return True
+        elif clip_name in fn:
+            return True
+
+    # 3. Audio WAV Name matching (e.g. '27-7T01.WAV' for Slate '27/7' Take '1')
+    if fn.upper().endswith(".WAV"):
+        if tk_norm.isdigit():
+            tk_int = int(tk_norm)
+            if sh:
+                pattern = rf"^{re.escape(sc)}-{re.escape(sh)}T0*{tk_int}\.WAV$"
+            else:
+                pattern = rf"^{re.escape(sc)}T0*{tk_int}\.WAV$"
+            if re.search(pattern, fn, re.IGNORECASE):
+                return True
+
+    return False
+
+
+class SeedRequest(BaseModel):
+    production_id: str = "DEMO_PRODUCTION"
+    shoot_day: str = "31"
+
+
+@router.post("/seed")
+def seed_real_day_data(req: SeedRequest):
+    """
+    Seeds the real day production documents (ZoeLog Camera A/B/C, Sound Reports, Silverstack Thumbnail & Volume)
+    from the domain examples directory into the spine.
+    """
+    examples_dir = "data/examples"
+    if not os.path.exists(examples_dir):
+        raise HTTPException(status_code=404, detail="Examples directory not found")
+
+    ingested_files = []
+    files = sorted(os.listdir(examples_dir))
+    for fn in files:
+        fp = os.path.join(examples_dir, fn)
+        with open(fp, "rb") as f:
+            content_bytes = f.read()
+
+        checksum = hashlib.sha256(content_bytes).hexdigest()
+        existing = spine_writer.get_document_by_checksum(req.production_id, req.shoot_day, checksum)
+        if existing:
+            continue
+
+        classification = classify_document(filename=fn, content=content_bytes)
+        t_map = {}
+        if fn.lower().endswith(".pdf"):
+            try:
+                txt = extract_text_from_pdf(content_bytes)
+                if "thumbnail" in fn.lower() or "thumbnail report" in txt.lower():
+                    t_map = extract_thumbnails_from_pdf(content_bytes)
+            except Exception:
+                txt = content_bytes.decode("utf-8", errors="ignore")
+        else:
+            txt = content_bytes.decode("utf-8", errors="ignore")
+
+        doc_id = spine_writer.store_document(
+            production_id=req.production_id,
+            shoot_day=req.shoot_day,
+            filename=fn,
+            doc_type=classification.doc_type.value,
+            department=classification.department.value,
+            content=txt,
+            checksum=checksum,
+            raw_bytes=content_bytes,
+            metadata={"file_size": len(content_bytes)},
+        )
+
+        envelope = EventEnvelope(
+            production_id=req.production_id,
+            shoot_day=req.shoot_day,
+            axis=classification.axis,
+            department=classification.department,
+            doc_type=classification.doc_type,
+            raw_content=txt,
+            filename=fn,
+            metadata={"doc_id": doc_id, "checksum": checksum, "thumbnails": t_map},
+        )
+        topic = f"production.raw.{classification.department.value}"
+        event_bus.publish(topic, envelope)
+        ingested_files.append(fn)
+
+    return {"status": "SEEDED", "ingested_count": len(ingested_files), "files": ingested_files}
+
+
 @router.get("/takes")
 def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
     """
@@ -326,37 +450,43 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
     """
     events = spine_writer.get_events(production_id=production_id, shoot_day=shoot_day)
     takes_map: Dict[str, Dict[str, Any]] = {}
-    media_files_map: Dict[str, List[Dict[str, Any]]] = {}
+    media_files_map: Dict[str, Dict[str, Any]] = {}
 
     # 1. Map media files from DIT existence events
     for evt in events:
         if evt.get("entity_type") == "media_file":
             p = evt.get("payload", {})
             fn = p.get("file_name", "")
-            media_files_map[fn] = {
-                "file_name": fn,
-                "camera_roll": p.get("camera_roll"),
-                "reel_tape": p.get("reel_tape"),
-                "codec": p.get("codec"),
-                "recording_date": p.get("recording_date"),
-                "fps": p.get("fps"),
-                "iso": p.get("iso"),
-                "tstop": p.get("tstop"),
-                "card_type": p.get("card_type"),
-                "thumbnail_b64": p.get("thumbnail_b64"),
-                "volume_name": p.get("volume_name") or "Offload Drive",
-                "file_size_bytes": p.get("file_size_bytes", 0),
-                "checksum": p.get("checksum"),
-                "source_doc": evt.get("metadata", {}).get("filename"),
-            }
+            if fn:
+                media_files_map[fn] = {
+                    "file_name": fn,
+                    "camera_roll": p.get("camera_roll"),
+                    "reel_tape": p.get("reel_tape"),
+                    "scene": p.get("scene"),
+                    "shot": p.get("shot"),
+                    "take_id": p.get("take_id"),
+                    "codec": p.get("codec"),
+                    "recording_date": p.get("recording_date"),
+                    "fps": p.get("fps"),
+                    "iso": p.get("iso"),
+                    "tstop": p.get("tstop"),
+                    "card_type": p.get("card_type"),
+                    "thumbnail_b64": p.get("thumbnail_b64"),
+                    "volume_name": p.get("volume_name") or "Offload Drive",
+                    "file_size_bytes": p.get("file_size_bytes", 0),
+                    "checksum": p.get("checksum"),
+                    "source_doc": evt.get("metadata", {}).get("filename"),
+                }
 
     # 2. Aggregate takes
     for evt in events:
         if evt.get("entity_type") == "take":
             p = evt.get("payload", {})
             slate = p.get("slate")
-            take_id = p.get("take_id")
-            if slate and take_id:
+            raw_take = p.get("take_id")
+            if slate and raw_take:
+                # Normalize take identifier so FC and FALSE merge gracefully
+                take_id = "FALSE" if raw_take in ["FC", "FALSE"] else raw_take
                 key = f"{slate}_{take_id}"
                 scene = p.get("scene") or (slate.split("/")[0] if "/" in slate else slate)
 
@@ -389,17 +519,17 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                 witness_payload = dict(p)
                 witness_payload["source_document"] = doc_name
                 witness_payload["source_doc_id"] = doc_id
-                
+
                 if axis == "existence" or dept == "dit":
                     takes_map[key]["existence"]["dit"] = witness_payload
                 else:
                     takes_map[key]["belief"][dept] = witness_payload
 
-                if p.get("codec"):
+                if p.get("codec") and (not takes_map[key].get("codec") or p.get("card_type") == "camera"):
                     takes_map[key]["codec"] = p.get("codec")
-                if p.get("recording_date"):
+                if p.get("recording_date") and not takes_map[key].get("recording_date"):
                     takes_map[key]["recording_date"] = p.get("recording_date")
-                if p.get("thumbnail_b64") and not takes_map[key].get("thumbnail_url"):
+                if p.get("thumbnail_b64") and (not takes_map[key].get("thumbnail_url") or p.get("card_type") == "camera"):
                     takes_map[key]["thumbnail_url"] = p.get("thumbnail_b64")
 
                 if doc_name and doc_name not in [d.get("filename") for d in takes_map[key]["source_documents"]]:
@@ -413,7 +543,7 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                 cr = p.get("camera_roll")
                 if cr:
                     takes_map[key]["camera_cards"].add(f"Card {cr}")
-                
+
                 sr = p.get("sound_roll") or (p.get("reel_tape") if p.get("card_type") == "sound" else None)
                 if sr:
                     takes_map[key]["sound_cards"].add(f"Sound {sr}")
@@ -429,27 +559,24 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
 
                 # Match with DIT Media Files (both video and audio WAV clips)
                 clip_name = p.get("clip_name")
-                scene_num = takes_map[key]["scene"]
-                take_num = takes_map[key]["take_id"]
 
                 for fn, media_info in media_files_map.items():
-                    is_match = False
-                    if clip_name and (clip_name in fn or (cr and cr in fn)):
-                        is_match = True
-                    elif fn.lower().endswith(".wav") and scene_num and take_num:
-                        # Match audio WAV filename e.g. '27-7T01.WAV' or '71C-3T02.WAV' or '117-1T01.WAV'
-                        clean_sc = scene_num.replace("/", "-")
-                        if f"{clean_sc}-" in fn and (f"T0{take_num}." in fn or f"T{take_num}." in fn or f"T{take_num}" in fn):
-                            is_match = True
-
-                    if is_match:
-                        takes_map[key]["existence"]["dit"] = media_info
+                    if is_take_media_match(media_info, slate, take_id, cr, clip_name):
                         vol = media_info.get("volume_name") or "Offload Drive"
                         takes_map[key]["storage_volumes"].add(vol)
                         if media_info.get("card_type") == "sound" and media_info.get("reel_tape"):
                             takes_map[key]["sound_cards"].add(f"Sound {media_info['reel_tape']}")
-                        if media_info.get("thumbnail_b64") and not takes_map[key].get("thumbnail_url"):
+
+                        # Prefer camera frame picture
+                        if media_info.get("thumbnail_b64") and (not takes_map[key].get("thumbnail_url") or media_info.get("card_type") == "camera"):
                             takes_map[key]["thumbnail_url"] = media_info.get("thumbnail_b64")
+
+                        if media_info.get("codec") and (not takes_map[key].get("codec") or media_info.get("card_type") == "camera"):
+                            takes_map[key]["codec"] = media_info.get("codec")
+
+                        if media_info.get("recording_date") and not takes_map[key].get("recording_date"):
+                            takes_map[key]["recording_date"] = media_info.get("recording_date")
+
                         if media_info not in takes_map[key]["matched_media_files"]:
                             takes_map[key]["matched_media_files"].append(media_info)
 

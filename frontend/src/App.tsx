@@ -10,7 +10,7 @@ import {
 import { TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument } from './types';
 import { 
   fetchTakes, fetchDiscrepancies, fetchProductions, fetchDocuments,
-  fetchDocumentContent, uploadDocument, uploadFile, askAssistant 
+  fetchDocumentContent, uploadDocument, uploadFile, askAssistant, seedDemoDay 
 } from './api';
 
 export default function App() {
@@ -102,18 +102,13 @@ export default function App() {
 
   const handleSeedDemoDay = async (dayToSeed: string = '31') => {
     setLoading(true);
-    const sampleCamera = `Slate,Take,Roll,FPS,Lens,ISO,Start TC,End TC,Clip Name\n27/7,1,A120,24,50mm,800,10:14:22:00,10:15:10:00,A120_C001_260728.MOV\n27/7,2PK,A120,24,50mm,800,10:16:05:00,10:17:00:00,A120_C002_260728.MOV\n27/7,3 VFX,A120,24,50mm,800,10:18:12:00,10:19:30:00,A120_C003_260728.MOV\n49/1,1,A120,24,50mm,800,10:41:57:00,10:43:00:00,A120_C004_260728.MOV`;
-    const sampleSound = `SOUND REPORT\nProject:,"GREAT HALL",\nDate:,"28/07/26",\nSound Mixer:,"SOUND MIXER",\nFile Name,Scene,Take,Length,Start TC,Trk 1,Trk 2,Notes\n27-7T01.WAV,27-7,01,00:03:00,10:14:22:00,"MixL","MixR",""\n27-7T02.WAV,27-7,02,00:03:32,10:16:05:00,"MixL","MixR",""\n27-7T03.WAV,27-7,03,00:03:32,10:18:12:05,"MixL","MixR",""\n49-1T01.WAV,49-1,01,00:03:02,10:41:57:00,"MixL","MixR",""`;
-    const sampleSilverstack = `<?xml version="1.0" encoding="UTF-8"?><SilverstackReport version="1.0"><Volume name="MAG_A_120"><Clip><FileName>A120_C001_260728.MOV</FileName><Reel>A_0120</Reel><Bytes>4294967296</Bytes><Hash type="MD5">e99a18c428cb38d5f260853678922e03</Hash><DurationFrames>1152</DurationFrames></Clip><Clip><FileName>A120_C002_260728.MOV</FileName><Reel>A_0120</Reel><Bytes>5368709120</Bytes><Hash type="MD5">9e107d9d372bb6826bd81d3542a419d6</Hash><DurationFrames>1320</DurationFrames></Clip></Volume></SilverstackReport>`;
-
     try {
-      await uploadDocument({ raw_content: sampleCamera, filename: `DemoProduction-2026-7-28_CAM_A.csv`, production_id: selectedProductionId, shoot_day: dayToSeed });
-      await uploadDocument({ raw_content: sampleSound, filename: `260728_Report.csv`, production_id: selectedProductionId, shoot_day: dayToSeed });
-      await uploadDocument({ raw_content: sampleSilverstack, filename: `Volume-664_SD.xml`, production_id: selectedProductionId, shoot_day: dayToSeed });
+      await seedDemoDay(selectedProductionId, dayToSeed);
       await loadProductions();
       await loadSpineData();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      alert(`Could not seed demo paperwork: ${err.message}`);
     } finally {
       setLoading(false);
     }

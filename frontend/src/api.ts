@@ -89,3 +89,14 @@ export async function askAssistant(productionId: string, shootDay: string, slate
   const data = await res.json();
   return data.explanation;
 }
+
+export async function seedDemoDay(productionId: string, shootDay: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/seed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ production_id: productionId, shoot_day: shootDay }),
+  });
+  if (!res.ok) throw new Error('Failed to seed demo day');
+  return res.json();
+}
+
