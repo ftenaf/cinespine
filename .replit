@@ -1,0 +1,23 @@
+modules = ["python-3.11", "nodejs-20"]
+
+[nix]
+channel = "stable-23_11"
+
+[workflows]
+runButton = "Start CineSpine Platform"
+
+[[workflows.workflow]]
+name = "Start CineSpine Platform"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pip install -r backend/requirements.txt && cd frontend && npm install && npm run build && cd .. && uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"
+
+[deployment]
+run = ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"]
+deploymentTarget = "autoscale"
+
+[[ports]]
+localPort = 8000
+externalPort = 80
