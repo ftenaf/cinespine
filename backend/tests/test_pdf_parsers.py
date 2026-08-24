@@ -111,3 +111,45 @@ class TestPDFParsers:
         assert c3.take_id == "01"
         assert c3.is_wild_track is True
 
+    def test_parse_silverstack_clips_text(self):
+        sample_clips_text = """
+Clips Report 28/7/26, 19:27
+Pomfort Silverstack XT 1/10
+27-7T01 Sound Dev: Mix664 S#KA0513004007 3:00 min
+49WTT01 Sound Dev: Mix664 S#KA0513004007 59 sec
+A_0120C001_260728_091309_h1EIC A_ ARRI ALEXA 35 2:45 min 4608x3164 172.8° @ 24fps 50.0 mm 2 9/10 800 6000 K
+B_0039C001_260728_102755_h1C9B B_ ARRI ALEXA 35 2:30 min 4608x3164 172.8° @ 24fps 50.0 mm 2.8 800 6000 K
+        """
+        from backend.app.parsers.pdf_parsers import parse_silverstack_clips_text
+        clips = parse_silverstack_clips_text(sample_clips_text)
+        assert len(clips) == 4
+
+        # Sound 1
+        s1 = clips[0]
+        assert s1.file_name == "27-7T01.WAV"
+        assert s1.scene == "27"
+        assert s1.shot == "7"
+        assert s1.take_id == "01"
+        assert s1.card_type == "sound"
+
+        # Sound 2 (Wild track)
+        s2 = clips[1]
+        assert s2.file_name == "49WTT01.WAV"
+        assert s2.is_wild_track is True
+
+        # Video 1
+        v1 = clips[2]
+        assert v1.file_name == "A_0120C001_260728_091309_h1EIC.mxf"
+        assert v1.camera_roll == "A120"
+        assert v1.camera == "A"
+        assert v1.iso == 800
+        assert v1.tstop == "2 9/10"
+        assert v1.card_type == "camera"
+
+        # Video 2
+        v2 = clips[3]
+        assert v2.file_name == "B_0039C001_260728_102755_h1C9B.mxf"
+        assert v2.camera_roll == "B039"
+        assert v2.camera == "B"
+
+

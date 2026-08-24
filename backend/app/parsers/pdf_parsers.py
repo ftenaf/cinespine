@@ -40,8 +40,8 @@ def extract_text_from_pdf(pdf_bytes_or_file) -> str:
 
 def extract_thumbnails_from_pdf(pdf_bytes_or_file) -> Dict[str, str]:
     """
-    Extracts embedded scene/take JPEG thumbnail pictures from a Pomfort Silverstack Thumbnail PDF.
-    Preserves state across page breaks and returns a multi-key mapping {clip_name/key: data_uri}.
+    Extracts embedded scene/take JPEG thumbnail pictures from Pomfort Silverstack Thumbnail or Clips PDFs.
+    Preserves state across page breaks and multi-clip grid pages and returns a multi-key mapping {clip_name/key: data_uri}.
     """
     thumbnails: Dict[str, str] = {}
     try:
@@ -56,15 +56,36 @@ def extract_thumbnails_from_pdf(pdf_bytes_or_file) -> Dict[str, str]:
 
         for page in reader.pages:
             txt = page.extract_text() or ""
-            imgs = [img for img in page.images if len(img.data) > 2000 and any(img.name.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png"])]
+            imgs = [img for img in page.images if len(img.data) > 1000 and any(img.name.lower().endswith(ext) for ext in [".jpg", ".jpeg"])]
+            lines = [l.strip() for l in txt.splitlines() if l.strip()]
+
+            # 1. Multi-clip grid page (e.g. Clips Report pages 5-10 with A_..., B_..., C_... lines)
+            grid_clip_lines = [l for l in lines if l.startswith(("A_", "B_", "C_"))]
+            if len(grid_clip_lines) > 1 and len(imgs) >= 1:
+                for idx, cl in enumerate(grid_clip_lines):
+                    cname = cl.split()[0]
+                    if idx < len(imgs):
+                        img = imgs[idx]
+                        b64 = base64.b64encode(img.data).decode("utf-8")
+                        data_uri = f"data:image/jpeg;base64,{b64}"
+
+                        thumbnails[cname] = data_uri
+                        full_fname = cname if "." in cname else f"{cname}.mxf"
+                        thumbnails[full_fname] = data_uri
+
+                        m_short = re.match(r"^([A-Z])_0*(\d{3,4})C(\d{3,4})", cname)
+                        if m_short:
+                            short_k = f"{m_short.group(1)}{m_short.group(2)[-3:]}_C{int(m_short.group(3)):03d}"
+                            thumbnails[short_k] = data_uri
+                continue
+
+            # 2. Single-clip page (e.g. Thumbnail Report)
             data_uri: Optional[str] = None
             if imgs:
-                img = imgs[0]
+                img = max(imgs, key=lambda x: len(x.data))
                 b64 = base64.b64encode(img.data).decode("utf-8")
-                mime = "image/jpeg" if "jp" in img.name.lower() else "image/png"
-                data_uri = f"data:{mime};base64,{b64}"
+                data_uri = f"data:image/jpeg;base64,{b64}"
 
-            lines = [l.strip() for l in txt.splitlines() if l.strip()]
             for i, line in enumerate(lines):
                 if line.startswith("Name "):
                     cname = line[5:].strip()
@@ -779,10 +800,11 @@ def parse_silverstack_shooting_day_text(text: str) -> List[ParsedSilverstackClip
     return clips
 
 
-def parse_silverstack_clips_text(text: str) -> List[ParsedSilverstackClip]:
+def parse_silverstack_clips_text(text: str, thumbnails_map: Optional[Dict[str, str]] = None) -> List[ParsedSilverstackClip]:
     """
     Parses Pomfort Silverstack Clips Reports (e.g. Clips-260728_SD31-20260728-1927.pdf).
-    Extracts individual scene/take clip names, audio WAV files, and camera files.
+    Extracts individual scene/take clip names, audio WAV files, camera video clips, lenses,
+    shutter angle, ISO, White Balance, T-stops, and associates visual thumbnails.
     """
     if not text or not text.strip():
         raise ParserFailureError("Empty Silverstack Clips text")
@@ -792,13 +814,50 @@ def parse_silverstack_clips_text(text: str) -> List[ParsedSilverstackClip]:
 
     for line in lines:
         cleaned = line.strip()
-        # e.g.: 27-7T01 Sound Dev: Mix664 S#KA0513004007 3:00 min
-        clip_m = re.match(r"^(\d+[A-Z]?-\d+T\d+)\s+([^\n]+?)\s+(\d+:\d+\s*(?:min|sec)|\d+\s*sec)", cleaned)
-        if clip_m:
-            clip_id = clip_m.group(1)
-            recorder_info = clip_m.group(2)
-            dur_str = clip_m.group(3)
+        if not cleaned or any(cleaned.startswith(k) for k in ["Clips Report", "Pomfort", "Offloads", "and 28", "260728", "DEMO PRODUCTION", "Preview Name"]):
+            continue
+
+        # 1. Sound line: e.g. '27-7T01 Sound Dev: Mix664 S#KA0513004007 3:00 min' or '49WTT01 ...' or '+99BDF-9T01 ...'
+        sm = re.match(r"^([\+A-Za-z0-9_\-]+)\s+(Sound Dev:[^\n]+?)\s+(\d+:\d+\s*(?:min|sec)|\d+\s*sec)$", cleaned)
+        if sm:
+            clip_id = sm.group(1)
+            recorder_info = sm.group(2)
+            dur_str = sm.group(3)
             fname = f"{clip_id}.WAV"
+
+            scene: Optional[str] = None
+            shot: Optional[str] = None
+            take_id: Optional[str] = None
+            is_pk = False
+            is_wt = False
+
+            base = clip_id
+            m1 = re.match(r"^(.+?)-([A-Za-z0-9_]+)T([A-Za-z0-9_*]+)$", base, re.IGNORECASE)
+            if m1:
+                scene = m1.group(1)
+                raw_shot = m1.group(2)
+                raw_take = m1.group(3)
+                if "PK" in raw_shot.upper() or "PK" in raw_take.upper():
+                    is_pk = True
+                    raw_shot = re.sub(r"pk", "", raw_shot, flags=re.IGNORECASE)
+                    raw_take = re.sub(r"pk", "", raw_take, flags=re.IGNORECASE)
+                if "WT" in scene.upper() or "WT" in raw_shot.upper() or "WT" in raw_take.upper():
+                    is_wt = True
+                shot = raw_shot
+                take_id = raw_take
+            else:
+                m2 = re.match(r"^(.+?)WTT([A-Za-z0-9_*]+)$", base, re.IGNORECASE)
+                if m2:
+                    scene = m2.group(1)
+                    shot = "WT"
+                    take_id = m2.group(2)
+                    is_wt = True
+                else:
+                    m3 = re.match(r"^(.+?)T([A-Za-z0-9_*]+)$", base, re.IGNORECASE)
+                    if m3:
+                        scene = m3.group(1)
+                        shot = None
+                        take_id = m3.group(2)
 
             clips.append(
                 ParsedSilverstackClip(
@@ -808,7 +867,78 @@ def parse_silverstack_clips_text(text: str) -> List[ParsedSilverstackClip]:
                     checksum="VERIFIED",
                     checksum_type="XXH64",
                     volume_name="664 SD",
-                    raw_payload={"recorder": recorder_info, "duration": dur_str},
+                    scene=scene,
+                    shot=shot,
+                    take_id=take_id,
+                    codec="Linear PCM (24bit, 48kHz)",
+                    card_type="sound",
+                    is_pickup=is_pk,
+                    is_wild_track=is_wt,
+                    raw_payload={"recorder": recorder_info, "duration": dur_str, "card_type": "sound"},
+                )
+            )
+            continue
+
+        # 2. Camera video line: e.g. 'A_0120C001_260728_091309_h1EIC A_ ARRI ALEXA 35 2:45 min 4608x3164 172.8° @ 24fps 50.0 mm 2 9/10 800 6000 K'
+        vm = re.match(r"^([A-C]_0*\d{3,4}C\d{3,4}[^\s]*)\s+([A-C]_)\s+([^\n]+?)\s+(\d+:\d+\s*(?:min|sec)|\d+(?:\.\d+)?\s*sec)\s+(\d+x\d+)\s+([\d.]+°\s*@\s*\d+fps)\s+([\d.]+\s*mm)\s+([^\s]+(?:\s+\d+/\d+)?)\s+(\d+)\s+(\d+\s*K)", cleaned)
+        if vm:
+            cname = vm.group(1)
+            cam = vm.group(2).strip("_")
+            model = vm.group(3)
+            dur = vm.group(4)
+            res = vm.group(5)
+            shutter = vm.group(6)
+            focal = vm.group(7)
+            tstop = vm.group(8)
+            iso = int(vm.group(9))
+            wb = vm.group(10)
+
+            roll_m = re.search(r"^([A-C])_0*(\d{3,4})C(\d{3,4})", cname)
+            roll = None
+            short_k = None
+            if roll_m:
+                prefix = roll_m.group(1)
+                rnum = roll_m.group(2)[-3:]
+                roll = normalize_camera_roll(f"{prefix}{rnum}")
+                short_k = f"{roll}_C{int(roll_m.group(3)):03d}"
+
+            full_fname = cname if "." in cname else f"{cname}.mxf"
+
+            thumb_uri = None
+            if thumbnails_map:
+                thumb_uri = (
+                    thumbnails_map.get(cname)
+                    or thumbnails_map.get(full_fname)
+                    or (thumbnails_map.get(short_k) if short_k else None)
+                )
+
+            clips.append(
+                ParsedSilverstackClip(
+                    file_name=full_fname,
+                    camera_roll=roll,
+                    file_size_bytes=2000 * 1024 * 1024,
+                    checksum="VERIFIED",
+                    checksum_type="XXH64",
+                    volume_name=f"Camera Card {roll}" if roll else "Offload Reel",
+                    codec="ARRIRAW (MXF)",
+                    camera=cam,
+                    fps=24.0,
+                    iso=iso,
+                    tstop=tstop,
+                    card_type="camera",
+                    thumbnail_b64=thumb_uri,
+                    raw_payload={
+                        "model": model,
+                        "duration": dur,
+                        "resolution": res,
+                        "shutter": shutter,
+                        "focal_length": focal,
+                        "tstop": tstop,
+                        "iso": iso,
+                        "wb": wb,
+                        "camera": cam,
+                        "card_type": "camera",
+                    },
                 )
             )
 
@@ -1009,7 +1139,7 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
         )
 
     if not clips:
-        return parse_silverstack_clips_text(text)
+        return parse_silverstack_clips_text(text, thumbnails_map=thumbnails_map)
 
     return clips
 
@@ -1025,6 +1155,7 @@ def parse_silverstack_pdf_text(text: str, thumbnails_map: Optional[Dict[str, str
     elif "Shooting Day Report" in text:
         return parse_silverstack_shooting_day_text(text)
     elif "Clips Report" in text:
-        return parse_silverstack_clips_text(text)
+        return parse_silverstack_clips_text(text, thumbnails_map=thumbnails_map)
     else:
         return parse_silverstack_volume_text(text)
+

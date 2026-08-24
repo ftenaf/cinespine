@@ -106,11 +106,37 @@ class TestRealPDFExamples:
     def test_parse_real_silverstack_clips_pdf(self):
         clips_path = os.path.join(EXAMPLES_DIR, "Clips-260728_SD31-20260728-1927.pdf")
         with open(clips_path, "rb") as f:
-            text = extract_text_from_pdf(f.read())
+            pdf_bytes = f.read()
+            text = extract_text_from_pdf(pdf_bytes)
         
-        records = parse_silverstack_clips_text(text)
-        assert len(records) > 0
-        assert "27-7T01.WAV" in [r.file_name for r in records]
+        from backend.app.parsers.pdf_parsers import extract_thumbnails_from_pdf
+        thumbnails_map = extract_thumbnails_from_pdf(pdf_bytes)
+        assert len(thumbnails_map) > 50
+
+        records = parse_silverstack_clips_text(text, thumbnails_map=thumbnails_map)
+        assert len(records) >= 100
+
+        # Verify sound clip
+        audio_clip = next(r for r in records if "27-7T01" in r.file_name)
+        assert audio_clip.card_type == "sound"
+        assert audio_clip.scene == "27"
+        assert audio_clip.shot == "7"
+        assert audio_clip.take_id in ["1", "01"]
+
+        # Verify wild track sound clip
+        wt_clip = next(r for r in records if "49WTT01" in r.file_name)
+        assert wt_clip.card_type == "sound"
+        assert wt_clip.is_wild_track is True
+
+        # Verify camera video clip
+        video_clip = next(r for r in records if "A_0120C001" in r.file_name)
+        assert video_clip.card_type == "camera"
+        assert video_clip.camera_roll == "A120"
+        assert video_clip.camera == "A"
+        assert video_clip.iso == 800
+        assert video_clip.tstop == "2 9/10"
+        assert video_clip.thumbnail_b64 is not None
+
 
     def test_parse_real_silverstack_thumbnail_pdf(self):
         thumb_path = os.path.join(EXAMPLES_DIR, "Thumbnail-260728_SD31-20260728-1927.pdf")

@@ -252,7 +252,7 @@ async def upload_document_file(
     if filename.lower().endswith(".pdf"):
         try:
             raw_text = extract_text_from_pdf(content_bytes)
-            if "thumbnail" in filename.lower() or "thumbnail report" in raw_text.lower():
+            if any(k in filename.lower() or k in raw_text.lower() for k in ["thumbnail", "clips", "thumbnail report", "clips report"]):
                 thumbnails_map = extract_thumbnails_from_pdf(content_bytes)
         except Exception as e:
             raw_text = content_bytes.decode("utf-8", errors="ignore")
@@ -411,7 +411,7 @@ def seed_real_day_data(req: SeedRequest):
         if fn.lower().endswith(".pdf"):
             try:
                 txt = extract_text_from_pdf(content_bytes)
-                if "thumbnail" in fn.lower() or "thumbnail report" in txt.lower():
+                if any(k in fn.lower() or k in txt.lower() for k in ["thumbnail", "clips", "thumbnail report", "clips report"]):
                     t_map = extract_thumbnails_from_pdf(content_bytes)
             except Exception:
                 txt = content_bytes.decode("utf-8", errors="ignore")
@@ -745,6 +745,7 @@ def get_sequences(production_id: str = "DEMO_PRODUCTION", shoot_day: str = "31")
         "sound_log_doc": None,
         "silverstack_thumbnail_doc": None,
         "silverstack_volume_doc": None,
+        "silverstack_clips_doc": None,
     }
 
     for d in docs:
@@ -765,6 +766,8 @@ def get_sequences(production_id: str = "DEMO_PRODUCTION", shoot_day: str = "31")
             doc_map["silverstack_thumbnail_doc"] = ref
         elif "Volume" in fname or dtype == "silverstack_volume":
             doc_map["silverstack_volume_doc"] = ref
+        elif "Clips" in fname or dtype == "silverstack_clips":
+            doc_map["silverstack_clips_doc"] = ref
 
     scenes_dict: Dict[str, List[Dict[str, Any]]] = {}
     for t in takes:
@@ -837,6 +840,7 @@ def get_sequences(production_id: str = "DEMO_PRODUCTION", shoot_day: str = "31")
             "sound_log_doc": doc_map.get("sound_log_doc"),
             "silverstack_thumbnail_doc": doc_map.get("silverstack_thumbnail_doc"),
             "silverstack_volume_doc": doc_map.get("silverstack_volume_doc"),
+            "silverstack_clips_doc": doc_map.get("silverstack_clips_doc"),
             "comments": cmt_str,
             "has_discrepancy": has_disc,
             "is_wild_track": is_wt,

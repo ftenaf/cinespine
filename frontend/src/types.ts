@@ -152,6 +152,7 @@ export interface SequenceRecord {
   sound_log_doc?: DocumentRef | null;
   silverstack_thumbnail_doc?: DocumentRef | null;
   silverstack_volume_doc?: DocumentRef | null;
+  silverstack_clips_doc?: DocumentRef | null;
   comments: string;
   has_discrepancy: boolean;
   is_wild_track: boolean;
