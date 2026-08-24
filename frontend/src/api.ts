@@ -106,4 +106,22 @@ export async function fetchSequences(productionId: string, shootDay: string): Pr
   return res.json();
 }
 
+export async function resolveDiscrepancy(discrepancyId: string, payload: import('./types').ResolveDiscrepancyPayload): Promise<any> {
+  const res = await fetch(`${API_BASE}/discrepancies/${discrepancyId}/resolve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to resolve discrepancy');
+  return res.json();
+}
+
+export async function unresolveDiscrepancy(discrepancyId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/discrepancies/${discrepancyId}/unresolve`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to re-open discrepancy');
+  return res.json();
+}
+
 

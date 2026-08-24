@@ -179,5 +179,42 @@ def test_api_sequences_endpoint(client):
     assert seq_wt is not None
 
 
+def test_api_resolve_and_unresolve_discrepancy(client):
+    # Seed data
+    client.post("/api/seed", json={"production_id": "RESOLVE_TEST", "shoot_day": "31"})
+
+    # Get discrepancies
+    disc_res = client.get("/api/discrepancies?production_id=RESOLVE_TEST&shoot_day=31")
+    assert disc_res.status_code == 200
+    discs = disc_res.json()
+
+    # Create / resolve a discrepancy
+    test_disc_id = "test-disc-123"
+    resolve_payload = {
+        "production_id": "RESOLVE_TEST",
+        "shoot_day": "31",
+        "entity_id": "27/7 Take 1",
+        "resolved_card": "A120",
+        "resolution_note": "Confirmed with camera department: Card is A120",
+        "resolved_by": "Assistant Editor Jane",
+    }
+    res = client.post(f"/api/discrepancies/{test_disc_id}/resolve", json=resolve_payload)
+    assert res.status_code == 200
+    res_data = res.json()
+    assert res_data["status"] == "RESOLVED"
+    assert res_data["resolution"]["resolved_card"] == "A120"
+    assert res_data["resolution"]["is_resolved"] is True
+
+    # Verify get_discrepancies returns resolved information
+    disc_res2 = client.get("/api/discrepancies?production_id=RESOLVE_TEST&shoot_day=31")
+    assert disc_res2.status_code == 200
+
+    # Unresolve / re-open
+    unres = client.post(f"/api/discrepancies/{test_disc_id}/unresolve")
+    assert unres.status_code == 200
+    assert unres.json()["status"] == "UNRESOLVED"
+
+
+
 
 

@@ -11,7 +11,7 @@ import { TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocum
 import { 
   fetchTakes, fetchDiscrepancies, fetchProductions, fetchDocuments,
   fetchDocumentContent, uploadDocument, uploadFile, askAssistant, seedDemoDay,
-  fetchSequences
+  fetchSequences, resolveDiscrepancy, unresolveDiscrepancy
 } from './api';
 
 export default function App() {
@@ -49,6 +49,13 @@ export default function App() {
 
   // Modals
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+
+  // Discrepancy Resolution Modal State
+  const [resolvingDiscrepancy, setResolvingDiscrepancy] = useState<Discrepancy | null>(null);
+  const [resolutionCardChoice, setResolutionCardChoice] = useState<string>('');
+  const [customCardInput, setCustomCardInput] = useState<string>('');
+  const [resolutionNoteInput, setResolutionNoteInput] = useState<string>('');
+  const [isResolutionSubmitting, setIsResolutionSubmitting] = useState<boolean>(false);
 
   // Upload Form State
   const [uploadMode, setUploadMode] = useState<'file' | 'text'>('file');
@@ -211,6 +218,64 @@ export default function App() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const availableCards = useMemo(() => {
+    const cards = new Set<string>();
+    takes.forEach(t => {
+      t.camera_cards?.forEach(c => cards.add(c.replace('Card ', '')));
+      t.sound_cards?.forEach(s => cards.add(s.replace('Sound ', '')));
+    });
+    ['A120', 'A121', 'A122', 'A123', 'B039', 'B040', 'B041', 'C005', 'C006', 'C007', '26Y07M27', '26Y06M18', 'SR280726'].forEach(c => cards.add(c));
+    return Array.from(cards).filter(Boolean);
+  }, [takes]);
+
+  const openResolveModal = (disc: Discrepancy) => {
+    setResolvingDiscrepancy(disc);
+    if (disc.resolved_card) {
+      setResolutionCardChoice(disc.resolved_card);
+      setCustomCardInput(disc.resolved_card);
+    } else {
+      const witnessCard = disc.witnesses?.find(w => w.camera_roll)?.camera_roll || disc.witnesses?.find(w => w.sound_roll)?.sound_roll;
+      if (witnessCard && availableCards.includes(witnessCard)) {
+        setResolutionCardChoice(witnessCard);
+      } else {
+        setResolutionCardChoice(availableCards[0] || 'CUSTOM');
+      }
+      setCustomCardInput('');
+    }
+    setResolutionNoteInput(disc.resolution_note || '');
+  };
+
+  const handleConfirmResolution = async () => {
+    if (!resolvingDiscrepancy) return;
+    setIsResolutionSubmitting(true);
+    try {
+      const finalCard = resolutionCardChoice === 'CUSTOM' ? customCardInput.trim() : resolutionCardChoice;
+      await resolveDiscrepancy(resolvingDiscrepancy.discrepancy_id, {
+        production_id: selectedProductionId,
+        shoot_day: selectedDay,
+        entity_id: resolvingDiscrepancy.entity_id,
+        resolved_card: finalCard || undefined,
+        resolution_note: resolutionNoteInput.trim() || undefined,
+        resolved_by: 'Assistant Editor',
+      });
+      setResolvingDiscrepancy(null);
+      await loadSpineData();
+    } catch (err: any) {
+      alert(`Failed to resolve discrepancy: ${err.message}`);
+    } finally {
+      setIsResolutionSubmitting(false);
+    }
+  };
+
+  const handleUnresolve = async (discId: string) => {
+    try {
+      await unresolveDiscrepancy(discId);
+      await loadSpineData();
+    } catch (err: any) {
+      alert(`Failed to re-open discrepancy: ${err.message}`);
     }
   };
 
@@ -1336,10 +1401,21 @@ export default function App() {
                         <td className="px-3.5 py-3 align-top whitespace-nowrap">
                           <div className="flex flex-col gap-1">
                             {seq.has_discrepancy ? (
-                              <span className="bg-red-500/20 border border-red-500/40 text-red-300 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 w-fit">
+                              <button
+                                onClick={() => {
+                                  const matchingDisc = discrepancies.find(d => seq.takes.some(t => d.entity_id.includes(t.split(' ')[0])) && !d.is_resolved);
+                                  if (matchingDisc) {
+                                    openResolveModal(matchingDisc);
+                                  } else {
+                                    setActiveTab('discrepancies');
+                                  }
+                                }}
+                                className="bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 w-fit transition"
+                                title="Click to resolve discrepancy"
+                              >
                                 <AlertCircle className="w-3 h-3 text-red-400" />
-                                Discrepancy
-                              </span>
+                                Solve Mismatch
+                              </button>
                             ) : (
                               <span className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1 w-fit">
                                 <Check className="w-3 h-3 text-emerald-400" />
@@ -1545,31 +1621,77 @@ export default function App() {
               </div>
             ) : (
               discrepancies.map((d, idx) => (
-                <div key={idx} className="bg-slate-900/80 border border-red-500/30 rounded-xl p-5 space-y-3 shadow-lg">
+                <div 
+                  key={idx} 
+                  className={`rounded-xl p-5 space-y-3 shadow-lg transition ${
+                    d.is_resolved 
+                      ? 'bg-emerald-950/20 border border-emerald-500/40' 
+                      : 'bg-slate-900/80 border border-red-500/30'
+                  }`}
+                >
                   <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
+                    <div className="space-y-1.5 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded font-mono ${
-                          d.severity === 'CRITICAL' 
-                            ? 'bg-red-500/20 text-red-300 border border-red-500/40' 
-                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          d.is_resolved
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : d.severity === 'CRITICAL' 
+                              ? 'bg-red-500/20 text-red-300 border border-red-500/40' 
+                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                         }`}>
-                          {d.discrepancy_type}
+                          {d.is_resolved ? '✓ RESOLVED' : d.discrepancy_type}
                         </span>
                         <span className="text-sm font-mono font-bold text-white">{d.entity_id}</span>
+                        {d.is_resolved && (
+                          <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-700/60 px-2 py-0.5 rounded flex items-center gap-1">
+                            <HardDrive className="w-3 h-3" />
+                            Target Card: {d.resolved_card || 'Manual Override'}
+                          </span>
+                        )}
                       </div>
-                      <p className="text-xs text-slate-200 mt-2">{d.description}</p>
+                      <p className="text-xs text-slate-200">{d.description}</p>
+                      {d.is_resolved && d.resolution_note && (
+                        <p className="text-xs text-emerald-300/90 italic bg-emerald-950/40 p-2.5 rounded-lg border border-emerald-800/40">
+                          "{d.resolution_note}" <span className="text-emerald-500 text-[11px] not-italic">— {d.resolved_by || 'Assistant Editor'} {d.resolved_at ? `(${new Date(d.resolved_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : ''}</span>
+                        </p>
+                      )}
                     </div>
 
-                    <button 
-                      onClick={() => {
-                        const takeMatch = takes.find(t => d.entity_id.includes(t.slate) && d.entity_id.includes(t.take_id));
-                        if (takeMatch) handleInspectTake(takeMatch);
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shrink-0 transition"
-                    >
-                      Diagnose Mismatch
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      {d.is_resolved ? (
+                        <>
+                          <button
+                            onClick={() => openResolveModal(d)}
+                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700 transition"
+                          >
+                            Edit Card / Note
+                          </button>
+                          <button
+                            onClick={() => handleUnresolve(d.discrepancy_id)}
+                            className="px-3 py-1.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 text-xs font-semibold transition"
+                          >
+                            Re-open
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => openResolveModal(d)}
+                          className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          Resolve / Assign Card
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => {
+                          const takeMatch = takes.find(t => d.entity_id.includes(t.slate) && d.entity_id.includes(t.take_id));
+                          if (takeMatch) handleInspectTake(takeMatch);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition"
+                      >
+                        Diagnose
+                      </button>
+                    </div>
                   </div>
 
                   {/* Conflicting Witnesses Cards */}
@@ -1709,6 +1831,69 @@ export default function App() {
                 ✕
               </button>
             </div>
+
+            {/* Active Discrepancy Status & Resolution Callout in Inspector Drawer */}
+            {(() => {
+              const matchedDisc = discrepancies.find(d => 
+                (d.entity_id.includes(inspectedTake.slate) && d.entity_id.includes(inspectedTake.take_id)) ||
+                (d.entity_id.includes(inspectedTake.slate) && d.entity_type === 'take')
+              );
+              if (!matchedDisc) return null;
+
+              return (
+                <div className={`p-4 rounded-xl border space-y-2.5 shadow-md ${
+                  matchedDisc.is_resolved
+                    ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-200'
+                    : 'bg-red-950/40 border-red-500/50 text-red-200'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono ${
+                        matchedDisc.is_resolved ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'
+                      }`}>
+                        {matchedDisc.is_resolved ? '✓ RESOLVED' : matchedDisc.discrepancy_type}
+                      </span>
+                      {matchedDisc.is_resolved && (
+                        <span className="text-xs font-mono font-bold text-white flex items-center gap-1">
+                          <HardDrive className="w-3 h-3 text-emerald-400" />
+                          Assigned: {matchedDisc.resolved_card || 'Manual Override'}
+                        </span>
+                      )}
+                    </div>
+                    {matchedDisc.is_resolved ? (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => openResolveModal(matchedDisc)}
+                          className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700 transition"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleUnresolve(matchedDisc.discrepancy_id)}
+                          className="px-2.5 py-1 rounded bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 text-xs font-semibold transition"
+                        >
+                          Re-open
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => openResolveModal(matchedDisc)}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1 shadow"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        Resolve Discrepancy
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-200">{matchedDisc.description}</p>
+                  {matchedDisc.is_resolved && matchedDisc.resolution_note && (
+                    <p className="text-xs italic bg-emerald-950/60 p-2 rounded text-emerald-300/90 border border-emerald-900/40">
+                      "{matchedDisc.resolution_note}" <span className="text-emerald-400 text-[11px] not-italic">— {matchedDisc.resolved_by || 'Assistant Editor'}</span>
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Physical Card & Volume Location Callout */}
             <div className="bg-blue-950/40 border border-blue-500/30 rounded-xl p-4 space-y-2">
@@ -2063,6 +2248,125 @@ export default function App() {
               {loading ? 'Processing Stream...' : 'Auto-Classify & Ingest to Spine'}
             </button>
           </form>
+        </div>
+      )}
+
+      {/* INTERACTIVE DISCREPANCY RESOLUTION MODAL */}
+      {resolvingDiscrepancy && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-in fade-in zoom-in-95">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                  <Check className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Solve Discrepancy</h3>
+                  <p className="text-xs text-slate-400 font-mono">{resolvingDiscrepancy.entity_id}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setResolvingDiscrepancy(null)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Discrepancy Info */}
+            <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40 font-bold">
+                  {resolvingDiscrepancy.discrepancy_type}
+                </span>
+                <span className="text-slate-400">{resolvingDiscrepancy.entity_type}</span>
+              </div>
+              <p className="text-slate-200 text-xs leading-relaxed">{resolvingDiscrepancy.description}</p>
+            </div>
+
+            {/* Select Target Card / Roll */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-300 block">
+                Assign to Target Card / Roll:
+              </label>
+              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1 bg-slate-950/60 rounded-xl border border-slate-800/80">
+                {availableCards.map(card => (
+                  <button
+                    key={card}
+                    type="button"
+                    onClick={() => setResolutionCardChoice(card)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-medium border transition ${
+                      resolutionCardChoice === card
+                        ? 'bg-blue-600 border-blue-400 text-white shadow-sm font-bold'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                    }`}
+                  >
+                    {card}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setResolutionCardChoice('CUSTOM')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-mono font-medium border transition ${
+                    resolutionCardChoice === 'CUSTOM'
+                      ? 'bg-blue-600 border-blue-400 text-white font-bold'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  ✏️ Set Manually...
+                </button>
+              </div>
+
+              {/* Manual Input if Custom Selected */}
+              {resolutionCardChoice === 'CUSTOM' && (
+                <div className="pt-1">
+                  <input
+                    type="text"
+                    placeholder="Type custom card or roll name (e.g. Card A120 or Sound Roll 26Y07M27)..."
+                    value={customCardInput}
+                    onChange={e => setCustomCardInput(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-blue-500"
+                    autoFocus
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Resolution Rationale / Notes */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-300 block">
+                Resolution Note & Justification:
+              </label>
+              <textarea
+                rows={2}
+                placeholder="e.g. Confirmed with DIT: Sound was offloaded to Card 26Y07M27 during roll transition."
+                value={resolutionNoteInput}
+                onChange={e => setResolutionNoteInput(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setResolvingDiscrepancy(null)}
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isResolutionSubmitting || (resolutionCardChoice === 'CUSTOM' && !customCardInput.trim())}
+                onClick={handleConfirmResolution}
+                className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow disabled:opacity-50"
+              >
+                {isResolutionSubmitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                Confirm & Reconcile
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

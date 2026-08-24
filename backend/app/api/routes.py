@@ -1,5 +1,6 @@
 import os
 import re
+import uuid
 import hashlib
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Response, UploadFile, File, Form
@@ -57,6 +58,16 @@ class AskAssistantRequest(BaseModel):
     shoot_day: str
     slate: str
     take_id: str
+
+
+class ResolveDiscrepancyRequest(BaseModel):
+    production_id: str = "DEMO_PRODUCTION"
+    shoot_day: str = "31"
+    entity_id: Optional[str] = None
+    resolved_card: Optional[str] = None
+    resolution_note: Optional[str] = None
+    resolved_by: Optional[str] = "Assistant Editor"
+
 
 
 @router.get("/health")
@@ -456,6 +467,7 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
     takes_map: Dict[str, Dict[str, Any]] = {}
     media_files_map: Dict[str, Dict[str, Any]] = {}
     sound_reports_map: Dict[str, Dict[str, Any]] = {}
+    resolutions = spine_writer.get_discrepancy_resolutions(production_id=production_id, shoot_day=shoot_day)
 
     # 1. Map media files from DIT existence events
     for evt in events:
@@ -689,6 +701,18 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                 "checksum": None,
             })
 
+        # 4. Check for resolved discrepancy assignments
+        for res in resolutions.values():
+            ent_id = res.get("entity_id", "")
+            if (t["slate"] in ent_id and t["take_id"] in ent_id) or (ent_id == f"{t['slate']}_{t['take_id']}"):
+                rc = res.get("resolved_card")
+                if rc:
+                    if any(rc.upper().startswith(pfx) for pfx in ["A", "B", "C", "D"]) and not rc.startswith("26"):
+                        t["camera_cards"].add(rc if rc.startswith("Card") else f"Card {rc}")
+                    else:
+                        t["sound_cards"].add(rc if rc.startswith("Sound") else f"Sound {rc}")
+                t["resolution"] = res
+
         t["camera_angles"].sort(key=lambda x: x["camera"])
         t["video_files"].sort(key=lambda x: x["camera"])
         t["camera_cards"] = sorted(list(t["camera_cards"]))
@@ -704,6 +728,50 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
 @router.get("/discrepancies")
 def get_discrepancies(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
     return mcp_server.query_production_discrepancies(production_id=production_id, shoot_day=shoot_day)
+
+
+@router.post("/discrepancies/{discrepancy_id}/resolve")
+def resolve_discrepancy(discrepancy_id: str, req: ResolveDiscrepancyRequest):
+    """
+    Resolves an active discrepancy by assigning the clip/sound to a chosen or manual card,
+    recording resolution notes and timestamp.
+    """
+    resolution = spine_writer.store_discrepancy_resolution(
+        production_id=req.production_id,
+        shoot_day=req.shoot_day,
+        discrepancy_id=discrepancy_id,
+        entity_id=req.entity_id,
+        resolved_card=req.resolved_card,
+        resolution_note=req.resolution_note,
+        resolved_by=req.resolved_by or "Assistant Editor",
+    )
+    # Append audit event to spine
+    spine_writer.append_event({
+        "event_id": str(uuid.uuid4()),
+        "production_id": req.production_id,
+        "shoot_day": req.shoot_day,
+        "axis": "belief",
+        "department": "editorial",
+        "doc_type": "discrepancy_resolution",
+        "entity_type": "discrepancy_resolution",
+        "payload": resolution,
+        "metadata": {"discrepancy_id": discrepancy_id, "entity_id": req.entity_id},
+        "timestamp": resolution["resolved_at"],
+    })
+    return {
+        "status": "RESOLVED",
+        "discrepancy_id": discrepancy_id,
+        "resolution": resolution,
+    }
+
+
+@router.post("/discrepancies/{discrepancy_id}/unresolve")
+def unresolve_discrepancy(discrepancy_id: str):
+    """
+    Re-opens an active discrepancy by clearing its resolution record.
+    """
+    deleted = spine_writer.delete_discrepancy_resolution(discrepancy_id)
+    return {"status": "UNRESOLVED", "discrepancy_id": discrepancy_id, "success": deleted}
 
 
 @router.get("/sequences")
@@ -807,7 +875,7 @@ def get_sequences(production_id: str = "DEMO_PRODUCTION", shoot_day: str = "31")
             loc = "INT. GREAT HALL (WILD TRACK AMBIENCE)"
 
         has_disc = any(
-            any(d.get("entity_id", "").startswith(t.get("slate", "")) for d in discrepancies)
+            any(d.get("entity_id", "").startswith(t.get("slate", "")) and not d.get("is_resolved") for d in discrepancies)
             for t in s_takes
         )
         is_wt = any(t.get("is_wild_track") for t in s_takes) or "WT" in seq.upper()

@@ -61,8 +61,20 @@ class ClickHouseMCPServer:
                 media_files=media_files,
                 has_offload_report=has_offload_report,
             )
-            for d in exist_discs:
-                all_discrepancies.append(d.model_dump())
+        # 3. Apply stored resolutions
+        resolutions = self.spine_writer.get_discrepancy_resolutions(production_id=production_id, shoot_day=shoot_day)
+        for d in all_discrepancies:
+            d_id = d.get("discrepancy_id")
+            ent_id = d.get("entity_id")
+            ent_k = f"{production_id}_{shoot_day}_{ent_id}"
+
+            res = resolutions.get(d_id) or resolutions.get(ent_k)
+            if res:
+                d["is_resolved"] = True
+                d["resolved_card"] = res.get("resolved_card")
+                d["resolution_note"] = res.get("resolution_note")
+                d["resolved_at"] = res.get("resolved_at")
+                d["resolved_by"] = res.get("resolved_by")
 
         return all_discrepancies
 

@@ -41,6 +41,7 @@ class SpineWriter:
         self._in_memory_spine: List[Dict[str, Any]] = []
         self._productions: Dict[str, Dict[str, Any]] = dict(DEFAULT_PRODUCTIONS)
         self._documents: Dict[str, Dict[str, Any]] = {}
+        self._discrepancy_resolutions: Dict[str, Dict[str, Any]] = {}
 
     def store_document(
         self,
@@ -232,3 +233,57 @@ class SpineWriter:
         }
         self._productions[production_id] = info
         return info
+
+    def store_discrepancy_resolution(
+        self,
+        production_id: str,
+        shoot_day: str,
+        discrepancy_id: str,
+        entity_id: Optional[str] = None,
+        resolved_card: Optional[str] = None,
+        resolution_note: Optional[str] = None,
+        resolved_by: str = "Assistant Editor",
+    ) -> Dict[str, Any]:
+        """
+        Stores resolution for a discrepancy, specifying target card/roll assignment and notes.
+        """
+        resolution = {
+            "discrepancy_id": discrepancy_id,
+            "production_id": production_id,
+            "shoot_day": shoot_day,
+            "entity_id": entity_id,
+            "is_resolved": True,
+            "resolved_card": resolved_card,
+            "resolution_note": resolution_note,
+            "resolved_by": resolved_by,
+            "resolved_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._discrepancy_resolutions[discrepancy_id] = resolution
+        if entity_id:
+            # Also key by entity_id so dynamic re-reconciliation finds the resolution
+            self._discrepancy_resolutions[f"{production_id}_{shoot_day}_{entity_id}"] = resolution
+        return resolution
+
+    def delete_discrepancy_resolution(self, discrepancy_id: str) -> bool:
+        """
+        Re-opens an active discrepancy by clearing its resolution record.
+        """
+        deleted = False
+        if discrepancy_id in self._discrepancy_resolutions:
+            res = self._discrepancy_resolutions.pop(discrepancy_id)
+            deleted = True
+            ent_id = res.get("entity_id")
+            if ent_id:
+                ent_k = f"{res.get('production_id')}_{res.get('shoot_day')}_{ent_id}"
+                self._discrepancy_resolutions.pop(ent_k, None)
+        return deleted
+
+    def get_discrepancy_resolutions(self, production_id: str, shoot_day: str) -> Dict[str, Dict[str, Any]]:
+        """
+        Returns all resolutions for a production and shoot day.
+        """
+        return {
+            k: v for k, v in self._discrepancy_resolutions.items()
+            if v.get("production_id") == production_id and v.get("shoot_day") == shoot_day
+        }
+

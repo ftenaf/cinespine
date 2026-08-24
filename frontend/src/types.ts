@@ -42,7 +42,20 @@ export interface Discrepancy {
   description: string;
   witnesses: Record<string, any>[];
   is_resolved: boolean;
+  resolved_card?: string | null;
+  resolution_note?: string | null;
+  resolved_at?: string | null;
+  resolved_by?: string | null;
   created_at: string;
+}
+
+export interface ResolveDiscrepancyPayload {
+  production_id: string;
+  shoot_day: string;
+  entity_id?: string;
+  resolved_card?: string;
+  resolution_note?: string;
+  resolved_by?: string;
 }
 
 export interface VideoFileInfo {

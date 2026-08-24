@@ -2,7 +2,7 @@
 Discrepancy Models and Severity Enums.
 """
 from enum import Enum
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from uuid import uuid4
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
@@ -33,4 +33,9 @@ class Discrepancy(BaseModel):
     description: str
     witnesses: List[Dict[str, Any]] = Field(default_factory=list)
     is_resolved: bool = False
+    resolved_card: Optional[str] = None
+    resolution_note: Optional[str] = None
+    resolved_at: Optional[str] = None
+    resolved_by: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
