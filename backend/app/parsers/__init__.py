@@ -12,6 +12,8 @@ from .pdf_parsers import (
     extract_text_from_pdf,
     parse_zoelog_camera_text,
     parse_editors_log_text,
+    parse_scripte_tclog_text,
+    parse_scripte_detailed_editor_log_text,
     parse_silverstack_volume_text,
 )
 from .classifier import classify_document, infer_production_and_day, DocumentClassification
@@ -27,6 +29,8 @@ __all__ = [
     "extract_text_from_pdf",
     "parse_zoelog_camera_text",
     "parse_editors_log_text",
+    "parse_scripte_tclog_text",
+    "parse_scripte_detailed_editor_log_text",
     "parse_silverstack_volume_text",
     "classify_document",
     "infer_production_and_day",

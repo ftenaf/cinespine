@@ -13,6 +13,8 @@ from backend.app.parsers.pdf_parsers import (
     extract_text_from_pdf,
     parse_zoelog_camera_text,
     parse_editors_log_text,
+    parse_scripte_tclog_text,
+    parse_scripte_detailed_editor_log_text,
     parse_silverstack_volume_text,
 )
 from backend.app.parsers.base import ParserFailureError
@@ -55,8 +57,10 @@ class IngestionDispatcher:
                         "is_pickup": rec.is_pickup,
                         "is_false_start": rec.is_false_start,
                         "is_wild_track": rec.is_wild_track,
+                        "is_vfx": rec.is_vfx,
                         "note": rec.note,
                     },
+                    "metadata": envelope.metadata,
                     "timestamp": envelope.timestamp,
                 }
                 self.bus.publish("production.events.spine", spine_event)
@@ -100,6 +104,7 @@ class IngestionDispatcher:
                         "is_vfx": rec.is_vfx,
                         "note": rec.note,
                     },
+                    "metadata": envelope.metadata,
                     "timestamp": envelope.timestamp,
                 }
                 self.bus.publish("production.events.spine", spine_event)
@@ -113,30 +118,41 @@ class IngestionDispatcher:
             fn = (envelope.filename or "").upper()
             content = envelope.raw_content
 
-            if "EDITOR" in fn or "DAILY EDITOR'S LOG" in content.upper():
+            # Route to Scripte TCLog vs Detailed Editor Log vs standard Editor Log
+            if "TCLOG" in fn or "TIMECODE LOG" in content.upper():
+                records = parse_scripte_tclog_text(content)
+            elif "DETAILED" in fn or "DETAILED EDITOR'S LOG" in content.upper():
+                records = parse_scripte_detailed_editor_log_text(content)
+            else:
                 records = parse_editors_log_text(content)
-                for rec in records:
-                    spine_event: Dict[str, Any] = {
-                        "event_id": envelope.event_id,
-                        "production_id": envelope.production_id,
-                        "shoot_day": envelope.shoot_day,
-                        "axis": envelope.axis.value,
-                        "department": envelope.department.value,
-                        "doc_type": envelope.doc_type.value,
-                        "entity_type": "take",
-                        "payload": {
-                            "scene": rec.scene,
-                            "slate": rec.slate,
-                            "take_id": rec.take_id,
-                            "sound_roll": rec.sound_roll,
-                            "camera_roll": rec.camera_roll,
-                            "is_starred": rec.is_starred,
-                            "is_pickup": rec.is_pickup,
-                            "note": rec.note,
-                        },
-                        "timestamp": envelope.timestamp,
-                    }
-                    self.bus.publish("production.events.spine", spine_event)
+
+            for rec in records:
+                spine_event: Dict[str, Any] = {
+                    "event_id": envelope.event_id,
+                    "production_id": envelope.production_id,
+                    "shoot_day": envelope.shoot_day,
+                    "axis": envelope.axis.value,
+                    "department": envelope.department.value,
+                    "doc_type": envelope.doc_type.value,
+                    "entity_type": "take",
+                    "payload": {
+                        "scene": rec.scene,
+                        "slate": rec.slate,
+                        "take_id": rec.take_id,
+                        "sound_roll": rec.sound_roll,
+                        "camera_roll": rec.camera_roll,
+                        "timecode_in": rec.timecode_in,
+                        "timecode_out": rec.timecode_out,
+                        "is_starred": rec.is_starred,
+                        "is_pickup": rec.is_pickup,
+                        "is_wild_track": rec.is_wild_track,
+                        "is_vfx": rec.is_vfx,
+                        "note": rec.note,
+                    },
+                    "metadata": envelope.metadata,
+                    "timestamp": envelope.timestamp,
+                }
+                self.bus.publish("production.events.spine", spine_event)
         except ParserFailureError as e:
             self._emit_dlq(envelope, "PARSER_FAILURE", str(e))
         except Exception as e:
@@ -170,6 +186,7 @@ class IngestionDispatcher:
                         "volume_name": clip.volume_name,
                         "duration_frames": clip.duration_frames,
                     },
+                    "metadata": envelope.metadata,
                     "timestamp": envelope.timestamp,
                 }
                 self.bus.publish("production.events.spine", spine_event)

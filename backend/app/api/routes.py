@@ -299,6 +299,10 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                     takes_map[key]["is_starred"] = True
                 if p.get("is_pickup"):
                     takes_map[key]["is_pickup"] = True
+                if p.get("is_wild_track") or "WT" in slate.upper():
+                    takes_map[key]["is_wild_track"] = True
+                if p.get("is_vfx") or "VFX" in slate.upper():
+                    takes_map[key]["is_vfx"] = True
 
                 # Match with DIT Media Files
                 clip_name = p.get("clip_name")

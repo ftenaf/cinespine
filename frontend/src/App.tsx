@@ -25,6 +25,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCircledOnly, setFilterCircledOnly] = useState(false);
   const [filterDiscrepancyOnly, setFilterDiscrepancyOnly] = useState(false);
+  const [filterWildTracksOnly, setFilterWildTracksOnly] = useState(false);
+  const [filterVfxOnly, setFilterVfxOnly] = useState(false);
 
   // Selected Take for Detailed Inspector Drawer
   const [inspectedTake, setInspectedTake] = useState<TakeRecord | null>(null);
@@ -192,6 +194,8 @@ export default function App() {
       }
 
       if (filterCircledOnly && !t.is_starred) return false;
+      if (filterWildTracksOnly && !t.is_wild_track) return false;
+      if (filterVfxOnly && !t.is_vfx) return false;
 
       if (filterDiscrepancyOnly) {
         const hasDisc = discrepancies.some(d => d.entity_id.includes(t.slate) && d.entity_id.includes(t.take_id));
@@ -200,7 +204,7 @@ export default function App() {
 
       return true;
     });
-  }, [takes, discrepancies, searchQuery, filterCircledOnly, filterDiscrepancyOnly]);
+  }, [takes, discrepancies, searchQuery, filterCircledOnly, filterDiscrepancyOnly, filterWildTracksOnly, filterVfxOnly]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -355,7 +359,29 @@ export default function App() {
                   : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
               }`}
             >
-              ⭐ Circled Only
+              ⭐ Circled
+            </button>
+
+            <button
+              onClick={() => setFilterWildTracksOnly(!filterWildTracksOnly)}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition flex items-center gap-1 ${
+                filterWildTracksOnly 
+                  ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' 
+                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              🎙️ WT
+            </button>
+
+            <button
+              onClick={() => setFilterVfxOnly(!filterVfxOnly)}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition flex items-center gap-1 ${
+                filterVfxOnly 
+                  ? 'bg-purple-500/20 border-purple-500/50 text-purple-300' 
+                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              ✨ VFX
             </button>
 
             <button
@@ -424,15 +450,25 @@ export default function App() {
 
                           {/* Take & Flags */}
                           <td className="px-4 py-3.5 font-mono">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               <span className="text-white font-bold">T{t.take_id}</span>
                               {t.is_starred && (
                                 <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.2 rounded font-sans">
                                   ⭐ Circled
                                 </span>
                               )}
-                              {t.is_pickup && (
+                              {t.is_wild_track && (
+                                <span className="text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 px-1.5 py-0.2 rounded font-sans">
+                                  🎙️ WT
+                                </span>
+                              )}
+                              {t.is_vfx && (
                                 <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/40 px-1.5 py-0.2 rounded font-sans">
+                                  ✨ VFX
+                                </span>
+                              )}
+                              {t.is_pickup && (
+                                <span className="text-[10px] bg-pink-500/20 text-pink-300 border border-pink-500/40 px-1.5 py-0.2 rounded font-sans">
                                   Pickup
                                 </span>
                               )}

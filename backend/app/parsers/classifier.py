@@ -147,13 +147,20 @@ def classify_document(
         )
 
     # 2. Script Supervisor Editor's Logs & Timecode Logs
-    if "EDITOR" in fn_upper or "TCLOG" in fn_upper or "DAILY EDITOR'S LOG" in text_sample:
+    if (
+        "EDITOR" in fn_upper
+        or "TCLOG" in fn_upper
+        or "DETAILED" in fn_upper
+        or "DAILY EDITOR'S LOG" in text_sample
+        or "TIMECODE LOG" in text_sample
+        or "DETAILED EDITOR'S LOG" in text_sample
+    ):
         return DocumentClassification(
             doc_type=DocumentType.SCRIPT_TIMECODE,
             department=DepartmentType.SCRIPT,
             axis=AxisType.BELIEF,
             is_multimodal=False,
-            display_name="Script Supervisor Editor's Log",
+            display_name="Script Supervisor Editor's / Timecode Log",
             inferred_production_id=inferred_prod,
             inferred_shoot_day=inferred_day,
         )

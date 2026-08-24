@@ -73,4 +73,6 @@ export interface TakeRecord {
   }>;
   is_starred: boolean;
   is_pickup: boolean;
+  is_wild_track?: boolean;
+  is_vfx?: boolean;
 }

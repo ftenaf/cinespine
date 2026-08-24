@@ -1,5 +1,5 @@
 """
-Deterministic Parsers for Real Production PDF Reports (ZoeLog Camera, Editor Logs, Silverstack Volume).
+Deterministic Parsers for Real Production PDF Reports (ZoeLog Camera, Scripte Editor/TC Logs, Silverstack Volume).
 
 Evidence:
 - data/examples/
@@ -119,6 +119,277 @@ def parse_zoelog_camera_text(text: str) -> List[ParsedCameraRecord]:
     return records
 
 
+def parse_scripte_tclog_text(text: str) -> List[ParsedSoundRecord]:
+    """
+    Parses Scripte Daily Timecode Log text (e.g. DEMO_TCLog_D031_280726.pdf) using state machine.
+    """
+    if not text or not text.strip():
+        raise ParserFailureError("Empty Scripte TCLog text")
+
+    records: List[ParsedSoundRecord] = []
+    lines = text.strip().splitlines()
+
+    current_slate = None
+    current_take = None
+    current_tc_in = None
+    current_tc_out = None
+    current_notes: List[str] = []
+
+    for line in lines:
+        cleaned = line.strip()
+        if not cleaned or "DAILY TIMECODE LOG" in cleaned or "Date:" in cleaned or "Page " in cleaned:
+            continue
+
+        # 1. Check for single-line format: 27/7 1 09:26:12:04 ... A120 280726 2:46
+        single_m = re.search(
+            r"^(\d+[A-Z]?/\d+|\d+WT)\s+(\d+[A-Z*]?|FALSE)\s+(\d{2}:\d{2}:\d{2}:\d{2})\s*(?:\d{2}:\d{2}:\d{2})?\s*(\d{2}:\d{2}:\d{2}:\d{2})?.*?\b([A-Z]\d{3})\s*(\d{6})?",
+            cleaned,
+        )
+        if single_m:
+            raw_slate = single_m.group(1)
+            raw_take = single_m.group(2)
+            tc_in = single_m.group(3)
+            tc_out = single_m.group(4)
+            cr = normalize_camera_roll(single_m.group(5))
+            sr = normalize_sound_roll(single_m.group(6)) if single_m.group(6) else None
+
+            norm_slate = normalize_slate(raw_slate)
+            take_info = normalize_take(raw_take)
+            scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
+
+            records.append(
+                ParsedSoundRecord(
+                    scene=scene,
+                    slate=norm_slate,
+                    take_id=take_info.take_id,
+                    sound_roll=sr,
+                    camera_roll=cr,
+                    timecode_in=tc_in,
+                    timecode_out=tc_out,
+                    is_starred=take_info.is_starred,
+                    is_pickup=take_info.is_pickup,
+                    is_false_start=take_info.is_false_start,
+                    is_wild_track="WT" in current_slate.upper() if current_slate else take_info.is_wild_track,
+                    is_vfx="VFX" in cleaned.upper() or take_info.is_vfx,
+                    note=take_info.note,
+                    raw_payload={"camera_roll": cr, "timecode_in": tc_in, "timecode_out": tc_out},
+                )
+            )
+            continue
+
+        # 2. Multi-line Header line matching Slate, Take, and TC In: 27/7 109:26:12:04 or 27/7 1 09:26:12:04
+        header_m = re.search(r"^(\d+[A-Z]?/\d+|\d+WT)\s+(\d+[A-Z*]?|FALSE)(?:(?=\d{2}:\d{2}:\d{2})|\s+)(\d{2}:\d{2}:\d{2}:\d{2})?", cleaned)
+        if header_m:
+            current_slate = header_m.group(1)
+            current_take = header_m.group(2)
+            current_tc_in = header_m.group(3)
+            current_tc_out = None
+            current_notes = []
+            continue
+
+        # 3. Timecode out line: 09:28:58:12
+        tc_m = re.match(r"^(\d{2}:\d{2}:\d{2}:\d{2})$", cleaned)
+        if tc_m and current_tc_in and not current_tc_out:
+            current_tc_out = tc_m.group(1)
+            continue
+
+        # 4. Camera Roll & Sound Roll line: A1202807262:461 or B0392807262:462 or A120 280726 2:46 1
+        roll_m = re.search(r"\b([A-Z]\d{3})\s*(\d{6})?(?:\s*\d+:\d+)?", cleaned)
+        if roll_m and current_slate and current_take:
+            cr = normalize_camera_roll(roll_m.group(1))
+            sr = normalize_sound_roll(roll_m.group(2)) if roll_m.group(2) else None
+
+            norm_slate = normalize_slate(current_slate)
+            take_info = normalize_take(current_take)
+            scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
+            notes_str = " ".join(current_notes).strip() or None
+
+            records.append(
+                ParsedSoundRecord(
+                    scene=scene,
+                    slate=norm_slate,
+                    take_id=take_info.take_id,
+                    sound_roll=sr,
+                    camera_roll=cr,
+                    timecode_in=current_tc_in,
+                    timecode_out=current_tc_out,
+                    is_starred=take_info.is_starred,
+                    is_pickup=take_info.is_pickup,
+                    is_false_start=take_info.is_false_start,
+                    is_wild_track="WT" in current_slate.upper() or take_info.is_wild_track,
+                    is_vfx="VFX" in (notes_str or "").upper() or take_info.is_vfx,
+                    note=notes_str or take_info.note,
+                    raw_payload={"camera_roll": cr, "timecode_in": current_tc_in, "timecode_out": current_tc_out},
+                )
+            )
+            continue
+
+        # Accumulate descriptions and comments
+        if records and not cleaned.startswith("Lens:") and not cleaned.startswith("Script /"):
+            prev_note = records[-1].note or ""
+            records[-1].note = f"{prev_note} {cleaned}".strip()
+            continue
+
+        if current_slate and not cleaned.startswith("Lens:") and not cleaned.startswith("Script /"):
+            current_notes.append(cleaned)
+
+    if not records:
+        # Fallback to general editor log parser
+        return parse_editors_log_text(text)
+
+    return records
+
+
+def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedSoundRecord]:
+    """
+    Parses Scripte Detailed Editor's Log text (e.g. DEMO_DetailedEditor’sLog_D031_280726.pdf).
+    Captures multi-camera cards, WildTrack (WT) tags, and VFX markers.
+    """
+    if not text or not text.strip():
+        raise ParserFailureError("Empty Scripte Detailed Editor's Log text")
+
+    records: List[ParsedSoundRecord] = []
+    lines = text.strip().splitlines()
+
+    current_slate = None
+    current_take = None
+    current_notes: List[str] = []
+
+    for line in lines:
+        cleaned = line.strip()
+        if not cleaned or "DETAILED EDITOR'S LOG" in cleaned or "Date:" in cleaned or "Slate TakeDescription" in cleaned:
+            continue
+
+        # 1. Wild Track entries: 6WT 1 Scene(s): 6, 49 Wild Track: 6WT n/a2807260:29 pasos de LEAD
+        wt_m = re.search(r"(\d+WT)\s+(\d+[A-Z*]?)\s+.*?(?:Wild Track:)?\s*.*?(?:n/a)?\s*(\d{6})?\s*(\d+:\d+)?\s*(.*)", cleaned, re.IGNORECASE)
+        if wt_m and "WT" in cleaned.upper():
+            raw_slate = wt_m.group(1)
+            raw_take = wt_m.group(2)
+            sr = normalize_sound_roll(wt_m.group(3)) if wt_m.group(3) else None
+            comments = wt_m.group(5).strip() if wt_m.group(5) else "Wild Track"
+
+            records.append(
+                ParsedSoundRecord(
+                    scene=raw_slate,
+                    slate=raw_slate,
+                    take_id=raw_take,
+                    sound_roll=sr,
+                    camera_roll=None,
+                    timecode_in=None,
+                    timecode_out=None,
+                    is_starred=False,
+                    is_pickup=False,
+                    is_wild_track=True,
+                    is_vfx=False,
+                    note=comments,
+                    raw_payload={"type": "wild_track", "comments": comments},
+                )
+            )
+            continue
+
+        # 2. Main Slate + Take header (e.g. '27/7 1 Scene(s): 27' or '49/1 1 Scene(s): 49')
+        new_slate_m = re.search(r"^(\d+[A-Z]?/\d+|\d+WT)\s+(\d+[A-Z*]?|FALSE)\s*(.*)", cleaned)
+        if new_slate_m:
+            current_slate = new_slate_m.group(1)
+            current_take = new_slate_m.group(2)
+            rest = new_slate_m.group(3)
+            current_notes = [rest] if rest else []
+
+            # Check if camera roll is on this same line: A1202807262:46
+            roll_m = re.search(r"\b([A-Z]\d{3})\s*(\d{6})?", rest)
+            if roll_m:
+                cr = normalize_camera_roll(roll_m.group(1))
+                sr = normalize_sound_roll(roll_m.group(2)) if roll_m.group(2) else None
+                norm_slate = normalize_slate(current_slate)
+                take_info = normalize_take(current_take)
+                scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
+                records.append(
+                    ParsedSoundRecord(
+                        scene=scene,
+                        slate=norm_slate,
+                        take_id=take_info.take_id,
+                        sound_roll=sr,
+                        camera_roll=cr,
+                        timecode_in=None,
+                        timecode_out=None,
+                        is_starred=take_info.is_starred,
+                        is_pickup=take_info.is_pickup,
+                        is_wild_track="WT" in current_slate.upper() or take_info.is_wild_track,
+                        is_vfx="VFX" in cleaned.upper() or take_info.is_vfx,
+                        note=rest or take_info.note,
+                        raw_payload={"camera_roll": cr, "is_vfx": "VFX" in cleaned.upper()},
+                    )
+                )
+            continue
+
+        # 3. Subsequent take or multi-camera setup angle: '1 Dolly - wide... B039 2:46' or '2 A120 2:53'
+        sub_m = re.search(r"^(\d+[A-Z*]?|FALSE)\s+(.*)", cleaned)
+        if sub_m and current_slate:
+            current_take = sub_m.group(1)
+            rest = sub_m.group(2)
+            roll_m = re.search(r"\b([A-Z]\d{3})\s*(\d{6})?", rest)
+            if roll_m:
+                cr = normalize_camera_roll(roll_m.group(1))
+                sr = normalize_sound_roll(roll_m.group(2)) if roll_m.group(2) else None
+                norm_slate = normalize_slate(current_slate)
+                take_info = normalize_take(current_take)
+                scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
+                records.append(
+                    ParsedSoundRecord(
+                        scene=scene,
+                        slate=norm_slate,
+                        take_id=take_info.take_id,
+                        sound_roll=sr,
+                        camera_roll=cr,
+                        timecode_in=None,
+                        timecode_out=None,
+                        is_starred=take_info.is_starred,
+                        is_pickup=take_info.is_pickup,
+                        is_wild_track="WT" in current_slate.upper() or take_info.is_wild_track,
+                        is_vfx="VFX" in cleaned.upper() or take_info.is_vfx,
+                        note=rest or take_info.note,
+                        raw_payload={"camera_roll": cr, "is_vfx": "VFX" in cleaned.upper()},
+                    )
+                )
+            continue
+
+        # 4. Standalone roll line for current setup (e.g. 'A1202807262:46' after a multi-line description)
+        roll_standalone = re.search(r"\b([A-Z]\d{3})\s*(\d{6})?", cleaned)
+        if roll_standalone and current_slate and current_take:
+            cr = normalize_camera_roll(roll_standalone.group(1))
+            sr = normalize_sound_roll(roll_standalone.group(2)) if roll_standalone.group(2) else None
+            norm_slate = normalize_slate(current_slate)
+            take_info = normalize_take(current_take)
+            scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
+            notes_str = " ".join(current_notes).strip() or cleaned
+            records.append(
+                ParsedSoundRecord(
+                    scene=scene,
+                    slate=norm_slate,
+                    take_id=take_info.take_id,
+                    sound_roll=sr,
+                    camera_roll=cr,
+                    timecode_in=None,
+                    timecode_out=None,
+                    is_starred=take_info.is_starred,
+                    is_pickup=take_info.is_pickup,
+                    is_wild_track="WT" in current_slate.upper() or take_info.is_wild_track,
+                    is_vfx="VFX" in cleaned.upper() or "VFX" in notes_str.upper() or take_info.is_vfx,
+                    note=notes_str or take_info.note,
+                    raw_payload={"camera_roll": cr, "is_vfx": "VFX" in cleaned.upper()},
+                )
+            )
+            continue
+
+        if current_slate and not cleaned.startswith("Script /") and not cleaned.startswith("Date:"):
+            current_notes.append(cleaned)
+
+    if not records:
+        return parse_editors_log_text(text)
+
+    return records
+
+
 def parse_editors_log_text(text: str) -> List[ParsedSoundRecord]:
     """
     Parses Script Supervisor Editor's Log text into sound/editorial records.
@@ -134,9 +405,6 @@ def parse_editors_log_text(text: str) -> List[ParsedSoundRecord]:
         if not cleaned or "DAILY EDITOR'S LOG" in cleaned or "Slate Take #" in cleaned:
             continue
 
-        # Pattern: Slate Take (Description)? CR (SR)? Time (Comments)?
-        # e.g. 27/7 1 LEAD plays -> He sees SUPPORT A120 280726 2:46 1
-        # e.g. 27/7 2 A120 2:53 THIS TAKE IS NOT GOOD 1
         m = re.search(r"^(\d+[A-Z]?/\d+)\s+(\d+[A-Z*]?)\s*(.*?)\s*([A-Z]\d{3})\s*(\d{4,8})?\s*(\d+:\d+)?\s*(.*)$", cleaned)
         if m:
             raw_slate = m.group(1)
@@ -161,6 +429,7 @@ def parse_editors_log_text(text: str) -> List[ParsedSoundRecord]:
                     timecode_out=None,
                     is_starred=take_info.is_starred,
                     is_pickup=take_info.is_pickup,
+                    is_vfx=take_info.is_vfx or "VFX" in cleaned.upper(),
                     note=comments or desc,
                     raw_payload={"camera_roll": cr, "description": desc},
                 )
@@ -189,13 +458,11 @@ def parse_silverstack_volume_text(text: str) -> List[ParsedSilverstackClip]:
         if not cleaned:
             continue
 
-        # 1. Match Filename (e.g. 128-1T01.WAV or A120_C001_260728.MOV)
         file_match = re.match(r"^([A-Za-z0-9_\-]+\.(?:WAV|MOV|BRAW|ARI|MP4|MXF))$", cleaned, re.IGNORECASE)
         if file_match:
             current_file = file_match.group(1)
             continue
 
-        # 2. Match Checksum + Size line: XXH64:1b742d797173f0d4 60.49 MB
         hash_match = re.search(r"([A-Za-z0-9]+):([a-f0-9]+)\s+([\d.]+)\s+(MB|GB|KB|Bytes)", cleaned, re.IGNORECASE)
         if hash_match and current_file:
             hash_type = hash_match.group(1).upper()
@@ -203,7 +470,6 @@ def parse_silverstack_volume_text(text: str) -> List[ParsedSilverstackClip]:
             size_val = float(hash_match.group(3))
             unit = hash_match.group(4).upper()
 
-            # Convert to bytes
             if unit == "GB":
                 size_bytes = int(size_val * 1024 * 1024 * 1024)
             elif unit == "MB":
