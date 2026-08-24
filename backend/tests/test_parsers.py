@@ -82,6 +82,33 @@ class TestSoundALEParser:
         assert r3.take_id == "3"
         assert r3.is_starred is True
 
+    def test_parse_real_sound_report_csv(self):
+        real_style_csv = """SOUND REPORT
+Project:,"GREAT HALL"
+Director:,"DIRECTOR"
+Date:,"27/07/26"
+Sound Mixer:,"SOUND MIXER"
+
+File Name,Scene,Take,Length,Start TC,Trk 1,Trk 2,Notes
+27-7T01.WAV,27-7,01,00:03:00,09:25:40:00,"MixL","MixR",""
+49WTT01.WAV,49WT,01,00:00:58,13:59:20:00,"MixL","MixR","wildtrack_exit"
+117-1T01.WAV,117-1,01,00:04:36,16:19:49:00,"MixL","MixR","DOBLE DE LEAD"
+"""
+        records = parse_sound_ale(real_style_csv)
+        assert len(records) == 3
+        
+        # Check standard take
+        assert records[0].slate == "27/7"
+        assert records[0].take_id == "1"
+        assert records[0].timecode_in == "09:25:40:00"
+
+        # Check wild track isolation
+        assert records[1].is_wild_track is True
+
+        # Check scene 117 take 1
+        assert records[2].slate == "117/1"
+        assert records[2].take_id == "1"
+
     def test_reject_empty_or_corrupt_sound_ale(self):
         with pytest.raises(ParserFailureError):
             parse_sound_ale("Heading\nCorrupt garbage with no Column/Data")

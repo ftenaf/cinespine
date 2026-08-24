@@ -47,13 +47,17 @@ def parse_sound_ale(content: str) -> List[ParsedSoundRecord]:
             if row and any(row):
                 data_rows.append(row)
 
-    # Fallback to standard CSV if not structured as ALE
+    # Fallback to standard CSV if not structured as ALE (e.g. Sound Devices CSV reports)
     if not headers or not data_rows:
         reader = csv.reader(io.StringIO(content))
         all_rows = list(reader)
-        if len(all_rows) > 1:
-            headers = [h.strip().upper() for h in all_rows[0]]
-            data_rows = all_rows[1:]
+        for idx, row in enumerate(all_rows):
+            upper_row = [c.strip().upper() for c in row if c.strip()]
+            # Detect header row containing standard sound report columns
+            if any(h in upper_row for h in ["SCENE", "SLATE", "FILE NAME", "FILENAME", "TAKE", "START TC"]):
+                headers = [c.strip().upper() for c in row]
+                data_rows = all_rows[idx + 1:]
+                break
 
     if not headers or not data_rows:
         raise ParserFailureError("Failed to extract valid column headers or data rows from sound log")
@@ -88,6 +92,9 @@ def parse_sound_ale(content: str) -> List[ParsedSoundRecord]:
         # Extract scene number from slate (e.g. 27/7 -> scene 27)
         scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
 
+        # Detect wild track from take box or slate (e.g. 49WT, WT 01)
+        is_wild = take_info.is_wild_track or "WT" in (raw_slate or "").upper() or "WILD" in (raw_slate or "").upper()
+
         record = ParsedSoundRecord(
             scene=scene,
             slate=norm_slate,
@@ -100,7 +107,7 @@ def parse_sound_ale(content: str) -> List[ParsedSoundRecord]:
             is_starred=take_info.is_starred,
             is_pickup=take_info.is_pickup,
             is_false_start=take_info.is_false_start,
-            is_wild_track=take_info.is_wild_track,
+            is_wild_track=is_wild,
             note=take_info.note,
             raw_payload={"raw_slate": raw_slate, "raw_take": raw_take, "raw_sound_roll": raw_sr},
         )
