@@ -143,4 +143,14 @@ def test_api_seed_endpoint(client):
     takes_with_thumb = [t for t in takes if t.get("thumbnail_url")]
     assert len(takes_with_thumb) > 0
 
+    # Verify multi-camera and audio grouping for Scene 27/7 Take 1
+    t27_7_1 = next((t for t in takes if t.get("slate") == "27/7" and t.get("take_id") == "1"), None)
+    assert t27_7_1 is not None
+    assert len(t27_7_1.get("video_files", [])) >= 3
+    assert len(t27_7_1.get("camera_angles", [])) >= 3
+    assert len(t27_7_1.get("audio_files", [])) >= 1
+    assert t27_7_1["audio_files"][0]["file_name"] == "27-7T01.WAV"
+    assert "MixL" in t27_7_1["audio_files"][0]["tracks"]
+
+
 

@@ -12,13 +12,26 @@ from backend.app.normalizers.takes import normalize_take
 
 def parse_sound_ale(content: str) -> List[ParsedSoundRecord]:
     """
-    Parses Avid Log Exchange (ALE) or Sound CSV content into normalized sound records.
+    Parses Avid Log Exchange (ALE) or Sound CSV content into normalized sound records with multi-track support.
     """
     if not content or not content.strip():
         raise ParserFailureError("Empty sound log content")
 
     lines = content.strip().splitlines()
     records: List[ParsedSoundRecord] = []
+
+    # Extract top metadata key-values (e.g. Sample Rate, Bit Depth, File Type, Sound Mixer)
+    top_meta: dict = {}
+    for line in lines[:20]:
+        if ":" in line and "," in line:
+            parts = line.split(":", 1)
+            k = parts[0].replace('"', '').strip()
+            v = parts[1].replace('"', '').replace(',', '').strip()
+            if k and v:
+                top_meta[k.upper()] = v
+
+    sample_rate = top_meta.get("SAMPLE RATE")
+    bit_depth = top_meta.get("BIT DEPTH")
 
     # Check if ALE format (contains 'Column' and 'Data' blocks)
     in_columns = False
@@ -65,8 +78,15 @@ def parse_sound_ale(content: str) -> List[ParsedSoundRecord]:
     # Map column headers to index
     col_map = {h: idx for idx, h in enumerate(headers)}
 
+    # Detect multi-track column indices (e.g. TRK 1, TRK 2, TRK 3...)
+    track_cols = []
+    for h, idx in col_map.items():
+        if h.startswith("TRK ") or h.startswith("TRACK ") or h.startswith("CH "):
+            track_cols.append((h, idx))
+    track_cols.sort(key=lambda x: int(''.join(filter(str.isdigit, x[0])) or 0))
+
     for row in data_rows:
-        if len(row) < 2:
+        if len(row) < 2 or not any(row):
             continue
 
         def get_col(*names: str) -> Optional[str]:
@@ -74,16 +94,31 @@ def parse_sound_ale(content: str) -> List[ParsedSoundRecord]:
                 if n.upper() in col_map:
                     idx = col_map[n.upper()]
                     if idx < len(row) and row[idx]:
-                        return row[idx]
+                        val = row[idx].strip()
+                        if val:
+                            return val
             return None
 
         raw_slate = get_col("SCENE", "SLATE", "NAME")
         raw_take = get_col("TAKE")
+        file_name = get_col("FILE NAME", "FILENAME", "CLIP NAME")
         raw_sr = get_col("SOUND ROLL", "TAPE", "ROLL", "SOUND_ROLL")
         tc_in = get_col("START", "START TC", "TC IN", "TIMECODE IN")
         tc_out = get_col("END", "END TC", "TC OUT", "TIMECODE OUT")
-        tracks = get_col("TRACKS", "CHANNELS")
-        tape = get_col("TAPE")
+        duration = get_col("LENGTH", "DURATION")
+        row_note = get_col("NOTES", "NOTE", "COMMENTS")
+        explicit_tracks = get_col("TRACKS", "CHANNELS")
+
+        # Collect channel names from Trk 1, Trk 2... columns
+        active_tracks = []
+        for trk_name, trk_idx in track_cols:
+            if trk_idx < len(row) and row[trk_idx] and row[trk_idx].strip():
+                trk_val = row[trk_idx].strip()
+                active_tracks.append(f"{trk_name.title()}: {trk_val}")
+
+        combined_tracks = explicit_tracks
+        if active_tracks:
+            combined_tracks = ", ".join(active_tracks)
 
         norm_slate = normalize_slate(raw_slate)
         take_info = normalize_take(raw_take)
@@ -94,6 +129,10 @@ def parse_sound_ale(content: str) -> List[ParsedSoundRecord]:
 
         # Detect wild track from take box or slate (e.g. 49WT, WT 01)
         is_wild = take_info.is_wild_track or "WT" in (raw_slate or "").upper() or "WILD" in (raw_slate or "").upper()
+        if file_name and ("WT" in file_name.upper() or "WILD" in file_name.upper()):
+            is_wild = True
+
+        final_note = row_note or take_info.note
 
         record = ParsedSoundRecord(
             scene=scene,
@@ -102,14 +141,26 @@ def parse_sound_ale(content: str) -> List[ParsedSoundRecord]:
             sound_roll=norm_sr,
             timecode_in=tc_in,
             timecode_out=tc_out,
-            tracks=tracks,
-            tape=tape,
+            file_name=file_name,
+            duration=duration,
+            sample_rate=sample_rate,
+            bit_depth=bit_depth,
+            tracks=combined_tracks,
+            tape=raw_sr,
             is_starred=take_info.is_starred,
             is_pickup=take_info.is_pickup,
             is_false_start=take_info.is_false_start,
             is_wild_track=is_wild,
-            note=take_info.note,
-            raw_payload={"raw_slate": raw_slate, "raw_take": raw_take, "raw_sound_roll": raw_sr},
+            note=final_note,
+            raw_payload={
+                "raw_slate": raw_slate,
+                "raw_take": raw_take,
+                "raw_sound_roll": raw_sr,
+                "file_name": file_name,
+                "duration": duration,
+                "active_tracks": active_tracks,
+                "top_meta": top_meta,
+            },
         )
         records.append(record)
 
@@ -117,3 +168,4 @@ def parse_sound_ale(content: str) -> List[ParsedSoundRecord]:
         raise ParserFailureError("Parsed sound log produced zero valid records (anti-confident-nothing)")
 
     return records
+

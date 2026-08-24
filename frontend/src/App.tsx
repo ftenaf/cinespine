@@ -5,7 +5,7 @@ import {
   FileText, Clapperboard, Calendar, Search,
   HardDrive, Eye, FileCode, Check, AlertCircle, Trash2,
   Image as ImageIcon, ChevronLeft, ChevronRight, LayoutGrid,
-  Volume2, Maximize2, ExternalLink
+  Volume2, Maximize2, ExternalLink, Video, Mic
 } from 'lucide-react';
 import { TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument } from './types';
 import { 
@@ -28,6 +28,8 @@ export default function App() {
   const [focusTakeIndex, setFocusTakeIndex] = useState<number>(0);
   const [selectedSceneFilter, setSelectedSceneFilter] = useState<string>('ALL');
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
+  const [selectedCameraAngle, setSelectedCameraAngle] = useState<Record<string, string>>({});
+
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCircledOnly, setFilterCircledOnly] = useState(false);
@@ -529,43 +531,48 @@ export default function App() {
                       d => d.entity_id.includes(t.slate) && d.entity_id.includes(t.take_id)
                     );
 
+                    const takeKey = `${t.slate}_${t.take_id}`;
+                    const activeCam = selectedCameraAngle[takeKey] || (t.camera_angles && t.camera_angles.length > 0 ? t.camera_angles[0].camera : 'A');
+                    const activeAngle = t.camera_angles?.find(ca => ca.camera === activeCam) || (t.camera_angles && t.camera_angles.length > 0 ? t.camera_angles[0] : null);
+                    const displayThumb = activeAngle?.thumbnail_url || t.thumbnail_url;
+
                     return (
                       <div 
                         key={idx}
-                        className={`bg-slate-900/80 rounded-2xl border transition overflow-hidden flex flex-col shadow-lg hover:shadow-2xl ${
+                        className={`bg-slate-900/90 rounded-2xl border transition overflow-hidden flex flex-col shadow-lg hover:shadow-2xl ${
                           hasDiscrepancy ? 'border-red-500/40' : 'border-slate-800 hover:border-blue-500/50'
                         }`}
                       >
-                        {/* Visual Thumbnail Frame */}
+                        {/* Visual Thumbnail Frame & Camera Angle Switcher */}
                         <div className="relative bg-black aspect-video flex items-center justify-center border-b border-slate-800 overflow-hidden group">
-                          {t.thumbnail_url ? (
+                          {displayThumb ? (
                             <img 
-                              src={t.thumbnail_url} 
-                              alt={`Scene ${t.scene} Take ${t.take_id}`}
-                              onClick={() => setEnlargedImage(t.thumbnail_url!)}
+                              src={displayThumb} 
+                              alt={`Scene ${t.scene} Take ${t.take_id} Cam ${activeCam}`}
+                              onClick={() => setEnlargedImage(displayThumb)}
                               className="w-full h-full object-cover group-hover:scale-105 transition duration-300 cursor-pointer" 
                             />
                           ) : (
                             <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 to-slate-950 text-slate-600 p-4">
                               <Volume2 className="w-10 h-10 mb-2 text-cyan-400/60" />
-                              <span className="text-[11px] font-mono text-cyan-300/80">
+                              <span className="text-[11px] font-mono text-cyan-300/80 font-bold">
                                 {t.is_wild_track ? 'Audio Wild Track' : 'Sound Mix Poly WAV'}
                               </span>
                               <span className="text-[10px] text-slate-500 font-mono mt-0.5">
-                                {t.sound_cards.join(', ') || 'Sound Roll'}
+                                {t.sound_cards?.join(', ') || 'Sound Roll'}
                               </span>
                             </div>
                           )}
 
                           {/* Top Slate Badge */}
-                          <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
-                            <span className="bg-black/80 backdrop-blur-md text-white font-mono text-xs font-bold px-2.5 py-1 rounded-lg border border-white/20 shadow">
+                          <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 z-10">
+                            <span className="bg-black/85 backdrop-blur-md text-white font-mono text-xs font-bold px-2.5 py-1 rounded-lg border border-white/20 shadow">
                               Sc {t.scene || 'N/A'} • {t.slate} T{t.take_id}
                             </span>
                           </div>
 
                           {/* Top Right Flags */}
-                          <div className="absolute top-2.5 right-2.5 flex items-center gap-1">
+                          <div className="absolute top-2.5 right-2.5 flex items-center gap-1 z-10">
                             {t.is_starred && (
                               <span className="bg-amber-500/90 text-black font-bold text-[10px] px-2 py-0.5 rounded-md shadow">
                                 ⭐ Circled
@@ -583,11 +590,37 @@ export default function App() {
                             )}
                           </div>
 
+                          {/* Multi-Camera Angle Pill Switcher on Frame */}
+                          {t.camera_angles && t.camera_angles.length > 1 && (
+                            <div className="absolute bottom-2.5 left-2.5 flex items-center gap-1 z-10 bg-black/75 backdrop-blur-md p-1 rounded-lg border border-white/15 shadow-lg">
+                              {t.camera_angles.map(ca => {
+                                const isSelected = (activeAngle?.camera || 'A') === ca.camera;
+                                return (
+                                  <button
+                                    key={ca.camera}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedCameraAngle(prev => ({ ...prev, [takeKey]: ca.camera }));
+                                    }}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition ${
+                                      isSelected
+                                        ? 'bg-blue-600 text-white shadow'
+                                        : 'text-slate-400 hover:text-white hover:bg-white/10'
+                                    }`}
+                                    title={`Preview Camera ${ca.camera}`}
+                                  >
+                                    Cam {ca.camera}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+
                           {/* Hover Zoom Prompt */}
-                          {t.thumbnail_url && (
+                          {displayThumb && (
                             <button
-                              onClick={() => setEnlargedImage(t.thumbnail_url!)}
-                              className="absolute bottom-2 right-2 bg-black/70 hover:bg-blue-600 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition shadow"
+                              onClick={() => setEnlargedImage(displayThumb)}
+                              className="absolute bottom-2.5 right-2.5 bg-black/70 hover:bg-blue-600 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition shadow z-10"
                               title="Enlarge Frame"
                             >
                               <Maximize2 className="w-3.5 h-3.5" />
@@ -595,16 +628,126 @@ export default function App() {
                           )}
                         </div>
 
-                        {/* Composed 4-Department Data Grid */}
+                        {/* Composed Multi-Department Data Body */}
                         <div className="p-4 flex-1 space-y-3">
-                          <div className="space-y-2 text-xs">
-                            {/* 1. Script Supervisor */}
-                            <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 space-y-1">
+                          {/* Header Summary Badges */}
+                          <div className="flex items-center justify-between text-[11px] pb-1 border-b border-slate-800/80">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-blue-400 font-semibold flex items-center gap-1">
+                                🎥 {t.video_files?.length || t.camera_cards?.length || 1} Cam{(t.video_files?.length || 1) > 1 ? 's' : ''}
+                                {t.camera_angles?.length > 1 && ` (${t.camera_angles.map(a => a.camera).join(', ')})`}
+                              </span>
+                              <span className="text-slate-600">•</span>
+                              <span className="font-mono text-emerald-400 font-semibold flex items-center gap-1">
+                                🎙️ {t.audio_files?.length || (t.sound_cards?.length ? 1 : 0)} Audio File{(t.audio_files?.length || 1) > 1 ? 's' : ''}
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-mono text-cyan-300">
+                              {t.storage_volumes?.join(', ') || 'Offload Vol'}
+                            </span>
+                          </div>
+
+                          {/* 1. Video Files Section */}
+                          {t.video_files && t.video_files.length > 0 && (
+                            <div className="bg-slate-950 p-2.5 rounded-xl border border-blue-500/20 space-y-1.5">
                               <div className="flex items-center justify-between text-[11px]">
-                                <span className="font-bold text-amber-400 flex items-center gap-1">
-                                  📝 Script (Scripte)
+                                <span className="font-bold text-blue-400 flex items-center gap-1">
+                                  🎬 Video Media Clips ({t.video_files.length})
                                 </span>
-                                {t.belief.script?.source_document && (
+                                {t.belief.camera?.source_document && (
+                                  <button
+                                    onClick={() => handleOpenPreviewDoc(t.belief.camera?.source_doc_id, t.belief.camera?.source_document)}
+                                    className="text-[10px] text-purple-400 hover:underline font-mono"
+                                  >
+                                    ZoeLog
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="space-y-1">
+                                {t.video_files.map((vf, vi) => (
+                                  <div key={vi} className="bg-slate-900/70 p-1.5 rounded-lg border border-slate-800 text-[11px] font-mono flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5 overflow-hidden">
+                                      <span className="bg-blue-600/30 text-blue-300 font-bold px-1.5 py-0.2 rounded text-[10px]">
+                                        Cam {vf.camera}
+                                      </span>
+                                      <span className="text-slate-300 truncate max-w-[160px]" title={vf.file_name}>
+                                        {vf.file_name}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-1 text-[10px] text-slate-400 shrink-0">
+                                      <span className="text-slate-300 font-semibold">{vf.camera_roll}</span>
+                                      <span>•</span>
+                                      <span className="text-cyan-400 font-semibold">{vf.fps}fps</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 2. Audio Files Section */}
+                          {t.audio_files && t.audio_files.length > 0 && (
+                            <div className="bg-slate-950 p-2.5 rounded-xl border border-emerald-500/20 space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-bold text-emerald-400 flex items-center gap-1">
+                                  🎙️ Audio Sound Files ({t.audio_files.length})
+                                </span>
+                                {t.belief.sound?.source_document && (
+                                  <button
+                                    onClick={() => handleOpenPreviewDoc(t.belief.sound?.source_doc_id, t.belief.sound?.source_document)}
+                                    className="text-[10px] text-purple-400 hover:underline font-mono"
+                                  >
+                                    Sound CSV
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="space-y-1.5">
+                                {t.audio_files.map((af, ai) => (
+                                  <div key={ai} className="bg-slate-900/70 p-2 rounded-lg border border-slate-800 space-y-1">
+                                    <div className="flex items-center justify-between text-[11px] font-mono">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="bg-emerald-600/30 text-emerald-300 font-bold px-1.5 py-0.2 rounded text-[10px]">
+                                          WAV
+                                        </span>
+                                        <span className="text-emerald-300 font-semibold truncate max-w-[150px]" title={af.file_name}>
+                                          {af.file_name}
+                                        </span>
+                                      </div>
+                                      <span className="text-[10px] text-slate-400 font-mono">{af.duration || '00:03:00'}</span>
+                                    </div>
+
+                                    {/* Multi-Track Channel Badges */}
+                                    {af.tracks && (
+                                      <div className="flex flex-wrap gap-1 pt-0.5">
+                                        {af.tracks.split(',').map((trk, ti) => (
+                                          <span key={ti} className="bg-slate-950 border border-slate-800 text-[9px] font-mono text-slate-300 px-1.5 py-0.2 rounded">
+                                            {trk.trim()}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    {af.note && (
+                                      <div className="text-[10px] text-amber-300/90 italic font-mono bg-amber-950/20 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                        Mixer Note: "{af.note}"
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 3. Script Department Note */}
+                          {t.belief.script && (
+                            <div className="bg-slate-950 p-2.5 rounded-xl border border-amber-500/20 text-[11px] space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-amber-400 flex items-center gap-1 text-[11px]">
+                                  📝 Script Supervisor (Scripte)
+                                </span>
+                                {t.belief.script.source_document && (
                                   <button
                                     onClick={() => handleOpenPreviewDoc(t.belief.script?.source_doc_id, t.belief.script?.source_document)}
                                     className="text-[10px] text-purple-400 hover:underline font-mono"
@@ -613,80 +756,20 @@ export default function App() {
                                   </button>
                                 )}
                               </div>
-                              <p className="text-[11px] text-slate-300 italic line-clamp-1">
-                                {t.belief.script?.note || 'Scripte Log Recorded'}
+                              <p className="text-[11px] text-slate-300 italic line-clamp-2">
+                                {t.belief.script.note || 'Scripte Log Recorded'}
                               </p>
-                              {t.belief.script?.timecode_in && (
+                              {t.belief.script.timecode_in && (
                                 <div className="text-[10px] font-mono text-slate-400">
                                   TC: {t.belief.script.timecode_in} → {t.belief.script.timecode_out || '--'}
                                 </div>
                               )}
                             </div>
-
-                            {/* 2. Camera Unit */}
-                            <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 space-y-1">
-                              <div className="flex items-center justify-between text-[11px]">
-                                <span className="font-bold text-blue-400 flex items-center gap-1">
-                                  🎬 Camera (ZoeLog)
-                                </span>
-                                {t.belief.camera?.source_document && (
-                                  <button
-                                    onClick={() => handleOpenPreviewDoc(t.belief.camera?.source_doc_id, t.belief.camera?.source_document)}
-                                    className="text-[10px] text-purple-400 hover:underline font-mono"
-                                  >
-                                    Preview ZoeLog
-                                  </button>
-                                )}
-                              </div>
-                              <div className="text-[11px] font-mono text-slate-300 flex flex-wrap gap-2">
-                                <span className="text-white font-bold">{t.camera_cards.join(', ') || 'No Camera'}</span>
-                                {t.belief.camera?.lens && <span>• {t.belief.camera.lens}</span>}
-                                {t.belief.camera?.fps && <span>• {t.belief.camera.fps}fps</span>}
-                              </div>
-                            </div>
-
-                            {/* 3. Sound Mixer */}
-                            <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 space-y-1">
-                              <div className="flex items-center justify-between text-[11px]">
-                                <span className="font-bold text-emerald-400 flex items-center gap-1">
-                                  🎙️ Sound (ALE)
-                                </span>
-                                {t.belief.sound?.source_document && (
-                                  <button
-                                    onClick={() => handleOpenPreviewDoc(t.belief.sound?.source_doc_id, t.belief.sound?.source_document)}
-                                    className="text-[10px] text-purple-400 hover:underline font-mono"
-                                  >
-                                    Preview CSV
-                                  </button>
-                                )}
-                              </div>
-                              <div className="text-[11px] font-mono text-slate-300 flex items-center justify-between">
-                                <span className="text-emerald-300 font-bold">{t.sound_cards.join(', ') || 'Sound Roll'}</span>
-                                <span className="text-[10px] text-slate-400">TC In: {t.belief.sound?.timecode_in || '--'}</span>
-                              </div>
-                            </div>
-
-                            {/* 4. Silverstack Notary */}
-                            <div className="bg-slate-950 p-2.5 rounded-xl border border-cyan-500/20 space-y-1">
-                              <div className="flex items-center justify-between text-[11px]">
-                                <span className="font-bold text-cyan-400 flex items-center gap-1">
-                                  🔒 Silverstack Notary
-                                </span>
-                                <span className="text-[10px] text-cyan-300 bg-cyan-950 px-1.5 py-0.2 rounded border border-cyan-500/30 font-mono">
-                                  ✓ Verified
-                                </span>
-                              </div>
-                              <div className="text-[10px] font-mono text-slate-400 grid grid-cols-2 gap-1 pt-0.5">
-                                <div>Drive: <span className="text-white">{t.storage_volumes.join(', ') || 'Offload Vol'}</span></div>
-                                <div>Codec: <span className="text-cyan-300 font-semibold truncate">{t.codec || 'ARRIRAW / PCM'}</span></div>
-                                {t.recording_date && <div className="col-span-2">Rec: <span className="text-slate-200">{t.recording_date}</span></div>}
-                              </div>
-                            </div>
-                          </div>
+                          )}
                         </div>
 
                         {/* Card Footer Actions */}
-                        <div className="px-4 py-3 bg-slate-950/80 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                        <div className="px-4 py-3 bg-slate-950/90 border-t border-slate-800 flex items-center justify-between gap-2">
                           <button
                             onClick={() => {
                               setFocusTakeIndex(idx);
@@ -712,199 +795,286 @@ export default function App() {
             )}
 
             {/* MASTER VIEW - 2. SLATE FOCUS NAVIGATOR */}
-            {masterLayout === 'slate' && currentFocusTake && (
-              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl space-y-4 p-6">
-                {/* Take Switcher Header Bar */}
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
-                  <div className="flex items-center gap-2">
-                    <button
-                      disabled={focusTakeIndex <= 0}
-                      onClick={() => setFocusTakeIndex(Math.max(0, focusTakeIndex - 1))}
-                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white text-xs font-semibold transition flex items-center gap-1"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                      Prev Take
-                    </button>
+            {masterLayout === 'slate' && currentFocusTake && (() => {
+              const focusKey = `${currentFocusTake.slate}_${currentFocusTake.take_id}`;
+              const focusActiveCam = selectedCameraAngle[focusKey] || (currentFocusTake.camera_angles && currentFocusTake.camera_angles.length > 0 ? currentFocusTake.camera_angles[0].camera : 'A');
+              const focusActiveAngle = currentFocusTake.camera_angles?.find(ca => ca.camera === focusActiveCam) || (currentFocusTake.camera_angles && currentFocusTake.camera_angles.length > 0 ? currentFocusTake.camera_angles[0] : null);
+              const focusDisplayThumb = focusActiveAngle?.thumbnail_url || currentFocusTake.thumbnail_url;
 
-                    <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 flex items-center gap-2">
-                      <span className="text-xs text-slate-400 font-semibold">Take</span>
-                      <select
-                        value={focusTakeIndex}
-                        onChange={e => setFocusTakeIndex(parseInt(e.target.value))}
-                        className="bg-transparent text-xs font-mono font-bold text-white focus:outline-none cursor-pointer"
+              return (
+                <div className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl space-y-4 p-6">
+                  {/* Take Switcher Header Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                    <div className="flex items-center gap-2">
+                      <button
+                        disabled={focusTakeIndex <= 0}
+                        onClick={() => setFocusTakeIndex(Math.max(0, focusTakeIndex - 1))}
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white text-xs font-semibold transition flex items-center gap-1"
                       >
-                        {filteredTakes.map((ft, i) => (
-                          <option key={i} value={i} className="bg-slate-900 text-white">
-                            {i + 1}. Sc {ft.scene} — {ft.slate} T{ft.take_id} {ft.is_starred ? '⭐' : ''} {ft.is_wild_track ? '🎙️' : ''} {ft.is_vfx ? '✨' : ''}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="text-xs text-slate-500 font-mono">of {filteredTakes.length}</span>
+                        <ChevronLeft className="w-4 h-4" />
+                        Prev Take
+                      </button>
+
+                      <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 flex items-center gap-2">
+                        <span className="text-xs text-slate-400 font-semibold">Take</span>
+                        <select
+                          value={focusTakeIndex}
+                          onChange={e => setFocusTakeIndex(parseInt(e.target.value))}
+                          className="bg-transparent text-xs font-mono font-bold text-white focus:outline-none cursor-pointer"
+                        >
+                          {filteredTakes.map((ft, i) => (
+                            <option key={i} value={i} className="bg-slate-900 text-white">
+                              {i + 1}. Sc {ft.scene} — {ft.slate} T{ft.take_id} {ft.is_starred ? '⭐' : ''} {ft.is_wild_track ? '🎙️' : ''} {ft.is_vfx ? '✨' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-xs text-slate-500 font-mono">of {filteredTakes.length}</span>
+                      </div>
+
+                      <button
+                        disabled={focusTakeIndex >= filteredTakes.length - 1}
+                        onClick={() => setFocusTakeIndex(Math.min(filteredTakes.length - 1, focusTakeIndex + 1))}
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white text-xs font-semibold transition flex items-center gap-1"
+                      >
+                        Next Take
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
                     </div>
 
-                    <button
-                      disabled={focusTakeIndex >= filteredTakes.length - 1}
-                      onClick={() => setFocusTakeIndex(Math.min(filteredTakes.length - 1, focusTakeIndex + 1))}
-                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white text-xs font-semibold transition flex items-center gap-1"
-                    >
-                      Next Take
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {currentFocusTake.is_starred && (
-                      <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2.5 py-1 rounded-lg text-xs font-bold">
-                        ⭐ Circled Take
-                      </span>
-                    )}
-                    {currentFocusTake.is_wild_track && (
-                      <span className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 px-2.5 py-1 rounded-lg text-xs font-bold">
-                        🎙️ Wild Track
-                      </span>
-                    )}
-                    {currentFocusTake.is_vfx && (
-                      <span className="bg-purple-500/20 text-purple-300 border border-purple-500/40 px-2.5 py-1 rounded-lg text-xs font-bold">
-                        ✨ VFX Required
-                      </span>
-                    )}
-                    <button
-                      onClick={() => handleInspectTake(currentFocusTake)}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold transition"
-                    >
-                      Open 3-Axis Diff Drawer
-                    </button>
-                  </div>
-                </div>
-
-                {/* Composed 2-Column Slate Body */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-2">
-                  {/* Left Column: Visual Frame & Storage Notary */}
-                  <div className="space-y-4">
-                    <div 
-                      className="relative bg-black aspect-video rounded-xl overflow-hidden border border-slate-800 group cursor-pointer shadow-lg"
-                      onClick={() => currentFocusTake.thumbnail_url && setEnlargedImage(currentFocusTake.thumbnail_url)}
-                    >
-                      {currentFocusTake.thumbnail_url ? (
-                        <img 
-                          src={currentFocusTake.thumbnail_url} 
-                          alt="Slate Frame" 
-                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950 text-slate-500 p-6">
-                          <Volume2 className="w-12 h-12 mb-3 text-cyan-400/70" />
-                          <span className="text-xs font-mono text-cyan-300 font-bold">Audio Recording Clip</span>
-                          <span className="text-[11px] text-slate-400 font-mono mt-1">{currentFocusTake.sound_cards.join(', ')}</span>
-                        </div>
+                    <div className="flex items-center gap-2">
+                      {currentFocusTake.is_starred && (
+                        <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2.5 py-1 rounded-lg text-xs font-bold">
+                          ⭐ Circled Take
+                        </span>
                       )}
-                      {currentFocusTake.thumbnail_url && (
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
-                          <span className="bg-blue-600 text-white text-xs px-3 py-1 rounded-lg font-semibold shadow">
-                            Click to Enlarge Picture
+                      {currentFocusTake.is_wild_track && (
+                        <span className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 px-2.5 py-1 rounded-lg text-xs font-bold">
+                          🎙️ Wild Track
+                        </span>
+                      )}
+                      {currentFocusTake.is_vfx && (
+                        <span className="bg-purple-500/20 text-purple-300 border border-purple-500/40 px-2.5 py-1 rounded-lg text-xs font-bold">
+                          ✨ VFX Required
+                        </span>
+                      )}
+                      <button
+                        onClick={() => handleInspectTake(currentFocusTake)}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold transition"
+                      >
+                        Open 3-Axis Diff Drawer
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Composed Multi-Angle Slate Body */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-2">
+                    {/* Left Column: Visual Frame with Angle Switcher Tabs & Storage Notary */}
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        {/* Angle Switcher Tabs */}
+                        {currentFocusTake.camera_angles && currentFocusTake.camera_angles.length > 1 && (
+                          <div className="flex items-center gap-1.5 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
+                            {currentFocusTake.camera_angles.map(ca => {
+                              const isSelected = (focusActiveAngle?.camera || 'A') === ca.camera;
+                              return (
+                                <button
+                                  key={ca.camera}
+                                  onClick={() => setSelectedCameraAngle(prev => ({ ...prev, [focusKey]: ca.camera }))}
+                                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-mono font-bold transition flex items-center justify-center gap-1.5 ${
+                                    isSelected
+                                      ? 'bg-blue-600 text-white shadow-lg'
+                                      : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                                  }`}
+                                >
+                                  <Video className="w-3.5 h-3.5" />
+                                  Camera {ca.camera} ({ca.camera_roll})
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <div 
+                          className="relative bg-black aspect-video rounded-xl overflow-hidden border border-slate-800 group cursor-pointer shadow-lg"
+                          onClick={() => focusDisplayThumb && setEnlargedImage(focusDisplayThumb)}
+                        >
+                          {focusDisplayThumb ? (
+                            <img 
+                              src={focusDisplayThumb} 
+                              alt="Slate Frame" 
+                              className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950 text-slate-500 p-6">
+                              <Volume2 className="w-12 h-12 mb-3 text-cyan-400/70" />
+                              <span className="text-xs font-mono text-cyan-300 font-bold">Audio Recording Clip</span>
+                              <span className="text-[11px] text-slate-400 font-mono mt-1">{currentFocusTake.sound_cards?.join(', ')}</span>
+                            </div>
+                          )}
+                          {focusDisplayThumb && (
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                              <span className="bg-blue-600 text-white text-xs px-3 py-1 rounded-lg font-semibold shadow">
+                                Click to Enlarge Camera {focusActiveCam} Frame
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Silverstack Physical Location Card */}
+                      <div className="bg-slate-950 p-4 rounded-xl border border-cyan-500/30 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <HardDrive className="w-4 h-4 text-cyan-400" />
+                            Pomfort Silverstack Notary
+                          </span>
+                          <span className="text-[10px] text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/30 font-mono font-bold">
+                            ✓ Checksum OK
                           </span>
                         </div>
+                        <div className="text-xs font-mono text-slate-300 space-y-1.5 pt-1">
+                          <div>Volumes: <span className="text-white font-bold">{currentFocusTake.storage_volumes?.join(', ') || 'MAG_A_120'}</span></div>
+                          <div>Codec: <span className="text-cyan-300 font-semibold">{currentFocusTake.codec || 'ARRIRAW (13bit, HDE)'}</span></div>
+                          <div>Recorded: <span className="text-slate-200">{currentFocusTake.recording_date || '--'}</span></div>
+                          <div>Camera Cards: <span className="text-white font-bold">{currentFocusTake.camera_cards?.join(', ') || 'N/A'}</span></div>
+                          <div>Sound Rolls: <span className="text-emerald-400 font-bold">{currentFocusTake.sound_cards?.join(', ') || 'N/A'}</span></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Column: Multi-Camera Video Files & Sound Audio Files Tables */}
+                    <div className="lg:col-span-2 space-y-4">
+                      {/* Video Files Matrix */}
+                      <div className="bg-slate-950 p-4 rounded-xl border border-blue-500/20 space-y-3">
+                        <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                          <span className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <Video className="w-4 h-4 text-blue-400" />
+                            Camera Video Files Offloaded ({currentFocusTake.video_files?.length || 0})
+                          </span>
+                          {currentFocusTake.belief.camera?.source_document && (
+                            <button
+                              onClick={() => handleOpenPreviewDoc(currentFocusTake.belief.camera?.source_doc_id, currentFocusTake.belief.camera?.source_document)}
+                              className="text-xs text-purple-400 hover:underline flex items-center gap-1 font-mono"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              ZoeLog
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          {currentFocusTake.video_files?.map((vf, vi) => (
+                            <div key={vi} className="bg-slate-900/80 p-3 rounded-lg border border-slate-800 space-y-1.5 font-mono text-xs">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-[11px]">
+                                    Cam {vf.camera}
+                                  </span>
+                                  <span className="text-white font-bold">{vf.file_name}</span>
+                                </div>
+                                <span className="text-cyan-400 font-bold">{vf.camera_roll}</span>
+                              </div>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-slate-300 pt-1 border-t border-slate-800/60">
+                                <div>Codec: <span className="text-slate-100">{vf.codec}</span></div>
+                                <div>FPS: <span className="text-slate-100">{vf.fps}fps</span></div>
+                                <div>ISO: <span className="text-slate-100">{vf.iso}EI</span></div>
+                                <div>T-Stop: <span className="text-slate-100">{vf.tstop}</span></div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Audio Files & Tracks Matrix */}
+                      <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/20 space-y-3">
+                        <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                          <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <Mic className="w-4 h-4 text-emerald-400" />
+                            Sound WAV Files & Multi-Track Channels ({currentFocusTake.audio_files?.length || 0})
+                          </span>
+                          {currentFocusTake.belief.sound?.source_document && (
+                            <button
+                              onClick={() => handleOpenPreviewDoc(currentFocusTake.belief.sound?.source_doc_id, currentFocusTake.belief.sound?.source_document)}
+                              className="text-xs text-purple-400 hover:underline flex items-center gap-1 font-mono"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              Sound Report
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          {currentFocusTake.audio_files?.map((af, ai) => (
+                            <div key={ai} className="bg-slate-900/80 p-3 rounded-lg border border-slate-800 space-y-2 font-mono text-xs">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="bg-emerald-600 text-white font-bold px-2 py-0.5 rounded text-[11px]">
+                                    WAV
+                                  </span>
+                                  <span className="text-emerald-300 font-bold">{af.file_name}</span>
+                                </div>
+                                <span className="text-emerald-400 font-bold">{af.sound_roll}</span>
+                              </div>
+
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-slate-300">
+                                <div>Start TC: <span className="text-white">{af.timecode_in || '--'}</span></div>
+                                <div>Length: <span className="text-white">{af.duration || '--'}</span></div>
+                                <div>Sample Rate: <span className="text-slate-200">{af.sample_rate || '48kHz'}</span></div>
+                                <div>Bit Depth: <span className="text-slate-200">{af.bit_depth || '24-bit'}</span></div>
+                              </div>
+
+                              {af.tracks && (
+                                <div className="space-y-1 pt-1 border-t border-slate-800/60">
+                                  <span className="text-[10px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Active Channels / Tracks:</span>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {af.tracks.split(',').map((trk, ti) => (
+                                      <span key={ti} className="bg-slate-950 border border-slate-800 text-[10px] text-cyan-300 px-2 py-0.5 rounded font-mono font-medium">
+                                        {trk.trim()}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {af.note && (
+                                <div className="text-[11px] text-amber-300 bg-amber-950/20 p-2 rounded border border-amber-500/20 italic">
+                                  Mixer Note: "{af.note}"
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Script Supervisor Witness */}
+                      {currentFocusTake.belief.script && (
+                        <div className="bg-slate-950 p-4 rounded-xl border border-amber-500/20 space-y-2">
+                          <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                            <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">
+                              Script Supervisor Witness (Scripte Logs)
+                            </span>
+                            {currentFocusTake.belief.script.source_document && (
+                              <button
+                                onClick={() => handleOpenPreviewDoc(currentFocusTake.belief.script?.source_doc_id, currentFocusTake.belief.script?.source_document)}
+                                className="text-xs text-purple-400 hover:underline flex items-center gap-1 font-mono"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                Preview {currentFocusTake.belief.script.source_document}
+                              </button>
+                            )}
+                          </div>
+                          <div className="text-xs font-mono text-slate-300 grid grid-cols-2 gap-3 pt-1">
+                            <div>Timecode: <span className="text-white">{currentFocusTake.belief.script.timecode_in || '--'} → {currentFocusTake.belief.script.timecode_out || '--'}</span></div>
+                            <div>Camera Card: <span className="text-white font-bold">{currentFocusTake.belief.script.camera_roll || '--'}</span></div>
+                            <div className="col-span-2">Notes: <span className="text-slate-200 italic">{currentFocusTake.belief.script.note || 'Take recorded normally without faults.'}</span></div>
+                          </div>
+                        </div>
                       )}
-                    </div>
-
-                    {/* Silverstack Physical Location Card */}
-                    <div className="bg-slate-950 p-4 rounded-xl border border-cyan-500/30 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
-                          <HardDrive className="w-4 h-4 text-cyan-400" />
-                          Pomfort Silverstack Notary
-                        </span>
-                        <span className="text-[10px] text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/30 font-mono font-bold">
-                          ✓ Checksum OK
-                        </span>
-                      </div>
-                      <div className="text-xs font-mono text-slate-300 space-y-1.5 pt-1">
-                        <div>Volume: <span className="text-white font-bold">{currentFocusTake.storage_volumes.join(', ') || 'MAG_A_120'}</span></div>
-                        <div>Codec: <span className="text-cyan-300 font-semibold">{currentFocusTake.codec || 'ARRIRAW (13bit, HDE)'}</span></div>
-                        <div>Recorded: <span className="text-slate-200">{currentFocusTake.recording_date || '--'}</span></div>
-                        <div>Camera Roll: <span className="text-white">{currentFocusTake.camera_cards.join(', ') || 'N/A'}</span></div>
-                        <div>Sound Roll: <span className="text-emerald-400">{currentFocusTake.sound_cards.join(', ') || 'N/A'}</span></div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Column: 3 Department Breakdown Matrix */}
-                  <div className="lg:col-span-2 space-y-3">
-                    {/* 1. Script Department */}
-                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
-                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-                        <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">
-                          1. Script Supervisor (Scripte Logs)
-                        </span>
-                        {currentFocusTake.belief.script?.source_document && (
-                          <button
-                            onClick={() => handleOpenPreviewDoc(currentFocusTake.belief.script?.source_doc_id, currentFocusTake.belief.script?.source_document)}
-                            className="text-xs text-purple-400 hover:underline flex items-center gap-1 font-mono"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            Preview {currentFocusTake.belief.script.source_document}
-                          </button>
-                        )}
-                      </div>
-                      <div className="text-xs font-mono text-slate-300 grid grid-cols-2 gap-3 pt-1">
-                        <div>Timecode: <span className="text-white">{currentFocusTake.belief.script?.timecode_in || '--'} → {currentFocusTake.belief.script?.timecode_out || '--'}</span></div>
-                        <div>Camera Card: <span className="text-white font-bold">{currentFocusTake.belief.script?.camera_roll || '--'}</span></div>
-                        <div className="col-span-2">Notes: <span className="text-slate-200 italic">{currentFocusTake.belief.script?.note || 'Take recorded normally without faults.'}</span></div>
-                      </div>
-                    </div>
-
-                    {/* 2. Camera Department */}
-                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
-                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-                        <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">
-                          2. Camera Department (ZoeLog)
-                        </span>
-                        {currentFocusTake.belief.camera?.source_document && (
-                          <button
-                            onClick={() => handleOpenPreviewDoc(currentFocusTake.belief.camera?.source_doc_id, currentFocusTake.belief.camera?.source_document)}
-                            className="text-xs text-purple-400 hover:underline flex items-center gap-1 font-mono"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            Preview {currentFocusTake.belief.camera.source_document}
-                          </button>
-                        )}
-                      </div>
-                      <div className="text-xs font-mono text-slate-300 grid grid-cols-2 gap-3 pt-1">
-                        <div>Camera Roll: <span className="text-white font-bold">{currentFocusTake.belief.camera?.camera_roll || '--'}</span></div>
-                        <div>Clip Name: <span className="text-white font-bold">{currentFocusTake.belief.camera?.clip_name || '--'}</span></div>
-                        <div>Lens / Stop: <span className="text-slate-200">{currentFocusTake.belief.camera?.lens || 'Standard'} @ {currentFocusTake.belief.camera?.raw_payload?.stop || 'T2.8'}</span></div>
-                        <div>FPS / ISO: <span className="text-slate-200">{currentFocusTake.belief.camera?.fps || 24}fps / {currentFocusTake.belief.camera?.iso || 800}EI</span></div>
-                        <div className="col-span-2">Notes: <span className="text-slate-200 italic">{currentFocusTake.belief.camera?.note || 'No camera defects noted.'}</span></div>
-                      </div>
-                    </div>
-
-                    {/* 3. Sound Department */}
-                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
-                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-                        <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
-                          3. Sound Department (Sound Devices / ALE)
-                        </span>
-                        {currentFocusTake.belief.sound?.source_document && (
-                          <button
-                            onClick={() => handleOpenPreviewDoc(currentFocusTake.belief.sound?.source_doc_id, currentFocusTake.belief.sound?.source_document)}
-                            className="text-xs text-purple-400 hover:underline flex items-center gap-1 font-mono"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            Preview {currentFocusTake.belief.sound.source_document}
-                          </button>
-                        )}
-                      </div>
-                      <div className="text-xs font-mono text-slate-300 grid grid-cols-2 gap-3 pt-1">
-                        <div>Sound Roll: <span className="text-white font-bold">{currentFocusTake.belief.sound?.sound_roll || '--'}</span></div>
-                        <div>Start Timecode: <span className="text-white">{currentFocusTake.belief.sound?.timecode_in || '--'}</span></div>
-                        <div>Tracks: <span className="text-slate-200">{currentFocusTake.belief.sound?.tracks || 'MixL, MixR'}</span></div>
-                        <div>Wild Track: <span className={currentFocusTake.is_wild_track ? 'text-cyan-400 font-bold' : 'text-slate-400'}>{currentFocusTake.is_wild_track ? 'YES (WT)' : 'NO'}</span></div>
-                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </section>
         )}
 

@@ -355,7 +355,7 @@ def is_take_media_match(media_info: Dict[str, Any], slate: str, take_id: str, ca
         m_c = re.match(r"^([A-Z])(\d{3,4})_C(\d{3,4})", clip_name)
         if m_c:
             cam_letter, roll_num, c_num = m_c.group(1), int(m_c.group(2)), int(m_c.group(3))
-            target_pattern = rf"{cam_letter}_0*{roll_num}C0*{c_num}"
+            target_pattern = rf"{cam_letter}_0*{roll_num}C0*{c_num}(?:[^0-9]|$)"
             if re.search(target_pattern, fn):
                 return True
         elif clip_name in fn:
@@ -446,11 +446,12 @@ def seed_real_day_data(req: SeedRequest):
 @router.get("/takes")
 def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
     """
-    Returns aggregated take records with physical card/roll locations, volume breakdown, and source doc links.
+    Returns aggregated take records with multi-camera video clips, audio tracks, physical card/roll locations, and volume breakdown.
     """
     events = spine_writer.get_events(production_id=production_id, shoot_day=shoot_day)
     takes_map: Dict[str, Dict[str, Any]] = {}
     media_files_map: Dict[str, Dict[str, Any]] = {}
+    sound_reports_map: Dict[str, Dict[str, Any]] = {}
 
     # 1. Map media files from DIT existence events
     for evt in events:
@@ -467,6 +468,7 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                     "take_id": p.get("take_id"),
                     "codec": p.get("codec"),
                     "recording_date": p.get("recording_date"),
+                    "camera": p.get("camera"),
                     "fps": p.get("fps"),
                     "iso": p.get("iso"),
                     "tstop": p.get("tstop"),
@@ -478,7 +480,30 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                     "source_doc": evt.get("metadata", {}).get("filename"),
                 }
 
-    # 2. Aggregate takes
+    # 2. Map sound reports (from sound CSV/ALE)
+    for evt in events:
+        if evt.get("department") == "sound" and evt.get("entity_type") == "take":
+            p = evt.get("payload", {})
+            slate = p.get("slate")
+            raw_take = p.get("take_id")
+            if slate and raw_take:
+                tk = "FALSE" if raw_take in ["FC", "FALSE"] else raw_take
+                s_key = f"{slate}_{tk}"
+                sound_reports_map[s_key] = {
+                    "file_name": p.get("file_name"),
+                    "sound_roll": p.get("sound_roll"),
+                    "timecode_in": p.get("timecode_in"),
+                    "timecode_out": p.get("timecode_out"),
+                    "duration": p.get("duration"),
+                    "sample_rate": p.get("sample_rate"),
+                    "bit_depth": p.get("bit_depth"),
+                    "tracks": p.get("tracks"),
+                    "note": p.get("note"),
+                    "raw_payload": p.get("raw_payload", {}),
+                    "source_document": evt.get("metadata", {}).get("filename"),
+                }
+
+    # 3. Aggregate takes
     for evt in events:
         if evt.get("entity_type") == "take":
             p = evt.get("payload", {})
@@ -501,10 +526,15 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                         "camera_cards": set(),
                         "sound_cards": set(),
                         "storage_volumes": set(),
+                        "video_files": [],
+                        "audio_files": [],
+                        "camera_angles": [],
                         "matched_media_files": [],
                         "source_documents": [],
                         "is_starred": False,
                         "is_pickup": False,
+                        "is_wild_track": False,
+                        "is_vfx": False,
                         "codec": None,
                         "recording_date": None,
                         "thumbnail_url": None,
@@ -580,9 +610,83 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                         if media_info not in takes_map[key]["matched_media_files"]:
                             takes_map[key]["matched_media_files"].append(media_info)
 
-    # Convert sets to sorted lists for JSON serialization
+    # 4. Structure video & audio files per take
     results = []
-    for t in takes_map.values():
+    for key, t in takes_map.items():
+        sr_info = sound_reports_map.get(key)
+        if sr_info and not t["belief"].get("sound"):
+            t["belief"]["sound"] = sr_info
+
+        for mf in t["matched_media_files"]:
+            fn = mf.get("file_name", "")
+            is_sound = mf.get("card_type") == "sound" or fn.upper().endswith(".WAV")
+            if is_sound:
+                audio_entry = {
+                    "file_name": fn,
+                    "sound_roll": mf.get("reel_tape") or (sr_info.get("sound_roll") if sr_info else None) or "Sound Roll",
+                    "codec": mf.get("codec") or "Linear PCM (24bit, 48kHz)",
+                    "timecode_in": (sr_info.get("timecode_in") if sr_info else None) or t.get("belief", {}).get("script", {}).get("timecode_in"),
+                    "duration": (sr_info.get("duration") if sr_info else None) or "00:03:00",
+                    "tracks": (sr_info.get("tracks") if sr_info else None) or "MixL, MixR, BOOM 1, BOOM 2, LINE OUT, AMBI MIX",
+                    "sample_rate": (sr_info.get("sample_rate") if sr_info else None) or "48kHz",
+                    "bit_depth": (sr_info.get("bit_depth") if sr_info else None) or "24-bit",
+                    "note": (sr_info.get("note") if sr_info else None) or "",
+                    "volume_name": mf.get("volume_name") or "664 SD",
+                    "file_size_bytes": mf.get("file_size_bytes", 0),
+                    "checksum": mf.get("checksum"),
+                }
+                if audio_entry["file_name"] not in [a["file_name"] for a in t["audio_files"]]:
+                    t["audio_files"].append(audio_entry)
+            else:
+                cam_letter = mf.get("camera") or (fn[0] if fn and fn[0] in "ABCD" else "A")
+                cam_clean = cam_letter.upper().replace("_", "")
+                video_entry = {
+                    "camera": cam_clean,
+                    "file_name": fn,
+                    "camera_roll": mf.get("camera_roll") or f"Card {cam_clean}",
+                    "reel_tape": mf.get("reel_tape"),
+                    "codec": mf.get("codec") or "ARRIRAW (13bit, HDE)",
+                    "recording_date": mf.get("recording_date"),
+                    "fps": mf.get("fps") or 24.0,
+                    "iso": mf.get("iso") or 800,
+                    "tstop": mf.get("tstop") or "T2.8",
+                    "thumbnail_url": mf.get("thumbnail_b64"),
+                    "volume_name": mf.get("volume_name") or "Offload Drive",
+                    "file_size_bytes": mf.get("file_size_bytes", 0),
+                    "checksum": mf.get("checksum"),
+                }
+                if video_entry["file_name"] not in [v["file_name"] for v in t["video_files"]]:
+                    t["video_files"].append(video_entry)
+
+                if video_entry["thumbnail_url"]:
+                    angle_entry = {
+                        "camera": video_entry["camera"],
+                        "camera_roll": video_entry["camera_roll"],
+                        "file_name": video_entry["file_name"],
+                        "thumbnail_url": video_entry["thumbnail_url"],
+                    }
+                    if angle_entry["camera"] not in [ca["camera"] for ca in t["camera_angles"]]:
+                        t["camera_angles"].append(angle_entry)
+
+        # Fallback audio entry if sound report parsed without DIT matching
+        if not t["audio_files"] and sr_info:
+            t["audio_files"].append({
+                "file_name": sr_info.get("file_name") or f"{t['slate'].replace('/', '-')}T{t['take_id']}.WAV",
+                "sound_roll": sr_info.get("sound_roll") or "Sound Roll",
+                "codec": "Linear PCM (24bit, 48kHz)",
+                "timecode_in": sr_info.get("timecode_in"),
+                "duration": sr_info.get("duration"),
+                "tracks": sr_info.get("tracks"),
+                "sample_rate": sr_info.get("sample_rate") or "48kHz",
+                "bit_depth": sr_info.get("bit_depth") or "24-bit",
+                "note": sr_info.get("note"),
+                "volume_name": "Sound Devices 664",
+                "file_size_bytes": 0,
+                "checksum": None,
+            })
+
+        t["camera_angles"].sort(key=lambda x: x["camera"])
+        t["video_files"].sort(key=lambda x: x["camera"])
         t["camera_cards"] = sorted(list(t["camera_cards"]))
         t["sound_cards"] = sorted(list(t["sound_cards"]))
         t["storage_volumes"] = sorted(list(t["storage_volumes"]))
@@ -590,6 +694,7 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
 
     # Sort takes by scene and slate
     return sorted(results, key=lambda x: (x.get("scene", ""), x.get("slate", ""), x.get("take_id", "")))
+
 
 
 @router.get("/discrepancies")

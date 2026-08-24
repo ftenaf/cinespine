@@ -45,6 +45,44 @@ export interface Discrepancy {
   created_at: string;
 }
 
+export interface VideoFileInfo {
+  camera: string;
+  file_name: string;
+  camera_roll?: string;
+  reel_tape?: string;
+  codec?: string;
+  recording_date?: string;
+  fps?: number;
+  iso?: number;
+  tstop?: string;
+  thumbnail_url?: string;
+  volume_name?: string;
+  file_size_bytes?: number;
+  checksum?: string;
+}
+
+export interface AudioFileInfo {
+  file_name: string;
+  sound_roll?: string;
+  codec?: string;
+  timecode_in?: string;
+  duration?: string;
+  tracks?: string;
+  sample_rate?: string;
+  bit_depth?: string;
+  note?: string;
+  volume_name?: string;
+  file_size_bytes?: number;
+  checksum?: string;
+}
+
+export interface CameraAngle {
+  camera: string;
+  camera_roll?: string;
+  file_name: string;
+  thumbnail_url?: string;
+}
+
 export interface TakeRecord {
   scene: string;
   slate: string;
@@ -62,6 +100,9 @@ export interface TakeRecord {
   camera_cards: string[];
   sound_cards: string[];
   storage_volumes: string[];
+  video_files: VideoFileInfo[];
+  audio_files: AudioFileInfo[];
+  camera_angles: CameraAngle[];
   codec?: string;
   recording_date?: string;
   thumbnail_url?: string;
@@ -77,6 +118,7 @@ export interface TakeRecord {
     volume_name?: string;
     file_size_bytes?: number;
     checksum?: string;
+    thumbnail_b64?: string;
   }>;
   source_documents: Array<{
     doc_id?: string;

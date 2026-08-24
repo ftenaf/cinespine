@@ -21,6 +21,10 @@ class ParsedSoundRecord:
     sound_roll: Optional[str]
     timecode_in: Optional[str]
     timecode_out: Optional[str]
+    file_name: Optional[str] = None
+    duration: Optional[str] = None
+    sample_rate: Optional[str] = None
+    bit_depth: Optional[str] = None
     camera_roll: Optional[str] = None
     tracks: Optional[str] = None
     tape: Optional[str] = None
@@ -31,6 +35,7 @@ class ParsedSoundRecord:
     is_vfx: bool = False
     note: Optional[str] = None
     raw_payload: Dict[str, Any] = field(default_factory=dict)
+
 
 
 @dataclass
