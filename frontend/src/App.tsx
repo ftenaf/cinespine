@@ -5,12 +5,13 @@ import {
   FileText, Clapperboard, Calendar, Search,
   HardDrive, Eye, FileCode, Check, AlertCircle, Trash2,
   Image as ImageIcon, ChevronLeft, ChevronRight, LayoutGrid,
-  Volume2, Maximize2, ExternalLink, Video, Mic
+  Volume2, Maximize2, ExternalLink, Video, Mic, MapPin
 } from 'lucide-react';
-import { TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument } from './types';
+import { TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, SequenceRecord } from './types';
 import { 
   fetchTakes, fetchDiscrepancies, fetchProductions, fetchDocuments,
-  fetchDocumentContent, uploadDocument, uploadFile, askAssistant, seedDemoDay 
+  fetchDocumentContent, uploadDocument, uploadFile, askAssistant, seedDemoDay,
+  fetchSequences
 } from './api';
 
 export default function App() {
@@ -20,10 +21,11 @@ export default function App() {
   const [takes, setTakes] = useState<TakeRecord[]>([]);
   const [discrepancies, setDiscrepancies] = useState<Discrepancy[]>([]);
   const [documents, setDocuments] = useState<SourceDocumentSummary[]>([]);
+  const [sequences, setSequences] = useState<SequenceRecord[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Active View & Filters
-  const [activeTab, setActiveTab] = useState<'master' | 'scenes' | 'discrepancies' | 'documents'>('master');
+  const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents'>('master');
   const [masterLayout, setMasterLayout] = useState<'grid' | 'slate'>('grid');
   const [focusTakeIndex, setFocusTakeIndex] = useState<number>(0);
   const [selectedSceneFilter, setSelectedSceneFilter] = useState<string>('ALL');
@@ -70,14 +72,16 @@ export default function App() {
   const loadSpineData = async () => {
     setLoading(true);
     try {
-      const [t, d, docs] = await Promise.all([
+      const [t, d, docs, seqs] = await Promise.all([
         fetchTakes(selectedProductionId, selectedDay),
         fetchDiscrepancies(selectedProductionId, selectedDay),
         fetchDocuments(selectedProductionId, selectedDay),
+        fetchSequences(selectedProductionId, selectedDay),
       ]);
       setTakes(t);
       setDiscrepancies(d);
       setDocuments(docs);
+      setSequences(seqs);
     } catch (e) {
       console.error(e);
     } finally {
@@ -254,6 +258,24 @@ export default function App() {
     });
   }, [takes, discrepancies, searchQuery, selectedSceneFilter, filterCircledOnly, filterDiscrepancyOnly, filterWildTracksOnly, filterVfxOnly]);
 
+  const filteredSequences = useMemo(() => {
+    return sequences.filter(s => {
+      if (filterWildTracksOnly && !s.is_wild_track) return false;
+      if (filterVfxOnly && !s.is_vfx) return false;
+      if (filterDiscrepancyOnly && !s.has_discrepancy) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const matchesSeq = s.sequence.toLowerCase().includes(q);
+        const matchesLoc = s.location.toLowerCase().includes(q);
+        const matchesDesc = s.description.toLowerCase().includes(q);
+        const matchesCards = s.cards.some(c => c.toLowerCase().includes(q));
+        const matchesTakes = s.takes.some(tk => tk.toLowerCase().includes(q));
+        return matchesSeq || matchesLoc || matchesDesc || matchesCards || matchesTakes;
+      }
+      return true;
+    });
+  }, [sequences, filterWildTracksOnly, filterVfxOnly, filterDiscrepancyOnly, searchQuery]);
+
   const currentFocusTake = filteredTakes[focusTakeIndex] || filteredTakes[0] || null;
 
   return (
@@ -361,6 +383,18 @@ export default function App() {
             >
               <LayoutGrid className="w-4 h-4" />
               Composed Master Sheet ({takes.length})
+            </button>
+
+            <button
+              onClick={() => setActiveTab('sequences')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                activeTab === 'sequences'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+              }`}
+            >
+              <Film className="w-4 h-4 text-cyan-400" />
+              Sequences Log Matrix ({sequences.length})
             </button>
 
             <button
@@ -1075,6 +1109,270 @@ export default function App() {
                 </div>
               );
             })()}
+          </section>
+        )}
+
+        {/* TAB: SEQUENCES LOG MATRIX */}
+        {activeTab === 'sequences' && (
+          <section className="bg-slate-900/40 border border-slate-800 rounded-2xl overflow-hidden shadow-xl space-y-0">
+            <div className="px-6 py-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4 bg-slate-900/70">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Film className="w-4 h-4 text-cyan-400" />
+                  Sequence Log & Multi-Department Witness Matrix
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Comprehensive sequence list cross-referenced with Location, Script description, Camera A/B/C logs, Sound reports, and Silverstack DIT checksums.
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-mono text-cyan-300 bg-cyan-950/40 border border-cyan-500/30 px-2.5 py-1 rounded-lg">
+                  {filteredSequences.length} Sequences Recorded
+                </span>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 uppercase font-mono text-[10px] tracking-wider sticky top-0 z-10">
+                  <tr>
+                    <th className="px-3.5 py-3 whitespace-nowrap">SEQUENCE</th>
+                    <th className="px-3.5 py-3 whitespace-nowrap">LOCATION</th>
+                    <th className="px-3.5 py-3 min-w-[220px]">DESCRIPTION</th>
+                    <th className="px-3 py-3 whitespace-nowrap">SHOOTING DAY</th>
+                    <th className="px-3 py-3 whitespace-nowrap">DATE</th>
+                    <th className="px-3.5 py-3 min-w-[140px]">CARDS</th>
+                    <th className="px-3 py-3 whitespace-nowrap">SCRIPTLOG FILE</th>
+                    <th className="px-3 py-3 whitespace-nowrap">CAM A LOG</th>
+                    <th className="px-3 py-3 whitespace-nowrap">CAM B LOG</th>
+                    <th className="px-3 py-3 whitespace-nowrap">CAM C LOG</th>
+                    <th className="px-3 py-3 whitespace-nowrap">SOUND LOG</th>
+                    <th className="px-3 py-3 whitespace-nowrap">SILVERSTACK THUMBNAIL</th>
+                    <th className="px-3.5 py-3 whitespace-nowrap">STATUS & FLAGS</th>
+                    <th className="px-3.5 py-3 min-w-[180px]">COMMENTS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/70 font-sans">
+                  {filteredSequences.length === 0 ? (
+                    <tr>
+                      <td colSpan={14} className="px-4 py-16 text-center text-slate-500">
+                        No sequence records found matching filter criteria.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredSequences.map((seq, idx) => (
+                      <tr 
+                        key={idx} 
+                        className={`hover:bg-slate-800/40 transition duration-150 ${
+                          seq.has_discrepancy ? 'bg-red-950/10' : idx % 2 === 0 ? 'bg-slate-950/30' : 'bg-transparent'
+                        }`}
+                      >
+                        {/* 1. SEQUENCE */}
+                        <td className="px-3.5 py-3 align-top whitespace-nowrap">
+                          <div className="space-y-1">
+                            <button
+                              onClick={() => {
+                                setSelectedSceneFilter(seq.sequence);
+                                setActiveTab('master');
+                              }}
+                              className="font-mono text-xs font-bold text-cyan-300 hover:text-white hover:underline flex items-center gap-1.5"
+                              title="Click to view all takes for this sequence in Master Sheet"
+                            >
+                              <span className="bg-cyan-950/60 border border-cyan-500/40 px-2 py-0.5 rounded text-cyan-300">
+                                {seq.sequence}
+                              </span>
+                              <ExternalLink className="w-3 h-3 text-cyan-400/70" />
+                            </button>
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              {seq.takes_count} {seq.takes_count === 1 ? 'take' : 'takes'}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* 2. LOCATION */}
+                        <td className="px-3.5 py-3 align-top">
+                          <div className="flex items-start gap-1.5 font-medium text-amber-300/90 text-xs">
+                            <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                            <span>{seq.location}</span>
+                          </div>
+                        </td>
+
+                        {/* 3. DESCRIPTION */}
+                        <td className="px-3.5 py-3 align-top">
+                          <div className="text-slate-200 text-xs leading-relaxed max-w-sm">
+                            {seq.description}
+                          </div>
+                        </td>
+
+                        {/* 4. SHOOTING-DAY */}
+                        <td className="px-3 py-3 align-top whitespace-nowrap font-mono text-xs text-slate-300">
+                          <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded w-fit">
+                            <Calendar className="w-3 h-3 text-blue-400" />
+                            {seq.shoot_day}
+                          </div>
+                        </td>
+
+                        {/* 5. DATE */}
+                        <td className="px-3 py-3 align-top whitespace-nowrap font-mono text-xs text-slate-400">
+                          {seq.date}
+                        </td>
+
+                        {/* 6. CARDS */}
+                        <td className="px-3.5 py-3 align-top">
+                          <div className="flex flex-wrap gap-1 max-w-xs font-mono text-[10px]">
+                            {seq.camera_cards?.map((card, ci) => (
+                              <span key={ci} className="bg-blue-950/60 border border-blue-500/30 text-blue-300 px-1.5 py-0.5 rounded">
+                                {card}
+                              </span>
+                            ))}
+                            {seq.sound_cards?.map((card, si) => (
+                              <span key={si} className="bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 px-1.5 py-0.5 rounded">
+                                {card}
+                              </span>
+                            ))}
+                            {(!seq.camera_cards || seq.camera_cards.length === 0) && (!seq.sound_cards || seq.sound_cards.length === 0) && (
+                              <span className="text-slate-600">--</span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* 7. SCRIPTLOG-FILE */}
+                        <td className="px-3 py-3 align-top whitespace-nowrap">
+                          {seq.script_log_doc ? (
+                            <button
+                              onClick={() => handleOpenPreviewDoc(seq.script_log_doc?.doc_id, seq.script_log_doc?.filename)}
+                              className="text-[11px] font-mono text-purple-300 hover:text-white bg-purple-950/40 hover:bg-purple-900/50 border border-purple-500/30 px-2 py-1 rounded flex items-center gap-1.5 transition"
+                              title={`Preview ${seq.script_log_doc.filename}`}
+                            >
+                              <Eye className="w-3 h-3 text-purple-400" />
+                              <span className="truncate max-w-[130px]">{seq.script_log_doc.filename}</span>
+                            </button>
+                          ) : (
+                            <span className="text-slate-600 font-mono text-[11px]">--</span>
+                          )}
+                        </td>
+
+                        {/* 8. CAMERAA LOG-FILE */}
+                        <td className="px-3 py-3 align-top whitespace-nowrap">
+                          {seq.camera_a_doc ? (
+                            <button
+                              onClick={() => handleOpenPreviewDoc(seq.camera_a_doc?.doc_id, seq.camera_a_doc?.filename)}
+                              className="text-[11px] font-mono text-blue-300 hover:text-white bg-blue-950/40 hover:bg-blue-900/50 border border-blue-500/30 px-2 py-1 rounded flex items-center gap-1.5 transition"
+                              title={`Preview ${seq.camera_a_doc.filename}`}
+                            >
+                              <Eye className="w-3 h-3 text-blue-400" />
+                              <span className="truncate max-w-[130px]">{seq.camera_a_doc.filename}</span>
+                            </button>
+                          ) : (
+                            <span className="text-slate-600 font-mono text-[11px]">--</span>
+                          )}
+                        </td>
+
+                        {/* 9. CAMERAB LOG-FILE */}
+                        <td className="px-3 py-3 align-top whitespace-nowrap">
+                          {seq.camera_b_doc ? (
+                            <button
+                              onClick={() => handleOpenPreviewDoc(seq.camera_b_doc?.doc_id, seq.camera_b_doc?.filename)}
+                              className="text-[11px] font-mono text-blue-300 hover:text-white bg-blue-950/40 hover:bg-blue-900/50 border border-blue-500/30 px-2 py-1 rounded flex items-center gap-1.5 transition"
+                              title={`Preview ${seq.camera_b_doc.filename}`}
+                            >
+                              <Eye className="w-3 h-3 text-blue-400" />
+                              <span className="truncate max-w-[130px]">{seq.camera_b_doc.filename}</span>
+                            </button>
+                          ) : (
+                            <span className="text-slate-600 font-mono text-[11px]">--</span>
+                          )}
+                        </td>
+
+                        {/* 10. CAMERAC LOG-FILE */}
+                        <td className="px-3 py-3 align-top whitespace-nowrap">
+                          {seq.camera_c_doc ? (
+                            <button
+                              onClick={() => handleOpenPreviewDoc(seq.camera_c_doc?.doc_id, seq.camera_c_doc?.filename)}
+                              className="text-[11px] font-mono text-blue-300 hover:text-white bg-blue-950/40 hover:bg-blue-900/50 border border-blue-500/30 px-2 py-1 rounded flex items-center gap-1.5 transition"
+                              title={`Preview ${seq.camera_c_doc.filename}`}
+                            >
+                              <Eye className="w-3 h-3 text-blue-400" />
+                              <span className="truncate max-w-[130px]">{seq.camera_c_doc.filename}</span>
+                            </button>
+                          ) : (
+                            <span className="text-slate-600 font-mono text-[11px]">--</span>
+                          )}
+                        </td>
+
+                        {/* 11. SOUND-LOG-FILE */}
+                        <td className="px-3 py-3 align-top whitespace-nowrap">
+                          {seq.sound_log_doc ? (
+                            <button
+                              onClick={() => handleOpenPreviewDoc(seq.sound_log_doc?.doc_id, seq.sound_log_doc?.filename)}
+                              className="text-[11px] font-mono text-emerald-300 hover:text-white bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/30 px-2 py-1 rounded flex items-center gap-1.5 transition"
+                              title={`Preview ${seq.sound_log_doc.filename}`}
+                            >
+                              <Eye className="w-3 h-3 text-emerald-400" />
+                              <span className="truncate max-w-[130px]">{seq.sound_log_doc.filename}</span>
+                            </button>
+                          ) : (
+                            <span className="text-slate-600 font-mono text-[11px]">--</span>
+                          )}
+                        </td>
+
+                        {/* 12. SILVERSTACK THUMBNAIL-FILE */}
+                        <td className="px-3 py-3 align-top whitespace-nowrap">
+                          {seq.silverstack_thumbnail_doc ? (
+                            <button
+                              onClick={() => handleOpenPreviewDoc(seq.silverstack_thumbnail_doc?.doc_id, seq.silverstack_thumbnail_doc?.filename)}
+                              className="text-[11px] font-mono text-cyan-300 hover:text-white bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/30 px-2 py-1 rounded flex items-center gap-1.5 transition"
+                              title={`Preview ${seq.silverstack_thumbnail_doc.filename}`}
+                            >
+                              <Eye className="w-3 h-3 text-cyan-400" />
+                              <span className="truncate max-w-[140px]">{seq.silverstack_thumbnail_doc.filename}</span>
+                            </button>
+                          ) : (
+                            <span className="text-slate-600 font-mono text-[11px]">--</span>
+                          )}
+                        </td>
+
+                        {/* 13. STATUS & FLAGS (Discrepancy, WT, VFX) */}
+                        <td className="px-3.5 py-3 align-top whitespace-nowrap">
+                          <div className="flex flex-col gap-1">
+                            {seq.has_discrepancy ? (
+                              <span className="bg-red-500/20 border border-red-500/40 text-red-300 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 w-fit">
+                                <AlertCircle className="w-3 h-3 text-red-400" />
+                                Discrepancy
+                              </span>
+                            ) : (
+                              <span className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1 w-fit">
+                                <Check className="w-3 h-3 text-emerald-400" />
+                                Reconciled
+                              </span>
+                            )}
+                            <div className="flex items-center gap-1">
+                              {seq.is_wild_track && (
+                                <span className="bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 px-1.5 py-0.5 rounded text-[10px] font-bold font-mono">
+                                  🎙️ WT
+                                </span>
+                              )}
+                              {seq.is_vfx && (
+                                <span className="bg-purple-500/20 border border-purple-500/40 text-purple-300 px-1.5 py-0.5 rounded text-[10px] font-bold font-mono">
+                                  ✨ VFX
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* 14. COMMENTS */}
+                        <td className="px-3.5 py-3 align-top">
+                          <div className="text-slate-300 text-xs italic max-w-xs leading-relaxed">
+                            "{seq.comments}"
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </section>
         )}
 

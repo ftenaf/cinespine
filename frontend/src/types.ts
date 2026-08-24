@@ -130,3 +130,33 @@ export interface TakeRecord {
   is_wild_track?: boolean;
   is_vfx?: boolean;
 }
+
+export interface DocumentRef {
+  filename: string;
+  doc_id: string;
+}
+
+export interface SequenceRecord {
+  sequence: string;
+  location: string;
+  description: string;
+  shoot_day: string;
+  date: string;
+  cards: string[];
+  camera_cards: string[];
+  sound_cards: string[];
+  script_log_doc?: DocumentRef | null;
+  camera_a_doc?: DocumentRef | null;
+  camera_b_doc?: DocumentRef | null;
+  camera_c_doc?: DocumentRef | null;
+  sound_log_doc?: DocumentRef | null;
+  silverstack_thumbnail_doc?: DocumentRef | null;
+  silverstack_volume_doc?: DocumentRef | null;
+  comments: string;
+  has_discrepancy: boolean;
+  is_wild_track: boolean;
+  is_vfx: boolean;
+  takes_count: number;
+  takes: string[];
+}
+

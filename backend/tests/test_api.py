@@ -153,4 +153,31 @@ def test_api_seed_endpoint(client):
     assert "MixL" in t27_7_1["audio_files"][0]["tracks"]
 
 
+def test_api_sequences_endpoint(client):
+    client.post("/api/seed", json={"production_id": "DEMO_PRODUCTION_SEQ_TEST", "shoot_day": "31"})
+
+    seq_res = client.get("/api/sequences?production_id=DEMO_PRODUCTION_SEQ_TEST&shoot_day=31")
+    assert seq_res.status_code == 200
+    seqs = seq_res.json()
+    assert len(seqs) > 0
+
+    # Verify Scene 27 sequence summary
+    seq27 = next((s for s in seqs if s["sequence"] == "27"), None)
+    assert seq27 is not None
+    assert "ORGAN" in seq27["location"]
+    assert "LEAD plays" in seq27["description"]
+    assert len(seq27["camera_cards"]) > 0
+    assert seq27["script_log_doc"] is not None
+    assert "TCLog" in seq27["script_log_doc"]["filename"] or "Editor" in seq27["script_log_doc"]["filename"]
+    assert seq27["camera_a_doc"] is not None
+    assert "CAM_A" in seq27["camera_a_doc"]["filename"]
+    assert seq27["silverstack_thumbnail_doc"] is not None
+    assert "Thumbnail" in seq27["silverstack_thumbnail_doc"]["filename"]
+
+    # Verify Wild Track detection
+    seq_wt = next((s for s in seqs if s["is_wild_track"]), None)
+    assert seq_wt is not None
+
+
+
 

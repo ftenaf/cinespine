@@ -100,3 +100,10 @@ export async function seedDemoDay(productionId: string, shootDay: string): Promi
   return res.json();
 }
 
+export async function fetchSequences(productionId: string, shootDay: string): Promise<import('./types').SequenceRecord[]> {
+  const res = await fetch(`${API_BASE}/sequences?production_id=${productionId}&shoot_day=${shootDay}`);
+  if (!res.ok) throw new Error('Failed to fetch sequences');
+  return res.json();
+}
+
+

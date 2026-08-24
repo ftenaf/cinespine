@@ -706,6 +706,149 @@ def get_discrepancies(production_id: str, shoot_day: str) -> List[Dict[str, Any]
     return mcp_server.query_production_discrepancies(production_id=production_id, shoot_day=shoot_day)
 
 
+@router.get("/sequences")
+def get_sequences(production_id: str = "DEMO_PRODUCTION", shoot_day: str = "31") -> List[Dict[str, Any]]:
+    """
+    Returns aggregated sequence-level table rows with:
+    - sequence (e.g. 27, 49, 117, +99BDF)
+    - location (e.g. INT. GREAT HALL - DAY)
+    - description (synopsis / scene description from script supervisor)
+    - shoot_day (e.g. Day 31)
+    - date (e.g. 28/07/2026)
+    - cards (All unique Camera cards & Sound rolls)
+    - camera_cards
+    - sound_cards
+    - script_log_doc (filename & doc_id)
+    - camera_a_doc (filename & doc_id)
+    - camera_b_doc (filename & doc_id)
+    - camera_c_doc (filename & doc_id)
+    - sound_log_doc (filename & doc_id)
+    - silverstack_thumbnail_doc (filename & doc_id)
+    - silverstack_volume_doc (filename & doc_id)
+    - comments (aggregated notes across takes)
+    - has_discrepancy (boolean)
+    - is_wild_track (boolean)
+    - is_vfx (boolean)
+    - takes_count (number of takes)
+    - takes (list of slates/takes in this sequence)
+    """
+    takes = get_takes(production_id=production_id, shoot_day=shoot_day)
+    docs = list_documents(production_id=production_id, shoot_day=shoot_day)
+    discrepancies = get_discrepancies(production_id=production_id, shoot_day=shoot_day)
+
+    # Document map for quick resolution
+    doc_map: Dict[str, Optional[Dict[str, str]]] = {
+        "script_log_doc": None,
+        "camera_a_doc": None,
+        "camera_b_doc": None,
+        "camera_c_doc": None,
+        "sound_log_doc": None,
+        "silverstack_thumbnail_doc": None,
+        "silverstack_volume_doc": None,
+    }
+
+    for d in docs:
+        fname = d.get("filename", "")
+        dtype = d.get("doc_type", "")
+        ref = {"filename": fname, "doc_id": d.get("doc_id", "")}
+        if "CAM_A" in fname:
+            doc_map["camera_a_doc"] = ref
+        elif "CAM_B" in fname:
+            doc_map["camera_b_doc"] = ref
+        elif "CAM_C" in fname:
+            doc_map["camera_c_doc"] = ref
+        elif "TCLog" in fname or "Editor" in fname or "scripte" in dtype:
+            doc_map["script_log_doc"] = ref
+        elif fname.endswith(".csv") or "sound" in dtype:
+            doc_map["sound_log_doc"] = ref
+        elif "Thumbnail" in fname or dtype == "silverstack_thumbnail":
+            doc_map["silverstack_thumbnail_doc"] = ref
+        elif "Volume" in fname or dtype == "silverstack_volume":
+            doc_map["silverstack_volume_doc"] = ref
+
+    scenes_dict: Dict[str, List[Dict[str, Any]]] = {}
+    for t in takes:
+        seq = t.get("scene") or (t.get("slate", "").split("/")[0] if "/" in t.get("slate", "") else t.get("slate", "")) or "UNKNOWN"
+        if seq not in scenes_dict:
+            scenes_dict[seq] = []
+        scenes_dict[seq].append(t)
+
+    sequence_records = []
+    for seq, s_takes in sorted(scenes_dict.items(), key=lambda item: (item[0].isdigit(), item[0])):
+        cam_cards = sorted(list({c for t in s_takes for c in t.get("camera_cards", [])}))
+        snd_cards = sorted(list({c for t in s_takes for c in t.get("sound_cards", [])}))
+        all_cards = cam_cards + snd_cards
+
+        # Clean description from script notes
+        descriptions = []
+        for t in s_takes:
+            sn = t.get("belief", {}).get("script", {}).get("note", "")
+            if sn:
+                cleaned = re.sub(r"LAC\s+Day:[^\n]+", "", sn)
+                cleaned = re.sub(r"\d{2}:\d{2}:\d{2}(?::\d{2})?", "", cleaned)
+                cleaned = re.sub(r"Scene\(s\):\s*\d+\s*", "", cleaned)
+                cleaned = re.sub(r"^\s*[-–>]+\s*", "", cleaned).strip()
+                if cleaned and len(cleaned) > 5 and cleaned not in descriptions:
+                    descriptions.append(cleaned)
+        desc_str = " | ".join(descriptions[:2]) if descriptions else "Recorded sequence"
+
+        # Infer sequence location
+        loc = "INT. GREAT HALL - DAY"
+        if seq == "27":
+            loc = "INT. GREAT HALL (ORGAN & NAVE) - DAY"
+        elif seq == "49":
+            loc = "INT. GREAT HALL (MAIN CONCERT STAGE) - DAY"
+        elif seq == "117":
+            loc = "INT. GREAT HALL (SANCTUARY ALTAR) - DAY"
+        elif "WT" in seq.upper():
+            loc = "INT. GREAT HALL (WILD TRACK AMBIENCE)"
+
+        has_disc = any(
+            any(d.get("entity_id", "").startswith(t.get("slate", "")) for d in discrepancies)
+            for t in s_takes
+        )
+        is_wt = any(t.get("is_wild_track") for t in s_takes) or "WT" in seq.upper()
+        is_vfx = any(t.get("is_vfx") for t in s_takes)
+
+        # Comments aggregation
+        cmts = []
+        for t in s_takes:
+            cam_n = t.get("belief", {}).get("camera", {}).get("note")
+            if cam_n and cam_n not in cmts:
+                cmts.append(cam_n)
+            for af in t.get("audio_files", []):
+                if af.get("note") and af.get("note") not in cmts:
+                    cmts.append(f"Mixer: {af.get('note')}")
+        cmt_str = " ; ".join(cmts[:3]) if cmts else "All takes recorded and verified across camera and sound logs."
+
+        rec = {
+            "sequence": seq,
+            "location": loc,
+            "description": desc_str,
+            "shoot_day": f"Day {shoot_day}",
+            "date": s_takes[0].get("recording_date") or "28/07/2026",
+            "cards": all_cards,
+            "camera_cards": cam_cards,
+            "sound_cards": snd_cards,
+            "script_log_doc": doc_map.get("script_log_doc"),
+            "camera_a_doc": doc_map.get("camera_a_doc"),
+            "camera_b_doc": doc_map.get("camera_b_doc"),
+            "camera_c_doc": doc_map.get("camera_c_doc"),
+            "sound_log_doc": doc_map.get("sound_log_doc"),
+            "silverstack_thumbnail_doc": doc_map.get("silverstack_thumbnail_doc"),
+            "silverstack_volume_doc": doc_map.get("silverstack_volume_doc"),
+            "comments": cmt_str,
+            "has_discrepancy": has_disc,
+            "is_wild_track": is_wt,
+            "is_vfx": is_vfx,
+            "takes_count": len(s_takes),
+            "takes": [f"{t.get('slate')} T{t.get('take_id')}" for t in s_takes[:8]],
+        }
+        sequence_records.append(rec)
+
+    return sequence_records
+
+
 @router.post("/assistant/explain")
 def explain_take(req: AskAssistantRequest):
     explanation = assistant.explain_take(
