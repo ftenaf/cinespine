@@ -49,13 +49,16 @@ class TestRealPDFExamples:
         assert wt_records[0].is_wild_track is True
 
     def test_parse_real_zoelog_camera_pdf(self):
-        cam_path = os.path.join(EXAMPLES_DIR, "DemoProduction-2026-7-28_CAM_A.pdf")
-        with open(cam_path, "rb") as f:
-            text = extract_text_from_pdf(f.read())
-        
-        records = parse_zoelog_camera_text(text)
-        assert len(records) > 0
-        assert records[0].camera_roll == "A120"
+        for cam, expected_roll in [("CAM_A", "A120"), ("CAM_B", "B039"), ("CAM_C", "C005")]:
+            cam_path = os.path.join(EXAMPLES_DIR, f"DemoProduction-2026-7-28_{cam}.pdf")
+            with open(cam_path, "rb") as f:
+                text = extract_text_from_pdf(f.read())
+            
+            records = parse_zoelog_camera_text(text)
+            assert len(records) > 0
+            rolls = {r.camera_roll for r in records}
+            assert expected_roll in rolls
+            assert records[0].clip_name is not None
 
     def test_parse_real_silverstack_volume_pdf(self):
         vol_path = os.path.join(EXAMPLES_DIR, "Volume-664 SD-20260728-1927.pdf")

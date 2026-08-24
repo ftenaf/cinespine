@@ -39,7 +39,8 @@ def extract_text_from_pdf(pdf_bytes_or_file) -> str:
 
 def parse_zoelog_camera_text(text: str) -> List[ParsedCameraRecord]:
     """
-    Parses ZoeLog camera report text into normalized camera records.
+    Parses ZoeLog camera report text (e.g. DemoProduction-2026-7-28_CAM_A.pdf) into normalized camera records.
+    Captures roll, magazine, camera model, clip name, lens, stop, FPS, shutter, ISO, VFX, and technical notes.
     """
     if not text or not text.strip():
         raise ParserFailureError("Empty ZoeLog text")
@@ -48,50 +49,121 @@ def parse_zoelog_camera_text(text: str) -> List[ParsedCameraRecord]:
     lines = text.strip().splitlines()
 
     current_roll = None
+    current_camera = "Arri Alexa 35"
+    current_mag = None
     current_slate = None
+    current_lens = None
+    current_stop = None
     current_fps = 24.0
     current_iso = 800
-    current_lens = None
+    current_shutter = "172.8"
+    current_notes = None
 
     for line in lines:
         cleaned = line.strip()
-        if not cleaned:
+        if (
+            not cleaned
+            or "La DemoProduction Camera Report" in cleaned
+            or "Generated using ZoeLog" in cleaned
+            or "zoelog.io" in cleaned
+            or "Page " in cleaned
+            or "SCENE TAKE CLIP" in cleaned
+            or "Continued on next page" in cleaned
+        ):
             continue
 
-        # 1. Match Roll header: ROLL A120 or ROLLA120
-        roll_match = re.search(r"ROLL\s*([A-Z]_?0*\d+)", cleaned, re.IGNORECASE)
-        if roll_match:
-            current_roll = normalize_camera_roll(roll_match.group(1))
+        # 1. Match Roll / Camera / Magazine header
+        # e.g.: ROLLA120 DATE28 Jul 2026 CAMERAArri Alexa 35 MAGAZINE #5 or ROLL B039
+        roll_m = re.search(r"ROLL\s*([A-Z]\d{3})", cleaned)
+        if roll_m:
+            current_roll = normalize_camera_roll(roll_m.group(1))
+            mag_m = re.search(r"MAGAZINE\s*(#[A-Za-z0-9]+)", cleaned)
+            if mag_m:
+                current_mag = mag_m.group(1)
+            cam_m = re.search(r"CAMERA\s*([A-Za-z0-9 ]+?)(?:MAGAZINE|$)", cleaned)
+            if cam_m:
+                current_camera = cam_m.group(1).strip()
+            continue
 
-        # 2. Match Scene / Setup header: 27/7 Lens(...) FPS24fps ISO800EI
-        scene_match = re.search(r"^(\d+[A-Z]?/\d+)", cleaned)
-        if scene_match:
-            current_slate = normalize_slate(scene_match.group(1))
+        # 2. Match Scene / Setup Header
+        # e.g.: 27/7 Lens(Cooke Anamorphic/i 50mm) StopF2 7/10 Color Temp6000K FPS24fps
+        # or: 27/7 Lens65mmStopT2.8?Color Temp6000KFPS24fpsShutter172.8?ISO800EI1 001
+        scene_m = re.search(r"^(\d+[A-Z]?/\d+)", cleaned)
+        if scene_m:
+            current_slate = normalize_slate(scene_m.group(1))
+            current_notes = None
 
             # Extract Lens
-            lens_match = re.search(r"Lens\((.*?)\)", cleaned)
-            if lens_match:
-                current_lens = lens_match.group(1)
+            lens_m = re.search(r"Lens(?:\((.*?)\)|([0-9A-Za-z/ ]+?)(?:Stop|Filters|Color|FPS|$))", cleaned)
+            if lens_m:
+                current_lens = (lens_m.group(1) or lens_m.group(2) or "").strip()
+
+            # Extract Stop
+            stop_m = re.search(r"Stop([A-Za-z0-9 ./?]+?)(?:Color|FPS|Shutter|Filters|$)", cleaned)
+            if stop_m:
+                current_stop = stop_m.group(1).strip().replace("?", "")
 
             # Extract FPS
-            fps_match = re.search(r"FPS\s*(\d+(?:\.\d+)?)fps", cleaned, re.IGNORECASE)
-            if fps_match:
-                current_fps = float(fps_match.group(1))
+            fps_m = re.search(r"FPS\s*(\d+(?:\.\d+)?)fps", cleaned, re.IGNORECASE)
+            if fps_m:
+                current_fps = float(fps_m.group(1))
 
             # Extract ISO
-            iso_match = re.search(r"ISO\s*(\d+)", cleaned, re.IGNORECASE)
-            if iso_match:
-                current_iso = int(iso_match.group(1))
+            iso_m = re.search(r"ISO\s*(\d+)", cleaned, re.IGNORECASE)
+            if iso_m:
+                current_iso = int(iso_m.group(1))
+
+            # Extract Shutter
+            shutter_m = re.search(r"Shutter([0-9.]+)", cleaned)
+            if shutter_m:
+                current_shutter = shutter_m.group(1)
+
+            # Check for inline trailing take (e.g. ISO800EI1 001)
+            inline_take = re.search(r"(?:EI|ISO\d+)(\d+[A-Z*]?|FC|FALSE)\s+(\d{3,4})$", cleaned)
+            if inline_take and current_roll and current_slate:
+                raw_take = inline_take.group(1)
+                clip_num = int(inline_take.group(2))
+                take_info = normalize_take(raw_take)
+                clip_name = f"{current_roll}_C{clip_num:03d}"
+
+                records.append(
+                    ParsedCameraRecord(
+                        slate=current_slate,
+                        take_id=take_info.take_id,
+                        camera_roll=current_roll,
+                        clip_name=clip_name,
+                        timecode_in=None,
+                        timecode_out=None,
+                        fps=current_fps,
+                        lens=current_lens,
+                        iso=current_iso,
+                        shutter=current_shutter,
+                        is_starred=take_info.is_starred,
+                        is_pickup=take_info.is_pickup,
+                        is_false_start=take_info.is_false_start or raw_take in ["FC", "FALSE"],
+                        is_vfx="VFX" in cleaned.upper(),
+                        note=take_info.note,
+                        raw_payload={"magazine": current_mag, "camera": current_camera, "stop": current_stop},
+                    )
+                )
             continue
 
-        # 3. Match Take + Clip line (e.g. '1 001' or '2PK 002' or '3* 003')
-        take_match = re.match(r"^(\d+[A-Z*]?|\bFALSE\b)\s+(\d{3,4})$", cleaned)
-        if take_match and current_slate and current_roll:
-            raw_take = take_match.group(1)
-            clip_num = int(take_match.group(2))
-            take_info = normalize_take(raw_take)
+        # 3. Notes line
+        if "Notes" in cleaned:
+            current_notes = cleaned.replace("Notes", "").strip()
+            if records:
+                prev_note = records[-1].note or ""
+                records[-1].note = f"{prev_note} {current_notes}".strip()
+                if "VFX" in current_notes.upper():
+                    records[-1].is_vfx = True
+            continue
 
-            # Construct canonical clip name (e.g. A120_C001)
+        # 4. Standard Take line (e.g. '1 001' or '2PK 002' or 'FC 004')
+        take_m = re.match(r"^(\d+[A-Z*]?|FC|FALSE)\s+(\d{3,4})$", cleaned)
+        if take_m and current_slate and current_roll:
+            raw_take = take_m.group(1)
+            clip_num = int(take_m.group(2))
+            take_info = normalize_take(raw_take)
             clip_name = f"{current_roll}_C{clip_num:03d}"
 
             records.append(
@@ -105,11 +177,13 @@ def parse_zoelog_camera_text(text: str) -> List[ParsedCameraRecord]:
                     fps=current_fps,
                     lens=current_lens,
                     iso=current_iso,
+                    shutter=current_shutter,
                     is_starred=take_info.is_starred,
                     is_pickup=take_info.is_pickup,
-                    is_false_start=take_info.is_false_start,
-                    is_vfx=take_info.is_vfx,
-                    note=take_info.note,
+                    is_false_start=take_info.is_false_start or raw_take in ["FC", "FALSE"],
+                    is_vfx=take_info.is_vfx or (current_notes is not None and "VFX" in current_notes.upper()),
+                    note=current_notes or take_info.note,
+                    raw_payload={"magazine": current_mag, "camera": current_camera, "stop": current_stop},
                 )
             )
 
