@@ -201,15 +201,20 @@ def classify_document(
             inferred_shoot_day=inferred_day,
         )
 
-    # 5. Silverstack Offload / Volume / Clips Reports
+    # 5. Silverstack Offload / Volume / Clips / Shooting Day Reports
     if (
         "VOLUME" in fn_upper
         or "CLIPS" in fn_upper
         or "SILVERSTACK" in fn_upper
         or "THUMBNAIL" in fn_upper
+        or "SHOOTING DAY" in fn_upper
+        or "SHOOTING_DAY" in fn_upper
+        or "OFFLOAD" in fn_upper
+        or "POMFORT" in text_sample
         or "SILVERSTACK" in text_sample
         or "<SILVERSTACKREPORT" in text_sample
         or "VOLUME REPORT" in text_sample
+        or "SHOOTING DAY REPORT" in text_sample
     ):
         return DocumentClassification(
             doc_type=DocumentType.SILVERSTACK_XML,

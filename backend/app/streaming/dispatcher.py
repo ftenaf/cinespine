@@ -16,6 +16,7 @@ from backend.app.parsers.pdf_parsers import (
     parse_scripte_tclog_text,
     parse_scripte_detailed_editor_log_text,
     parse_silverstack_volume_text,
+    parse_silverstack_pdf_text,
 )
 from backend.app.parsers.base import ParserFailureError
 
@@ -163,8 +164,8 @@ class IngestionDispatcher:
             fn = (envelope.filename or "").upper()
             content = envelope.raw_content
 
-            if fn.endswith(".PDF") or "VOLUME REPORT" in content.upper():
-                records = parse_silverstack_volume_text(content)
+            if fn.endswith(".PDF") or "POMFORT" in content.upper() or "SILVERSTACK" in content.upper() or "VOLUME REPORT" in content.upper() or "SHOOTING DAY" in content.upper():
+                records = parse_silverstack_pdf_text(content)
             else:
                 records = parse_silverstack_xml(content)
 

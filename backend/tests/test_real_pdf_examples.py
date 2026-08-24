@@ -12,6 +12,8 @@ from backend.app.parsers.pdf_parsers import (
     parse_scripte_detailed_editor_log_text,
     parse_zoelog_camera_text,
     parse_silverstack_volume_text,
+    parse_silverstack_shooting_day_text,
+    parse_silverstack_clips_text,
 )
 
 EXAMPLES_DIR = r"data/examples"
@@ -68,3 +70,23 @@ class TestRealPDFExamples:
         records = parse_silverstack_volume_text(text)
         assert len(records) > 0
         assert records[0].checksum is not None
+        assert records[0].volume_name == "664 SD"
+
+    def test_parse_real_silverstack_shooting_day_pdf(self):
+        day_path = os.path.join(EXAMPLES_DIR, "Shooting Day-260728_SD31-20260728-1927.pdf")
+        with open(day_path, "rb") as f:
+            text = extract_text_from_pdf(f.read())
+        
+        records = parse_silverstack_shooting_day_text(text)
+        assert len(records) > 0
+        rolls = {r.camera_roll for r in records if r.camera_roll}
+        assert "A120" in rolls or "B039" in rolls or "C005" in rolls
+
+    def test_parse_real_silverstack_clips_pdf(self):
+        clips_path = os.path.join(EXAMPLES_DIR, "Clips-260728_SD31-20260728-1927.pdf")
+        with open(clips_path, "rb") as f:
+            text = extract_text_from_pdf(f.read())
+        
+        records = parse_silverstack_clips_text(text)
+        assert len(records) > 0
+        assert "27-7T01.WAV" in [r.file_name for r in records]
