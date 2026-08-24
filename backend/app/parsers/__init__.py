@@ -17,6 +17,7 @@ from .pdf_parsers import (
     parse_silverstack_volume_text,
     parse_silverstack_shooting_day_text,
     parse_silverstack_clips_text,
+    parse_silverstack_thumbnail_text,
     parse_silverstack_pdf_text,
 )
 from .classifier import classify_document, infer_production_and_day, DocumentClassification
@@ -37,6 +38,7 @@ __all__ = [
     "parse_silverstack_volume_text",
     "parse_silverstack_shooting_day_text",
     "parse_silverstack_clips_text",
+    "parse_silverstack_thumbnail_text",
     "parse_silverstack_pdf_text",
     "classify_document",
     "infer_production_and_day",

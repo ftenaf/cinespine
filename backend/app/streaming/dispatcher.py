@@ -186,11 +186,53 @@ class IngestionDispatcher:
                         "checksum_type": clip.checksum_type,
                         "volume_name": clip.volume_name,
                         "duration_frames": clip.duration_frames,
+                        "reel_tape": clip.reel_tape,
+                        "scene": clip.scene,
+                        "shot": clip.shot,
+                        "take_id": clip.take_id,
+                        "codec": clip.codec,
+                        "recording_date": clip.recording_date,
+                        "camera": clip.camera,
+                        "fps": clip.fps,
+                        "iso": clip.iso,
+                        "tstop": clip.tstop,
+                        "is_vfx": clip.is_vfx,
                     },
                     "metadata": envelope.metadata,
                     "timestamp": envelope.timestamp,
                 }
                 self.bus.publish("production.events.spine", spine_event)
+
+                # If the Silverstack report contains Scene/Take (e.g. Thumbnail report), emit take existence record
+                if clip.scene and clip.take_id:
+                    slate_val = f"{clip.scene}/{clip.shot}" if clip.shot else clip.scene
+                    take_event: Dict[str, Any] = {
+                        "event_id": envelope.event_id,
+                        "production_id": envelope.production_id,
+                        "shoot_day": envelope.shoot_day,
+                        "axis": envelope.axis.value,
+                        "department": envelope.department.value,
+                        "doc_type": envelope.doc_type.value,
+                        "entity_type": "take",
+                        "payload": {
+                            "scene": clip.scene,
+                            "slate": slate_val,
+                            "take_id": clip.take_id,
+                            "camera_roll": clip.camera_roll,
+                            "clip_name": clip.file_name,
+                            "codec": clip.codec,
+                            "recording_date": clip.recording_date,
+                            "reel_tape": clip.reel_tape,
+                            "camera": clip.camera,
+                            "fps": clip.fps,
+                            "iso": clip.iso,
+                            "tstop": clip.tstop,
+                            "is_vfx": clip.is_vfx,
+                        },
+                        "metadata": envelope.metadata,
+                        "timestamp": envelope.timestamp,
+                    }
+                    self.bus.publish("production.events.spine", take_event)
         except ParserFailureError as e:
             self._emit_dlq(envelope, "PARSER_FAILURE", str(e))
         except Exception as e:

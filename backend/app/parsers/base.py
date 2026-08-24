@@ -62,4 +62,15 @@ class ParsedSilverstackClip:
     checksum_type: Optional[str] = None
     volume_name: Optional[str] = None
     duration_frames: Optional[int] = None
+    reel_tape: Optional[str] = None
+    scene: Optional[str] = None
+    shot: Optional[str] = None
+    take_id: Optional[str] = None
+    codec: Optional[str] = None
+    recording_date: Optional[str] = None
+    camera: Optional[str] = None
+    fps: Optional[float] = None
+    iso: Optional[int] = None
+    tstop: Optional[str] = None
+    is_vfx: bool = False
     raw_payload: Dict[str, Any] = field(default_factory=dict)

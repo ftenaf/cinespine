@@ -269,6 +269,12 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
             media_files_map[fn] = {
                 "file_name": fn,
                 "camera_roll": p.get("camera_roll"),
+                "reel_tape": p.get("reel_tape"),
+                "codec": p.get("codec"),
+                "recording_date": p.get("recording_date"),
+                "fps": p.get("fps"),
+                "iso": p.get("iso"),
+                "tstop": p.get("tstop"),
                 "volume_name": p.get("volume_name") or "Offload Drive",
                 "file_size_bytes": p.get("file_size_bytes", 0),
                 "checksum": p.get("checksum"),
@@ -300,8 +306,11 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                         "source_documents": [],
                         "is_starred": False,
                         "is_pickup": False,
+                        "codec": None,
+                        "recording_date": None,
                     }
 
+                axis = evt.get("axis", "belief")
                 dept = evt.get("department", "unknown")
                 doc_name = evt.get("metadata", {}).get("filename") or evt.get("doc_type")
                 doc_id = evt.get("metadata", {}).get("doc_id")
@@ -310,7 +319,16 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                 witness_payload = dict(p)
                 witness_payload["source_document"] = doc_name
                 witness_payload["source_doc_id"] = doc_id
-                takes_map[key]["belief"][dept] = witness_payload
+                
+                if axis == "existence" or dept == "dit":
+                    takes_map[key]["existence"]["dit"] = witness_payload
+                else:
+                    takes_map[key]["belief"][dept] = witness_payload
+
+                if p.get("codec"):
+                    takes_map[key]["codec"] = p.get("codec")
+                if p.get("recording_date"):
+                    takes_map[key]["recording_date"] = p.get("recording_date")
 
                 if doc_name and doc_name not in [d.get("filename") for d in takes_map[key]["source_documents"]]:
                     takes_map[key]["source_documents"].append({

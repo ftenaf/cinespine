@@ -60,9 +60,17 @@ export interface TakeRecord {
   camera_cards: string[];
   sound_cards: string[];
   storage_volumes: string[];
+  codec?: string;
+  recording_date?: string;
   matched_media_files: Array<{
     file_name: string;
     camera_roll?: string;
+    reel_tape?: string;
+    codec?: string;
+    recording_date?: string;
+    fps?: number;
+    iso?: number;
+    tstop?: string;
     volume_name?: string;
     file_size_bytes?: number;
     checksum?: string;

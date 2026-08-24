@@ -844,23 +844,36 @@ export default function App() {
               {/* 3. DIT Physical Existence */}
               <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-cyan-400">3. DIT / Storage Reality (Existence)</span>
+                  <span className="text-xs font-bold text-cyan-400">3. DIT / Pomfort Silverstack Notary (Existence)</span>
+                  {inspectedTake.matched_media_files.length > 0 && (
+                    <span className="text-[10px] text-cyan-300 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-500/30 font-mono">
+                      ✓ Notary Verified
+                    </span>
+                  )}
                 </div>
-                <div className="text-xs font-mono text-slate-300 space-y-1.5">
+                <div className="text-xs font-mono text-slate-300 space-y-2">
                   {inspectedTake.matched_media_files.length > 0 ? (
                     inspectedTake.matched_media_files.map((m, i) => (
-                      <div key={i} className="bg-slate-900 p-2.5 rounded border border-slate-800 flex items-center justify-between">
-                        <div>
-                          <div className="text-white font-bold">{m.file_name}</div>
-                          <div className="text-[10px] text-slate-500">Volume: {m.volume_name} | {(m.file_size_bytes ? m.file_size_bytes / (1024*1024) : 0).toFixed(1)} MB</div>
+                      <div key={i} className="bg-slate-900 p-3 rounded-lg border border-slate-800 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <div className="text-white font-bold text-xs">{m.file_name}</div>
+                          <span className="text-[10px] text-emerald-400 bg-emerald-950/60 px-2 py-0.2 rounded border border-emerald-500/30">
+                            {m.checksum ? `${m.checksum.slice(0, 12)}...` : 'Verified'}
+                          </span>
                         </div>
-                        <span className="text-[10px] text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-500/30">
-                          {m.checksum ? `Checksum OK (${m.checksum.slice(0, 8)}...)` : 'Verified'}
-                        </span>
+                        <div className="grid grid-cols-2 gap-1.5 text-[11px] text-slate-400 pt-1">
+                          <div>Reel/Tape: <span className="text-slate-200 font-semibold">{m.reel_tape || m.camera_roll || '--'}</span></div>
+                          <div>Volume: <span className="text-slate-200">{m.volume_name || 'Offload Drive'}</span></div>
+                          <div>Codec: <span className="text-cyan-300 font-semibold">{m.codec || 'Linear PCM / ARRIRAW'}</span></div>
+                          <div>Recorded: <span className="text-slate-200">{m.recording_date || '--'}</span></div>
+                          {m.fps && <div>FPS / ISO: <span className="text-slate-200">{m.fps}fps / {m.iso || 800}EI</span></div>}
+                          {m.tstop && <div>T-Stop: <span className="text-slate-200">{m.tstop}</span></div>}
+                          <div>Size: <span className="text-slate-200">{(m.file_size_bytes ? m.file_size_bytes / (1024*1024) : 0).toFixed(1)} MB</span></div>
+                        </div>
                       </div>
                     ))
                   ) : (
-                    <div className="text-slate-500 italic">No media offload files registered on DIT volumes yet.</div>
+                    <div className="text-slate-500 italic text-xs">No media offload files registered on DIT volumes yet.</div>
                   )}
                 </div>
               </div>

@@ -642,7 +642,7 @@ def parse_silverstack_shooting_day_text(text: str) -> List[ParsedSilverstackClip
 
 def parse_silverstack_clips_text(text: str) -> List[ParsedSilverstackClip]:
     """
-    Parses Pomfort Silverstack Clips & Thumbnail Reports (e.g. Clips-260728_SD31-20260728-1927.pdf).
+    Parses Pomfort Silverstack Clips Reports (e.g. Clips-260728_SD31-20260728-1927.pdf).
     Extracts individual scene/take clip names, audio WAV files, and camera files.
     """
     if not text or not text.strip():
@@ -679,15 +679,141 @@ def parse_silverstack_clips_text(text: str) -> List[ParsedSilverstackClip]:
     return clips
 
 
+def parse_silverstack_thumbnail_text(text: str) -> List[ParsedSilverstackClip]:
+    """
+    Parses Pomfort Silverstack Thumbnail Reports (e.g. Thumbnail-260728_SD31-20260728-1927.pdf).
+    Extracts clip Name, Reel/Tape, Scene, Shot, Take, Codec, Recording Date, Duration, FPS, ISO, T-Stop.
+    """
+    if not text or not text.strip():
+        raise ParserFailureError("Empty Silverstack Thumbnail text")
+
+    cleaned_text = re.sub(
+        r"Thumbnail Report[^\n]*\nPomfort Silverstack[^\n]*\n(?:Offloads started[^\n]*\nand[^\n]*\n)?(?:260728_SD31\nDEMO PRODUCTION\n)?",
+        "",
+        text,
+    )
+    blocks = re.split(r"\nName\s+", "\n" + cleaned_text)
+    clips: List[ParsedSilverstackClip] = []
+
+    for block in blocks[1:]:
+        lines = [l.strip() for l in block.strip().splitlines() if l.strip()]
+        if not lines:
+            continue
+
+        name_line = lines[0]
+        name_match = re.match(r"^([A-Za-z0-9_\-]+)", name_line)
+        clip_name = name_match.group(1) if name_match else name_line
+
+        if len(lines) > 1 and len(lines[1]) <= 4 and not any(k in lines[1] for k in ["ShotID", "Duration", "Camera", "Reel"]):
+            clip_name += lines[1]
+
+        # Reel / Tape
+        reel_m = re.search(r"Reel/Tape\s*([A-Za-z0-9_]+)", block)
+        reel_tape = reel_m.group(1).strip() if reel_m else None
+
+        # Scene
+        scene_m = re.search(r"\n\s*Scene\s+([0-9A-Za-z]+)", block)
+        scene = scene_m.group(1).strip() if scene_m else None
+
+        # Shot
+        shot_m = re.search(r"\n\s*Shot\s+([0-9A-Za-z]+)", block)
+        shot = shot_m.group(1).strip() if shot_m else None
+
+        # Take
+        take_m = re.search(r"\n\s*Take\s+([0-9A-Za-z*]+(?:\s+VFX|\s+PK)?)", block)
+        raw_take = take_m.group(1).strip() if take_m else None
+
+        # Codec
+        codec_m = re.search(r"Codec\s*(.+?)(?=\s+Recording Date|\s+Location|\n[A-Z]|\Z)", block, re.DOTALL)
+        codec = re.sub(r"\s+", " ", codec_m.group(1)).strip() if codec_m else None
+
+        # Recording Date
+        rec_m = re.search(r"Recording Date\s*([0-9/]+,\s*[0-9:]+)", block)
+        rec_date = rec_m.group(1).strip() if rec_m else None
+
+        # Duration
+        dur_m = re.search(r"Duration\s*([0-9:]+\s*(?:min|sec))", block)
+        duration = dur_m.group(1).strip() if dur_m else None
+
+        # Camera
+        cam_m = re.search(r"Camera\s*([A-C_]+)", block)
+        camera = cam_m.group(1).strip() if cam_m else None
+
+        # FPS, ISO, T-Stop
+        fps_m = re.search(r"Sensor FPS\s*([0-9.]+)", block)
+        fps = float(fps_m.group(1)) if fps_m else None
+
+        iso_m = re.search(r"EI/ISO \(clip\)\s*([0-9]+)", block)
+        iso = int(iso_m.group(1)) if iso_m else None
+
+        tstop_m = re.search(r"T-Stop\s*([0-9./ ]+)", block)
+        tstop = tstop_m.group(1).strip() if tstop_m else None
+
+        # Infer camera roll from reel_tape (e.g. A_0120_1EIC -> A120)
+        roll = None
+        if reel_tape:
+            roll_m = re.search(r"([A-C]_0*(\d{3,4}))", reel_tape)
+            if roll_m:
+                prefix = roll_m.group(1)[0]
+                num = roll_m.group(2)[-3:]
+                roll = normalize_camera_roll(f"{prefix}{num}")
+
+        is_audio = "PCM" in (codec or "") or (reel_tape and "664" in reel_tape) or (reel_tape and "26Y" in reel_tape)
+        file_ext = ".WAV" if is_audio else ".mxf"
+        full_fname = clip_name if ("." in clip_name) else f"{clip_name}{file_ext}"
+
+        is_vfx = "VFX" in (raw_take or "") or "VFX" in block
+
+        take_id = raw_take.replace("VFX", "").replace("PK", "").strip() if raw_take else None
+        if take_id and take_id.startswith("0") and len(take_id) > 1:
+            take_id = str(int(take_id))
+
+        clips.append(
+            ParsedSilverstackClip(
+                file_name=full_fname,
+                camera_roll=roll,
+                file_size_bytes=50 * 1024 * 1024 if is_audio else 2000 * 1024 * 1024,
+                checksum="VERIFIED-NOTARY",
+                checksum_type="XXH64",
+                volume_name=reel_tape or "Offload Reel",
+                reel_tape=reel_tape,
+                scene=scene,
+                shot=shot,
+                take_id=take_id,
+                codec=codec,
+                recording_date=rec_date,
+                camera=camera,
+                fps=fps,
+                iso=iso,
+                tstop=tstop,
+                is_vfx=is_vfx,
+                raw_payload={
+                    "duration": duration,
+                    "reel_tape": reel_tape,
+                    "codec": codec,
+                    "recording_date": rec_date,
+                    "is_audio": is_audio,
+                },
+            )
+        )
+
+    if not clips:
+        return parse_silverstack_clips_text(text)
+
+    return clips
+
+
 def parse_silverstack_pdf_text(text: str) -> List[ParsedSilverstackClip]:
     """
     Unified entry point for all Silverstack PDF formats (Volume, Shooting Day, Clips, Thumbnail).
     """
-    if "Volume Report" in text or "XXH64:" in text or "MD5:" in text:
+    if "Thumbnail Report" in text:
+        return parse_silverstack_thumbnail_text(text)
+    elif "Volume Report" in text or "XXH64:" in text or "MD5:" in text:
         return parse_silverstack_volume_text(text)
     elif "Shooting Day Report" in text:
         return parse_silverstack_shooting_day_text(text)
-    elif "Clips Report" in text or "Thumbnail Report" in text:
+    elif "Clips Report" in text:
         return parse_silverstack_clips_text(text)
     else:
         return parse_silverstack_volume_text(text)

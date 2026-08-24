@@ -14,6 +14,8 @@ from backend.app.parsers.pdf_parsers import (
     parse_silverstack_volume_text,
     parse_silverstack_shooting_day_text,
     parse_silverstack_clips_text,
+    parse_silverstack_thumbnail_text,
+    parse_silverstack_pdf_text,
 )
 
 EXAMPLES_DIR = r"data/examples"
@@ -90,3 +92,32 @@ class TestRealPDFExamples:
         records = parse_silverstack_clips_text(text)
         assert len(records) > 0
         assert "27-7T01.WAV" in [r.file_name for r in records]
+
+    def test_parse_real_silverstack_thumbnail_pdf(self):
+        thumb_path = os.path.join(EXAMPLES_DIR, "Thumbnail-260728_SD31-20260728-1927.pdf")
+        with open(thumb_path, "rb") as f:
+            text = extract_text_from_pdf(f.read())
+        
+        records = parse_silverstack_pdf_text(text)
+        assert len(records) > 100
+
+        # Verify Audio clip fields: Name, Reel/Tape, Scene/Shot/Take, Codec, Recording Date
+        audio_clip = next(r for r in records if "27-7T01" in r.file_name)
+        assert audio_clip.reel_tape == "26Y07M27"
+        assert audio_clip.scene == "27"
+        assert audio_clip.shot == "7"
+        assert audio_clip.take_id == "1"
+        assert "PCM" in (audio_clip.codec or "")
+        assert audio_clip.recording_date is not None
+
+        # Verify Camera clip fields: Name, Reel/Tape, Scene/Shot/Take, Codec, Recording Date, FPS, ISO
+        camera_clip = next(r for r in records if "A_0120C001" in r.file_name)
+        assert camera_clip.camera_roll == "A120"
+        assert camera_clip.reel_tape == "A_0120_1EIC"
+        assert camera_clip.scene == "27"
+        assert camera_clip.shot == "7"
+        assert camera_clip.take_id == "1"
+        assert "ARRIRAW" in (camera_clip.codec or "")
+        assert camera_clip.fps == 24.0
+        assert camera_clip.iso == 800
+        assert "28/7/26" in (camera_clip.recording_date or "")
