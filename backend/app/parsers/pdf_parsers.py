@@ -148,14 +148,10 @@ def parse_zoelog_camera_text(text: str) -> List[ParsedCameraRecord]:
                 )
             continue
 
-        # 3. Notes line
+        # 3. Notes line (Header or Take note)
         if "Notes" in cleaned:
-            current_notes = cleaned.replace("Notes", "").strip()
-            if records:
-                prev_note = records[-1].note or ""
-                records[-1].note = f"{prev_note} {current_notes}".strip()
-                if "VFX" in current_notes.upper():
-                    records[-1].is_vfx = True
+            extracted_note = cleaned[cleaned.find("Notes") + 5 :].strip()
+            current_notes = extracted_note
             continue
 
         # 4. Standard Take line (e.g. '1 001' or '2PK 002' or 'FC 004')
@@ -165,6 +161,18 @@ def parse_zoelog_camera_text(text: str) -> List[ParsedCameraRecord]:
             clip_num = int(take_m.group(2))
             take_info = normalize_take(raw_take)
             clip_name = f"{current_roll}_C{clip_num:03d}"
+
+            # Check if VFX applies to this specific take
+            take_is_vfx = take_info.is_vfx
+            if current_notes and "VFX" in current_notes.upper():
+                # Check for explicit take restrictions (e.g. 'VFX EN TOMAS 3 y 4')
+                tomas_m = re.search(r"tomas?\s*([\d\s,yeANDand]+)", current_notes, re.IGNORECASE)
+                if tomas_m:
+                    vfx_take_nums = re.findall(r"\d+", tomas_m.group(1))
+                    take_is_vfx = take_info.take_id in vfx_take_nums
+                else:
+                    # Generic VFX note for this setup block (e.g. CAM_A/CAM_C setup 2 for 117/1)
+                    take_is_vfx = True
 
             records.append(
                 ParsedCameraRecord(
@@ -181,7 +189,7 @@ def parse_zoelog_camera_text(text: str) -> List[ParsedCameraRecord]:
                     is_starred=take_info.is_starred,
                     is_pickup=take_info.is_pickup,
                     is_false_start=take_info.is_false_start or raw_take in ["FC", "FALSE"],
-                    is_vfx=take_info.is_vfx or (current_notes is not None and "VFX" in current_notes.upper()),
+                    is_vfx=take_is_vfx,
                     note=current_notes or take_info.note,
                     raw_payload={"magazine": current_mag, "camera": current_camera, "stop": current_stop},
                 )
