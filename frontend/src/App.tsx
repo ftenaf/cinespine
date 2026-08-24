@@ -369,7 +369,7 @@ export default function App() {
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-5">
+      <main className={`flex-1 ${activeTab === 'sequences' ? 'w-full max-w-[100%] px-3 sm:px-5 lg:px-6 py-4' : 'max-w-7xl w-full mx-auto p-6'} space-y-5 transition-all duration-150`}>
         {/* Navigation Tabs & Quick Status */}
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2">
