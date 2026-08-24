@@ -51,10 +51,11 @@ class SpineWriter:
         department: str,
         content: str,
         checksum: Optional[str] = None,
+        raw_bytes: Optional[bytes] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
-        Stores raw document text/content with metadata and checksum for in-app previewing and duplicate prevention.
+        Stores raw document text/content with metadata, raw binary bytes, and checksum for in-app previewing and duplicate prevention.
         """
         doc_id = str(uuid.uuid4())
         doc_record = {
@@ -65,8 +66,9 @@ class SpineWriter:
             "doc_type": doc_type,
             "department": department,
             "content": content,
+            "raw_bytes": raw_bytes,
             "checksum": checksum,
-            "size_bytes": len(content.encode("utf-8")),
+            "size_bytes": len(raw_bytes) if raw_bytes else len(content.encode("utf-8")),
             "uploaded_at": datetime.now(timezone.utc).isoformat(),
             "metadata": metadata or {},
         }

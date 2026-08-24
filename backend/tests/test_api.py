@@ -102,3 +102,28 @@ def test_api_metrics_endpoint(client):
     assert response.status_code == 200
     assert b"cinespine_ingested_events_total" in response.content
 
+
+def test_api_document_raw_pdf_streaming(client):
+    # Upload a dummy PDF file
+    dummy_pdf_bytes = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF"
+    files = {"file": ("DemoProduction_CAM_A.pdf", dummy_pdf_bytes, "application/pdf")}
+    data = {"production_id": "PROD_PDF_TEST", "shoot_day": "31"}
+
+    upload_res = client.post("/api/upload/file", files=files, data=data)
+    assert upload_res.status_code == 200
+    doc_id = upload_res.json()["doc_id"]
+
+    # 1. Fetch document metadata
+    doc_meta_res = client.get(f"/api/documents/{doc_id}")
+    assert doc_meta_res.status_code == 200
+    doc_meta = doc_meta_res.json()
+    assert doc_meta["is_pdf"] is True
+    assert doc_meta["raw_url"] == f"/api/documents/{doc_id}/raw"
+
+    # 2. Fetch raw document stream for visual PDF preview
+    raw_res = client.get(f"/api/documents/{doc_id}/raw")
+    assert raw_res.status_code == 200
+    assert raw_res.headers["content-type"] == "application/pdf"
+    assert "inline" in raw_res.headers["content-disposition"]
+    assert raw_res.content == dummy_pdf_bytes
+

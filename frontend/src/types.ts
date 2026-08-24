@@ -26,6 +26,8 @@ export interface SourceDocumentSummary {
 
 export interface SourceDocument extends SourceDocumentSummary {
   content: string;
+  is_pdf?: boolean;
+  raw_url?: string;
   metadata: Record<string, any>;
 }
 

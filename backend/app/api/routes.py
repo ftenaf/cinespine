@@ -1,3 +1,4 @@
+import os
 import hashlib
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Response, UploadFile, File, Form
@@ -9,7 +10,7 @@ from backend.app.spine.writer import SpineWriter
 from backend.app.reconciliation.engine import ReconciliationEngine
 from backend.app.agents.mcp_server import ClickHouseMCPServer, GeminiDiscrepancyAssistant
 from backend.app.parsers.classifier import classify_document, infer_production_and_day
-from backend.app.parsers.pdf_parsers import extract_text_from_pdf
+from backend.app.parsers.pdf_parsers import extract_text_from_pdf, extract_thumbnails_from_pdf
 from backend.app.core.telemetry import TelemetryExporter
 
 router = APIRouter(prefix="/api")
@@ -88,12 +89,68 @@ def list_documents(production_id: Optional[str] = None, shoot_day: Optional[str]
 @router.get("/documents/{doc_id}")
 def get_document_content(doc_id: str):
     """
-    Retrieves full content of a raw document for in-app preview.
+    Retrieves full content and metadata of a raw document for in-app preview.
     """
     doc = spine_writer.get_document(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    return doc
+    
+    filename = doc.get("filename", "")
+    is_pdf = filename.lower().endswith(".pdf") or doc.get("doc_type") == "pdf"
+
+    return {
+        "doc_id": doc["doc_id"],
+        "production_id": doc["production_id"],
+        "shoot_day": doc["shoot_day"],
+        "filename": filename,
+        "doc_type": doc["doc_type"],
+        "department": doc["department"],
+        "content": doc.get("content", ""),
+        "checksum": doc.get("checksum"),
+        "size_bytes": doc.get("size_bytes", 0),
+        "uploaded_at": doc.get("uploaded_at"),
+        "is_pdf": is_pdf,
+        "raw_url": f"/api/documents/{doc_id}/raw",
+        "metadata": doc.get("metadata", {}),
+    }
+
+
+@router.get("/documents/{doc_id}/raw")
+def get_document_raw(doc_id: str):
+    """
+    Streams the raw binary document (e.g. actual visual PDF file or text) inline for PDF viewer embedding.
+    """
+    doc = spine_writer.get_document(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    raw_bytes = doc.get("raw_bytes")
+    filename = doc.get("filename", "document")
+    
+    # If raw_bytes wasn't in memory (e.g. initial demo load), resolve from local example directory
+    if not raw_bytes:
+        examples_path = os.path.join("data/examples", filename)
+        if os.path.exists(examples_path):
+            try:
+                with open(examples_path, "rb") as f:
+                    raw_bytes = f.read()
+            except Exception:
+                pass
+    
+    if not raw_bytes:
+        raw_bytes = doc.get("content", "").encode("utf-8")
+    
+    is_pdf = filename.lower().endswith(".pdf") or doc.get("doc_type") == "pdf"
+    media_type = "application/pdf" if is_pdf else "text/plain; charset=utf-8"
+    
+    return Response(
+        content=raw_bytes,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Content-Type": media_type,
+        },
+    )
 
 
 @router.delete("/documents/{doc_id}")
@@ -223,6 +280,7 @@ async def upload_document_file(
         department=classification.department.value,
         content=raw_text,
         checksum=checksum,
+        raw_bytes=content_bytes,
         metadata={"file_size": len(content_bytes), "content_type": file.content_type},
     )
 
