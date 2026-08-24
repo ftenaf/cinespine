@@ -3,7 +3,7 @@ import {
   Film, AlertTriangle, CheckCircle2, Upload, 
   RefreshCw, Layers, Sparkles, 
   FileText, Clapperboard, Calendar, Search,
-  HardDrive, Eye, FileCode, Check, AlertCircle
+  HardDrive, Eye, FileCode, Check, AlertCircle, Trash2
 } from 'lucide-react';
 import { TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument } from './types';
 import { 
@@ -130,6 +130,26 @@ export default function App() {
     }
   };
 
+  const handleDeleteDocument = async (docId: string, filename: string) => {
+    if (!window.confirm(`Are you sure you want to remove '${filename}'?\nThis will purge its ingested records from the spine.`)) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/documents/${docId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Failed to delete document');
+      }
+      await loadProductions();
+      await loadSpineData();
+    } catch (e: any) {
+      alert(`Could not delete document: ${e.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleInspectTake = (take: TakeRecord) => {
     setInspectedTake(take);
     handleAskAssistant(take.slate, take.take_id);
@@ -171,7 +191,11 @@ export default function App() {
       await loadProductions();
       await loadSpineData();
     } catch (err: any) {
-      alert(`Upload failed: ${err.message}`);
+      if (err.message && err.message.includes('409')) {
+        setUploadFeedback(`⚠️ Duplicate Document: This file has already been ingested into the spine.`);
+      } else {
+        setUploadFeedback(`❌ Upload Failed: ${err.message}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -641,6 +665,7 @@ export default function App() {
                     <th className="px-4 py-3">Filename</th>
                     <th className="px-4 py-3">Department</th>
                     <th className="px-4 py-3">Doc Type</th>
+                    <th className="px-4 py-3">SHA-256 Checksum</th>
                     <th className="px-4 py-3">Size</th>
                     <th className="px-4 py-3">Uploaded At</th>
                     <th className="px-4 py-3 text-right">Actions</th>
@@ -649,7 +674,7 @@ export default function App() {
                 <tbody className="divide-y divide-slate-800">
                   {documents.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
+                      <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
                         No source documents uploaded for Shoot Day {selectedDay}. Drop files to preview.
                       </td>
                     </tr>
@@ -666,15 +691,32 @@ export default function App() {
                           </span>
                         </td>
                         <td className="px-4 py-3 font-mono text-slate-400">{doc.doc_type}</td>
+                        <td className="px-4 py-3 font-mono text-[11px] text-cyan-400">
+                          {doc.checksum ? (
+                            <span className="bg-cyan-950/50 border border-cyan-500/30 px-1.5 py-0.5 rounded font-mono" title={doc.checksum}>
+                              {doc.checksum.slice(0, 10)}...
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">--</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 font-mono text-slate-400">{(doc.size_bytes / 1024).toFixed(1)} KB</td>
                         <td className="px-4 py-3 font-mono text-slate-500">{doc.uploaded_at?.slice(0, 19).replace('T', ' ')}</td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-3 text-right space-x-2">
                           <button
                             onClick={() => handleOpenPreviewDoc(doc.doc_id)}
-                            className="px-3 py-1 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 rounded text-xs font-semibold flex items-center gap-1 ml-auto"
+                            className="px-2.5 py-1 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 rounded text-xs font-semibold inline-flex items-center gap-1"
                           >
                             <Eye className="w-3.5 h-3.5" />
-                            Preview File
+                            Preview
+                          </button>
+                          <button
+                            onClick={() => handleDeleteDocument(doc.doc_id, doc.filename)}
+                            className="px-2.5 py-1 bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/40 rounded text-xs font-semibold inline-flex items-center gap-1"
+                            title="Remove file and purge events"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete
                           </button>
                         </td>
                       </tr>

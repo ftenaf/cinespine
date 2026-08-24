@@ -1,6 +1,4 @@
-"""
-FastAPI Route Handlers for CineSpine.
-"""
+import hashlib
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Response, UploadFile, File, Form
 from pydantic import BaseModel, Field
@@ -98,10 +96,21 @@ def get_document_content(doc_id: str):
     return doc
 
 
+@router.delete("/documents/{doc_id}")
+def delete_document(doc_id: str):
+    """
+    Deletes an uploaded document and removes its ingested events from the spine.
+    """
+    deleted = spine_writer.delete_document(doc_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"status": "DELETED", "doc_id": doc_id}
+
+
 @router.post("/upload")
 def upload_document(req: UploadRequest):
     """
-    Ingests document with automatic type, department, production, and shoot day inference.
+    Ingests document with automatic type, department, production, shoot day inference, and duplicate prevention.
     """
     classification = classify_document(filename=req.filename, content=req.raw_content)
     
@@ -112,6 +121,16 @@ def upload_document(req: UploadRequest):
     doc_type = req.doc_type or classification.doc_type
 
     filename = req.filename or f"{doc_type.value}_{shoot_day}.txt"
+    content_bytes = req.raw_content.encode("utf-8")
+    checksum = hashlib.sha256(content_bytes).hexdigest()
+
+    # Check for duplicate document
+    existing = spine_writer.get_document_by_checksum(production_id, shoot_day, checksum)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Duplicate document: content is already uploaded under '{existing['filename']}' for {production_id} Day {shoot_day} (SHA-256: {checksum[:8]}...).",
+        )
 
     # Store raw document for in-app preview
     doc_id = spine_writer.store_document(
@@ -121,12 +140,14 @@ def upload_document(req: UploadRequest):
         doc_type=doc_type.value,
         department=department.value,
         content=req.raw_content,
+        checksum=checksum,
         metadata=req.metadata,
     )
 
     metadata = dict(req.metadata)
     metadata["doc_id"] = doc_id
     metadata["filename"] = filename
+    metadata["checksum"] = checksum
 
     envelope = EventEnvelope(
         production_id=production_id,
@@ -145,6 +166,7 @@ def upload_document(req: UploadRequest):
     return {
         "status": "INGESTED",
         "doc_id": doc_id,
+        "checksum": checksum,
         "event_id": envelope.event_id,
         "production_id": envelope.production_id,
         "shoot_day": envelope.shoot_day,
@@ -161,10 +183,11 @@ async def upload_document_file(
     shoot_day: Optional[str] = Form(None),
 ):
     """
-    Accepts binary PDF, CSV, ALE, or XML file drops, stores for preview & routes automatically.
+    Accepts binary PDF, CSV, ALE, or XML file drops, prevents duplicate uploads via checksum, and routes automatically.
     """
     content_bytes = await file.read()
     filename = file.filename or "unknown_drop"
+    checksum = hashlib.sha256(content_bytes).hexdigest()
 
     # Extract text if PDF
     if filename.lower().endswith(".pdf"):
@@ -180,6 +203,14 @@ async def upload_document_file(
     final_prod = production_id or classification.inferred_production_id or "DEMO_PRODUCTION"
     final_day = shoot_day or classification.inferred_shoot_day or "31"
 
+    # Check for duplicate document
+    existing = spine_writer.get_document_by_checksum(final_prod, final_day, checksum)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Duplicate document: '{existing['filename']}' is already uploaded for {final_prod} Day {final_day} (SHA-256: {checksum[:8]}...).",
+        )
+
     # Store for previewing
     doc_id = spine_writer.store_document(
         production_id=final_prod,
@@ -188,6 +219,7 @@ async def upload_document_file(
         doc_type=classification.doc_type.value,
         department=classification.department.value,
         content=raw_text,
+        checksum=checksum,
         metadata={"file_size": len(content_bytes), "content_type": file.content_type},
     )
 
@@ -199,7 +231,7 @@ async def upload_document_file(
         doc_type=classification.doc_type,
         raw_content=raw_text,
         filename=filename,
-        metadata={"doc_id": doc_id, "file_size": len(content_bytes), "content_type": file.content_type},
+        metadata={"doc_id": doc_id, "file_size": len(content_bytes), "checksum": checksum, "content_type": file.content_type},
     )
 
     topic = f"production.raw.{classification.department.value}"
@@ -208,6 +240,7 @@ async def upload_document_file(
     return {
         "status": "INGESTED",
         "doc_id": doc_id,
+        "checksum": checksum,
         "filename": filename,
         "event_id": envelope.event_id,
         "production_id": final_prod,

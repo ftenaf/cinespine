@@ -74,8 +74,8 @@ def test_api_get_takes_and_discrepancies(client):
 
 
 def test_api_upload_multipart_file(client):
-    file_bytes = SAMPLE_CAMERA_CSV.encode("utf-8")
-    files = {"file": ("DemoProduction-2026-7-28_CAM_A.csv", file_bytes, "text/csv")}
+    file_bytes = b"Slate,Take,CameraRoll,ClipName,FPS,ISO\n27/7,1,B039,B039_C001,24.0,800\n"
+    files = {"file": ("DemoProduction-2026-7-28_CAM_B.csv", file_bytes, "text/csv")}
     data = {"production_id": "PROD_01", "shoot_day": "31"}
     
     response = client.post("/api/upload/file", files=files, data=data)
@@ -83,6 +83,18 @@ def test_api_upload_multipart_file(client):
     res_data = response.json()
     assert res_data["status"] == "INGESTED"
     assert res_data["detected_department"] == "camera"
+    assert "checksum" in res_data
+
+    # Attempting to upload the exact same file again must return 409 Conflict
+    dup_response = client.post("/api/upload/file", files=files, data=data)
+    assert dup_response.status_code == 409
+    assert "Duplicate document" in dup_response.json()["detail"]
+
+    # Delete the uploaded document
+    doc_id = res_data["doc_id"]
+    del_response = client.delete(f"/api/documents/{doc_id}")
+    assert del_response.status_code == 200
+    assert del_response.json()["status"] == "DELETED"
 
 
 def test_api_metrics_endpoint(client):

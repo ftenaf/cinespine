@@ -19,6 +19,7 @@ export interface SourceDocumentSummary {
   filename: string;
   doc_type: string;
   department: string;
+  checksum?: string;
   size_bytes: number;
   uploaded_at: string;
 }

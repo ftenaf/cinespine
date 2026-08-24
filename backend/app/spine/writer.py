@@ -50,10 +50,11 @@ class SpineWriter:
         doc_type: str,
         department: str,
         content: str,
+        checksum: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
-        Stores raw document text/content with metadata for in-app previewing.
+        Stores raw document text/content with metadata and checksum for in-app previewing and duplicate prevention.
         """
         doc_id = str(uuid.uuid4())
         doc_record = {
@@ -64,12 +65,47 @@ class SpineWriter:
             "doc_type": doc_type,
             "department": department,
             "content": content,
+            "checksum": checksum,
             "size_bytes": len(content.encode("utf-8")),
             "uploaded_at": datetime.now(timezone.utc).isoformat(),
             "metadata": metadata or {},
         }
         self._documents[doc_id] = doc_record
         return doc_id
+
+    def get_document_by_checksum(
+        self,
+        production_id: str,
+        shoot_day: str,
+        checksum: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Finds if a document with the exact same content checksum exists for this production and shoot day.
+        """
+        for doc in self._documents.values():
+            if (
+                doc.get("production_id") == production_id
+                and doc.get("shoot_day") == shoot_day
+                and doc.get("checksum") == checksum
+            ):
+                return doc
+        return None
+
+    def delete_document(self, doc_id: str) -> bool:
+        """
+        Deletes an uploaded document from the repository and purges its events from the active spine.
+        """
+        if doc_id not in self._documents:
+            return False
+
+        # Remove the document record
+        del self._documents[doc_id]
+
+        # Purge associated events from the in-memory spine
+        self._in_memory_spine = [
+            e for e in self._in_memory_spine if e.get("metadata", {}).get("doc_id") != doc_id
+        ]
+        return True
 
     def list_documents(self, production_id: Optional[str] = None, shoot_day: Optional[str] = None) -> List[Dict[str, Any]]:
         docs = list(self._documents.values())
@@ -87,6 +123,7 @@ class SpineWriter:
                 "filename": d["filename"],
                 "doc_type": d["doc_type"],
                 "department": d["department"],
+                "checksum": d.get("checksum"),
                 "size_bytes": d["size_bytes"],
                 "uploaded_at": d["uploaded_at"],
             }
