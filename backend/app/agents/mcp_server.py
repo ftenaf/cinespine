@@ -32,7 +32,24 @@ class ClickHouseMCPServer:
                     if key not in takes_map:
                         takes_map[key] = []
                     witness = dict(payload)
-                    witness["author"] = evt.get("department", "unknown")
+                    dept = evt.get("department", "unknown")
+                    fname = evt.get("metadata", {}).get("filename")
+
+                    if dept == "script":
+                        author_name = "Script Supervisor"
+                    elif dept == "sound":
+                        author_name = "Sound Department"
+                    elif dept == "camera":
+                        cam_letter = (payload.get("raw_payload", {}).get("camera") or payload.get("camera") or (payload.get("camera_roll")[:1] if payload.get("camera_roll") else "A")).upper().replace("_", "")
+                        author_name = f"Camera {cam_letter}" if len(cam_letter) == 1 else "Camera Department"
+                    elif dept == "dit":
+                        author_name = "DIT / Silverstack"
+                    else:
+                        author_name = dept.capitalize()
+
+                    witness["author"] = author_name
+                    witness["department"] = dept
+                    witness["source_document"] = fname
                     witness["axis"] = evt.get("axis", "belief")
                     takes_map[key].append(witness)
 

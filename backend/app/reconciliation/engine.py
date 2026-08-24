@@ -24,16 +24,26 @@ class ReconciliationEngine:
         entity_id = f"{slate} Take {take_id}"
 
         # 1. Check Circled / Starred Take Mismatches
-        starred_claims = [
-            (w.get("author", "unknown"), w.get("is_starred"))
-            for w in witnesses
-            if "is_starred" in w and w.get("is_starred") is not None
-        ]
-        unique_starred_values = set(val for _, val in starred_claims)
+        starred_by_author: Dict[str, tuple[str, bool]] = {}
+        for w in witnesses:
+            if "is_starred" in w and w.get("is_starred") is not None:
+                author = w.get("author", "Unknown Department")
+                val = bool(w.get("is_starred"))
+                doc = w.get("source_document")
+                author_key = author
+                label = f"{author} ({doc})" if doc else author
+                if author_key not in starred_by_author:
+                    starred_by_author[author_key] = (label, val)
+
+        unique_starred_values = set(val for _, val in starred_by_author.values())
         if True in unique_starred_values and False in unique_starred_values:
+            claims_formatted = [
+                f"{label} says {'Circled (⭐)' if val else 'Not Circled'}"
+                for label, val in starred_by_author.values()
+            ]
             desc = (
                 f"Conflicting circled/starred status on {entity_id}: "
-                + ", ".join(f"{author} says {val}" for author, val in starred_claims)
+                + ", ".join(claims_formatted)
             )
             discrepancies.append(
                 Discrepancy(
