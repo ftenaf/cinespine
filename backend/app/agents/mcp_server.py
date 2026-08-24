@@ -1,0 +1,102 @@
+"""
+ClickHouse Model Context Protocol (MCP) Server & Discrepancy Assistant.
+
+Evidence:
+- references/constraints/safety.md ('Read-only analytical query tools')
+"""
+from typing import Dict, Any, List, Optional
+from backend.app.spine.writer import SpineWriter
+from backend.app.reconciliation.engine import ReconciliationEngine
+
+
+class ClickHouseMCPServer:
+    def __init__(self, spine_writer: SpineWriter, reconciler: ReconciliationEngine):
+        self.spine_writer = spine_writer
+        self.reconciler = reconciler
+
+    def query_production_discrepancies(self, production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
+        """
+        MCP Tool: Queries all active discrepancies for a given production and shoot day.
+        """
+        events = self.spine_writer.get_events(production_id=production_id, shoot_day=shoot_day)
+        
+        # Group take events by slate and take_id
+        takes_map: Dict[str, List[Dict[str, Any]]] = {}
+        for evt in events:
+            if evt.get("entity_type") == "take":
+                payload = evt.get("payload", {})
+                slate = payload.get("slate")
+                take_id = payload.get("take_id")
+                if slate and take_id:
+                    key = f"{slate}_{take_id}"
+                    if key not in takes_map:
+                        takes_map[key] = []
+                    witness = dict(payload)
+                    witness["author"] = evt.get("department", "unknown")
+                    witness["axis"] = evt.get("axis", "belief")
+                    takes_map[key].append(witness)
+
+        all_discrepancies = []
+        for key, witnesses in takes_map.items():
+            slate, take_id = key.split("_", 1)
+            discs = self.reconciler.reconcile_take_witnesses(
+                production_id=production_id,
+                shoot_day=shoot_day,
+                slate=slate,
+                take_id=take_id,
+                witnesses=witnesses,
+            )
+            for d in discs:
+                all_discrepancies.append(d.model_dump())
+
+        return all_discrepancies
+
+    def get_take_witnesses(self, production_id: str, shoot_day: str, slate: str, take_id: str) -> List[Dict[str, Any]]:
+        """
+        MCP Tool: Retrieves all department witness claims for a specific take.
+        """
+        events = self.spine_writer.get_events(production_id=production_id, shoot_day=shoot_day)
+        witnesses = []
+        for evt in events:
+            if evt.get("entity_type") == "take":
+                p = evt.get("payload", {})
+                if p.get("slate") == slate and p.get("take_id") == take_id:
+                    witnesses.append({
+                        "department": evt.get("department"),
+                        "axis": evt.get("axis"),
+                        "doc_type": evt.get("doc_type"),
+                        "payload": p,
+                        "timestamp": evt.get("timestamp"),
+                    })
+        return witnesses
+
+
+class GeminiDiscrepancyAssistant:
+    def __init__(self, mcp_server: ClickHouseMCPServer):
+        self.mcp_server = mcp_server
+
+    def explain_take(self, production_id: str, shoot_day: str, slate: str, take_id: str) -> str:
+        """
+        Generates a plain-English explanation of witness claims and discrepancies for a take.
+        """
+        witnesses = self.mcp_server.get_take_witnesses(production_id, shoot_day, slate, take_id)
+        if not witnesses:
+            return f"No records found for {slate} Take {take_id} on Day {shoot_day}."
+
+        lines = [f"### Witness Report for {slate} Take {take_id} (Day {shoot_day}):"]
+        for w in witnesses:
+            dept = w["department"].capitalize()
+            p = w["payload"]
+            details = []
+            if p.get("camera_roll"):
+                details.append(f"Camera Roll: {p['camera_roll']}")
+            if p.get("sound_roll"):
+                details.append(f"Sound Roll: {p['sound_roll']}")
+            if p.get("timecode_in"):
+                details.append(f"TC: {p['timecode_in']} - {p.get('timecode_out', '')}")
+            if p.get("is_starred"):
+                details.append("Circled: YES")
+
+            lines.append(f"- **{dept}** ({w['axis']}): {', '.join(details)}")
+
+        return "\n".join(lines)
