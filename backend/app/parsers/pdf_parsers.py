@@ -41,7 +41,7 @@ def extract_text_from_pdf(pdf_bytes_or_file) -> str:
 def extract_thumbnails_from_pdf(pdf_bytes_or_file) -> Dict[str, str]:
     """
     Extracts embedded scene/take JPEG thumbnail pictures from a Pomfort Silverstack Thumbnail PDF.
-    Returns a mapping of {clip_name/key: data_uri}.
+    Preserves state across page breaks and returns a multi-key mapping {clip_name/key: data_uri}.
     """
     thumbnails: Dict[str, str] = {}
     try:
@@ -50,16 +50,19 @@ def extract_thumbnails_from_pdf(pdf_bytes_or_file) -> Dict[str, str]:
         else:
             reader = pypdf.PdfReader(pdf_bytes_or_file)
 
+        active_cname: Optional[str] = None
+        active_short: Optional[str] = None
+        active_norm: Optional[str] = None
+
         for page in reader.pages:
             txt = page.extract_text() or ""
             imgs = [img for img in page.images if len(img.data) > 2000 and any(img.name.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png"])]
-            if not imgs:
-                continue
-
-            img = imgs[0]
-            b64 = base64.b64encode(img.data).decode("utf-8")
-            mime = "image/jpeg" if "jp" in img.name.lower() else "image/png"
-            data_uri = f"data:{mime};base64,{b64}"
+            data_uri: Optional[str] = None
+            if imgs:
+                img = imgs[0]
+                b64 = base64.b64encode(img.data).decode("utf-8")
+                mime = "image/jpeg" if "jp" in img.name.lower() else "image/png"
+                data_uri = f"data:{mime};base64,{b64}"
 
             lines = [l.strip() for l in txt.splitlines() if l.strip()]
             for i, line in enumerate(lines):
@@ -68,26 +71,35 @@ def extract_thumbnails_from_pdf(pdf_bytes_or_file) -> Dict[str, str]:
                     if i + 1 < len(lines) and len(lines[i + 1]) <= 4 and not any(k in lines[i + 1] for k in ["ShotID", "Duration", "Camera", "Reel", "Scene", "Take", "Director", "Sensor"]):
                         cname += lines[i + 1].strip()
 
-                    thumbnails[cname] = data_uri
-                    short_m = re.match(r"^([A-Za-z0-9_]+)", cname)
-                    if short_m:
-                        thumbnails[short_m.group(1)] = data_uri
-                        norm_m = re.match(r"^([A-Z])_0*(\d{3,4})C(\d{3,4})", short_m.group(1))
+                    active_cname = cname
+                    short_m = re.match(r"^([A-Za-z]_[0-9]+C[0-9]+|\d+[A-Za-z]*-?\d*T\d+)", cname)
+                    active_short = short_m.group(1) if short_m else cname.split("_")[0]
+                    active_norm = None
+                    if active_short:
+                        norm_m = re.match(r"^([A-Z])_0*(\d{3,4})C(\d{3,4})", active_short)
                         if norm_m:
-                            norm_key = f"{norm_m.group(1)}{norm_m.group(2)[-3:]}_C{int(norm_m.group(3)):03d}"
-                            thumbnails[norm_key] = data_uri
+                            active_norm = f"{norm_m.group(1)}{norm_m.group(2)[-3:]}_C{int(norm_m.group(3)):03d}"
 
             sc_m = re.search(r"Scene\s+([0-9A-Za-z]+)", txt)
             sh_m = re.search(r"Shot\s+([0-9A-Za-z]+)", txt)
             tk_m = re.search(r"Take\s+([0-9A-Za-z*]+)", txt)
+            slate_key: Optional[str] = None
             if sc_m and sh_m and tk_m:
                 tk_clean = tk_m.group(1).replace("VFX", "").replace("PK", "").strip()
                 if tk_clean.startswith("0") and len(tk_clean) > 1:
                     tk_clean = str(int(tk_clean))
-                scene_key = f"{sc_m.group(1)}/{sh_m.group(1)}_{tk_clean}"
-                if scene_key not in thumbnails:
-                    thumbnails[scene_key] = data_uri
-    except Exception as e:
+                slate_key = f"{sc_m.group(1)}/{sh_m.group(1)}_{tk_clean}"
+
+            if data_uri:
+                if active_cname:
+                    thumbnails[active_cname] = data_uri
+                if active_short:
+                    thumbnails[active_short] = data_uri
+                if active_norm:
+                    thumbnails[active_norm] = data_uri
+                if slate_key:
+                    thumbnails[slate_key] = data_uri
+    except Exception:
         pass
     return thumbnails
 
@@ -793,7 +805,7 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
     """
     Parses Pomfort Silverstack Thumbnail Reports (e.g. Thumbnail-260728_SD31-20260728-1927.pdf).
     Extracts clip Name, Reel/Tape, Scene, Shot, Take, Codec, Recording Date, Duration, FPS, ISO, T-Stop,
-    and attaches visual thumbnail pictures and card classification.
+    Shutter Angle, White Balance, and attaches visual thumbnail pictures and card classification.
     """
     if not text or not text.strip():
         raise ParserFailureError("Empty Silverstack Thumbnail text")
@@ -803,7 +815,6 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
     current_block: List[str] = []
 
     for line in lines:
-        # Filter out repetitive page header and footer tokens that disrupt multi-page fields
         if (
             "Thumbnail Report" in line
             or "Pomfort Silverstack" in line
@@ -828,7 +839,6 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
     clips: List[ParsedSilverstackClip] = []
 
     for blk in clip_blocks:
-        blk_txt = " \n ".join(blk)
         name_line = blk[0]
         raw_name = name_line[5:].strip()
 
@@ -836,50 +846,69 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
         if len(blk) > 1 and len(blk[1]) <= 4 and not any(k in blk[1] for k in ["ShotID", "Duration", "Camera", "Reel", "Scene", "Take", "Director", "Sensor"]):
             raw_name += blk[1].strip()
 
-        # Reel / Tape
-        reel_m = re.search(r"Reel/Tape\s*([A-Za-z0-9_]+)", blk_txt)
-        reel_tape = reel_m.group(1).strip() if reel_m else None
+        reel_tape: Optional[str] = None
+        scene: Optional[str] = None
+        shot: Optional[str] = None
+        raw_take: Optional[str] = None
+        codec: Optional[str] = None
+        duration: Optional[str] = None
+        camera: Optional[str] = None
+        fps: Optional[float] = None
+        iso: Optional[int] = None
+        tstop: Optional[str] = None
+        shutter: Optional[str] = None
+        wb: Optional[str] = None
+        rec_date: Optional[str] = None
 
-        # Scene
-        scene_m = re.search(r"Scene\s+([0-9A-Za-z]+)", blk_txt)
-        scene = scene_m.group(1).strip() if scene_m else None
+        for l in blk:
+            if l.startswith("Reel/Tape "):
+                reel_tape = l[10:].strip()
+            elif l.startswith("Scene "):
+                scene = l[6:].strip()
+            elif l.startswith("Shot "):
+                shot = l[5:].strip()
+            elif l.startswith("Take "):
+                raw_take = l[5:].strip()
+            elif l.startswith("Duration "):
+                duration = l[9:].strip()
+            elif l.startswith("Camera ") and len(l) > 7:
+                val = l[7:].strip()
+                if val and not any(val.startswith(kw) for kw in ["Reel", "Season", "Episode", "Scene"]):
+                    camera = val
+            elif l.startswith("Sensor FPS "):
+                val = l[11:].strip()
+                m = re.match(r"^(\d+(?:\.\d+)?)", val)
+                if m:
+                    fps = float(m.group(1))
+            elif l.startswith("EI/ISO (clip) "):
+                val = l[14:].strip()
+                m = re.match(r"^(\d+)", val)
+                if m:
+                    iso = int(m.group(1))
+            elif l.startswith("T-Stop "):
+                val = l[7:].strip()
+                if val and any(c.isdigit() for c in val):
+                    tstop = val
+            elif l.startswith("Shutter Angle "):
+                val = l[14:].strip()
+                if val and any(c.isdigit() for c in val):
+                    shutter = val
+            elif l.startswith("WB (clip) "):
+                val = l[10:].strip()
+                if val and any(c.isdigit() for c in val):
+                    wb = val
+            elif l.startswith("Codec "):
+                codec = l[6:].strip()
+            elif l.startswith("Recording Date "):
+                rec_date = l[15:].strip()
 
-        # Shot
-        shot_m = re.search(r"Shot\s+([0-9A-Za-z]+)", blk_txt)
-        shot = shot_m.group(1).strip() if shot_m else None
-
-        # Take
-        take_m = re.search(r"Take\s+([0-9A-Za-z*]+(?:\s+VFX|\s+PK)?)", blk_txt)
-        raw_take = take_m.group(1).strip() if take_m else None
-
-        # Codec
-        codec_m = re.search(r"Codec\s*(.+?)(?=\s+Recording Date|\s+Location|\n|\Z)", blk_txt)
-        codec = re.sub(r"\s+", " ", codec_m.group(1)).strip() if codec_m else None
-
-        # Recording Date
-        rec_m = re.search(r"Recording Date\s*([0-9/]+,\s*[0-9:]+)", blk_txt)
-        rec_date = rec_m.group(1).strip() if rec_m else None
-
-        # Duration
-        dur_m = re.search(r"Duration\s*([0-9:]+\s*(?:min|sec))", blk_txt)
-        duration = dur_m.group(1).strip() if dur_m else None
-
-        # Camera
-        cam_m = re.search(r"Camera\s*([A-C_]+)", blk_txt)
-        camera = cam_m.group(1).strip() if cam_m else None
-
-        # FPS, ISO, T-Stop
-        fps_m = re.search(r"Sensor FPS\s*([0-9.]+)", blk_txt)
-        fps = float(fps_m.group(1)) if fps_m else 24.0
-
-        iso_m = re.search(r"EI/ISO \(clip\)\s*([0-9]+)", blk_txt)
-        iso = int(iso_m.group(1)) if iso_m else 800
-
-        tstop_m = re.search(r"T-Stop\s*([0-9./ ]+)", blk_txt)
-        tstop = tstop_m.group(1).strip() if tstop_m else None
+        blk_str = "\n".join(blk)
+        codec_m = re.search(r"\nCodec\s+(.+?)(?=\nRecording Date|\nLocation|\Z)", blk_str, re.DOTALL)
+        if codec_m:
+            codec = re.sub(r"\s+", " ", codec_m.group(1)).strip()
 
         # Infer camera roll from reel_tape (e.g. A_0120_1EIC -> A120)
-        roll = None
+        roll: Optional[str] = None
         if reel_tape:
             roll_m = re.search(r"([A-C]_0*(\d{3,4}))", reel_tape)
             if roll_m:
@@ -887,12 +916,23 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
                 num = roll_m.group(2)[-3:]
                 roll = normalize_camera_roll(f"{prefix}{num}")
 
-        is_audio = "PCM" in (codec or "") or (reel_tape and ("664" in reel_tape or "26Y" in reel_tape)) or raw_name.endswith(".WAV") or ("T01" in raw_name and "-" in raw_name)
-        card_type = "sound" if is_audio else "camera"
-        file_ext = ".WAV" if is_audio else ".mxf"
+        # Deterministic video vs audio classification
+        has_video_params = bool(
+            (fps is not None)
+            or (iso is not None)
+            or (tstop is not None)
+            or (shutter is not None)
+            or (wb is not None)
+            or (camera is not None and camera.strip())
+            or (codec and any(vc in codec.upper() for vc in ["ARRIRAW", "PRORES", "MXF", "HDE", "BRAW", "REDCODE", "DNXHR", "X-OCN", "H.264", "HEVC", "MOV", "MP4"]))
+            or (reel_tape and any(reel_tape.startswith(pfx) for pfx in ["A_", "B_", "C_", "D_"]))
+        )
+
+        card_type = "camera" if has_video_params else "sound"
+        file_ext = ".WAV" if card_type == "sound" else ".mxf"
         full_fname = raw_name if ("." in raw_name) else f"{raw_name}{file_ext}"
 
-        is_vfx = "VFX" in (raw_take or "") or "VFX" in blk_txt
+        is_vfx = "VFX" in (raw_take or "") or "VFX" in blk_str
 
         take_id = raw_take.replace("VFX", "").replace("PK", "").strip() if raw_take else None
         if take_id and take_id.startswith("0") and len(take_id) > 1:
@@ -918,7 +958,7 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
             ParsedSilverstackClip(
                 file_name=full_fname,
                 camera_roll=roll,
-                file_size_bytes=50 * 1024 * 1024 if is_audio else 2000 * 1024 * 1024,
+                file_size_bytes=50 * 1024 * 1024 if card_type == "sound" else 2000 * 1024 * 1024,
                 checksum="VERIFIED-NOTARY",
                 checksum_type="XXH64",
                 volume_name=reel_tape or "Offload Reel",
@@ -940,7 +980,12 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
                     "reel_tape": reel_tape,
                     "codec": codec,
                     "recording_date": rec_date,
-                    "is_audio": is_audio,
+                    "camera": camera,
+                    "fps": fps,
+                    "iso": iso,
+                    "tstop": tstop,
+                    "shutter": shutter,
+                    "wb": wb,
                     "card_type": card_type,
                 },
             )

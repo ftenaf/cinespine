@@ -117,7 +117,7 @@ class TestRealPDFExamples:
         records = parse_silverstack_pdf_text(text, thumbnails_map=thumbnails_map)
         assert len(records) > 100
 
-        # Verify Audio clip fields: Name, Reel/Tape, Scene/Shot/Take, Codec, Recording Date, card_type
+        # Verify Audio clip fields: Name, Reel/Tape, Scene/Shot/Take, Codec, Recording Date, card_type (No fake video parameters!)
         audio_clip = next(r for r in records if "27-7T01" in r.file_name)
         assert audio_clip.reel_tape == "26Y07M27"
         assert audio_clip.scene == "27"
@@ -125,6 +125,9 @@ class TestRealPDFExamples:
         assert audio_clip.take_id == "1"
         assert "PCM" in (audio_clip.codec or "")
         assert audio_clip.card_type == "sound"
+        assert audio_clip.fps is None
+        assert audio_clip.iso is None
+        assert audio_clip.tstop is None
         assert audio_clip.recording_date is not None
 
         # Verify Camera A clip fields: Name, Reel/Tape, Scene/Shot/Take, Codec, Recording Date, FPS, ISO, card_type, thumbnail
@@ -141,6 +144,19 @@ class TestRealPDFExamples:
         assert camera_clip_a.thumbnail_b64 is not None
         assert camera_clip_a.thumbnail_b64.startswith("data:image/jpeg;base64,")
         assert "28/7/26" in (camera_clip_a.recording_date or "")
+
+        # Verify Camera A for Scene 117/1 T1 (A_0122C001 spanning page breaks)
+        camera_clip_122 = next(r for r in records if "A_0122C001" in r.file_name)
+        assert camera_clip_122.camera_roll == "A122"
+        assert camera_clip_122.reel_tape == "A_0122_1EIC"
+        assert camera_clip_122.scene == "117"
+        assert camera_clip_122.shot == "1"
+        assert camera_clip_122.take_id == "1"
+        assert camera_clip_122.fps == 24.0
+        assert camera_clip_122.iso == 800
+        assert camera_clip_122.tstop == "2.8 5/10"
+        assert camera_clip_122.card_type == "camera"
+        assert camera_clip_122.thumbnail_b64 is not None
 
         # Verify Camera B (B_0039C001) for Scene 27/7 Take 1
         camera_clip_b = next(r for r in records if "B_0039C001" in r.file_name)
