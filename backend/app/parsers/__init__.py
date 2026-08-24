@@ -14,6 +14,7 @@ from .pdf_parsers import (
     parse_editors_log_text,
     parse_silverstack_volume_text,
 )
+from .classifier import classify_document, DocumentClassification
 
 __all__ = [
     "ParserFailureError",
@@ -27,4 +28,6 @@ __all__ = [
     "parse_zoelog_camera_text",
     "parse_editors_log_text",
     "parse_silverstack_volume_text",
+    "classify_document",
+    "DocumentClassification",
 ]

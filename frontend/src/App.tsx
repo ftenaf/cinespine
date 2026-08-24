@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Film, AlertTriangle, CheckCircle2, Upload, MessageSquare, 
-  RefreshCw, Activity, Layers, Database, ShieldAlert, Sparkles 
+  RefreshCw, Activity, Layers, Database, ShieldAlert, Sparkles, FileText
 } from 'lucide-react';
 import { TakeRecord, Discrepancy } from './types';
-import { fetchTakes, fetchDiscrepancies, uploadDocument, askAssistant } from './api';
+import { fetchTakes, fetchDiscrepancies, uploadDocument, uploadFile, askAssistant } from './api';
 
 export default function App() {
   const [productionId, setProductionId] = useState('PROD_01');
@@ -15,9 +15,11 @@ export default function App() {
   const [selectedTake, setSelectedTake] = useState<{ slate: string; take_id: string } | null>(null);
   const [assistantExplanation, setAssistantExplanation] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [uploadDept, setUploadDept] = useState('camera');
-  const [uploadDocType, setUploadDocType] = useState('camera_csv');
+  const [uploadMode, setUploadMode] = useState<'file' | 'text'>('file');
   const [uploadContent, setUploadContent] = useState('');
+  const [uploadFilename, setUploadFilename] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -41,15 +43,14 @@ export default function App() {
 
   const handleSeedDemoData = async () => {
     setLoading(true);
-    // Seed sample camera CSV and sound ALE
     const sampleCamera = `Slate,Take,Roll,FPS,Lens,ISO,Start TC,End TC,Clip Name\n27/7,1,A120,24,50mm,800,10:14:22:00,10:15:10:00,A120_C001_260728.MOV\n27/7,2PK,A120,24,50mm,800,10:16:05:00,10:17:00:00,A120_C002_260728.MOV\n27/7,3 VFX,A120,24,50mm,800,10:18:12:00,10:19:30:00,A120_C003_260728.MOV`;
     const sampleSound = `Heading\nFIELD_DELIM\tTABS\nColumn\nName\tTracks\tStart\tEnd\tTape\tScene\tTake\tSound Roll\nData\n27-7_T01\t1,2,3,4\t10:14:22:00\t10:15:10:00\tSR01\t27/7\t1\tSR01\n27-7_T02\t1,2,3,4\t10:16:05:00\t10:17:00:00\tSR01\t27/7\t2PK\tSR01\n27-7_T03\t1,2,3,4\t10:18:12:05\t10:19:30:00\tSR01\t27/7\t3*\tSR01`;
     const sampleSilverstack = `<?xml version="1.0" encoding="UTF-8"?><SilverstackReport version="1.0"><Volume name="MAG_A_120"><Clip><FileName>A120_C001_260728.MOV</FileName><Reel>A_0120</Reel><Bytes>4294967296</Bytes><Hash type="MD5">e99a18c428cb38d5f260853678922e03</Hash><DurationFrames>1152</DurationFrames></Clip></Volume></SilverstackReport>`;
 
     try {
-      await uploadDocument({ production_id: productionId, shoot_day: shootDay, axis: 'belief', department: 'camera', doc_type: 'camera_csv', raw_content: sampleCamera, filename: 'camera_d31.csv' });
-      await uploadDocument({ production_id: productionId, shoot_day: shootDay, axis: 'belief', department: 'sound', doc_type: 'sound_ale', raw_content: sampleSound, filename: 'sound_d31.ale' });
-      await uploadDocument({ production_id: productionId, shoot_day: shootDay, axis: 'existence', department: 'dit', doc_type: 'silverstack_xml', raw_content: sampleSilverstack, filename: 'silverstack_d31.xml' });
+      await uploadDocument({ production_id: productionId, shoot_day: shootDay, raw_content: sampleCamera, filename: 'DemoProduction-2026-7-28_CAM_A.csv' });
+      await uploadDocument({ production_id: productionId, shoot_day: shootDay, raw_content: sampleSound, filename: '260728_Report.csv' });
+      await uploadDocument({ production_id: productionId, shoot_day: shootDay, raw_content: sampleSilverstack, filename: 'Volume-664_SD.xml' });
       await loadData();
     } catch (err) {
       console.error(err);
@@ -69,23 +70,32 @@ export default function App() {
     }
   };
 
-  const handleManualUpload = async (e: React.FormEvent) => {
+  const handleFileUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!uploadContent.trim()) return;
+    setLoading(true);
+    setUploadFeedback(null);
+
     try {
-      await uploadDocument({
-        production_id: productionId,
-        shoot_day: shootDay,
-        axis: uploadDept === 'dit' ? 'existence' : 'belief',
-        department: uploadDept,
-        doc_type: uploadDocType,
-        raw_content: uploadContent,
-      });
-      setIsUploadOpen(false);
+      if (uploadMode === 'file' && selectedFile) {
+        const res = await uploadFile(productionId, shootDay, selectedFile);
+        setUploadFeedback(`✅ Ingested ${res.filename} as ${res.detected_doc_type} (${res.detected_department.toUpperCase()})`);
+      } else if (uploadMode === 'text' && uploadContent.trim()) {
+        const res = await uploadDocument({
+          production_id: productionId,
+          shoot_day: shootDay,
+          raw_content: uploadContent,
+          filename: uploadFilename || 'manual_drop.txt',
+        });
+        setUploadFeedback(`✅ Ingested as ${res.detected_doc_type} (${res.detected_department.toUpperCase()})`);
+      }
+      setSelectedFile(null);
       setUploadContent('');
+      setUploadFilename('');
       await loadData();
-    } catch (err) {
-      alert('Upload failed. Check logs.');
+    } catch (err: any) {
+      alert(`Upload failed: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -139,11 +149,11 @@ export default function App() {
           </button>
 
           <button 
-            onClick={() => setIsUploadOpen(true)}
+            onClick={() => { setIsUploadOpen(true); setUploadFeedback(null); }}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/20 transition"
           >
             <Upload className="w-3.5 h-3.5" />
-            Drop Document
+            Drop Paperwork
           </button>
         </div>
       </header>
@@ -254,7 +264,7 @@ export default function App() {
                 {takes.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
-                      No takes found for Shoot Day {shootDay}. Click "Seed Demo Day" or drop documents to ingest.
+                      No takes found for Shoot Day {shootDay}. Click "Seed Demo Day" or drop PDF/CSV documents to ingest.
                     </td>
                   </tr>
                 ) : (
@@ -345,70 +355,94 @@ export default function App() {
         </div>
       )}
 
-      {/* Upload Modal */}
+      {/* Auto-Classifying Paperwork Upload Modal */}
       {isUploadOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleManualUpload} className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+          <form onSubmit={handleFileUploadSubmit} className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="font-bold text-white flex items-center gap-2">
-                <Upload className="w-4 h-4 text-blue-400" />
-                Drop Department Paperwork
-              </h3>
+              <div>
+                <h3 className="font-bold text-white flex items-center gap-2">
+                  <Upload className="w-4 h-4 text-blue-400" />
+                  Drop Department Paperwork
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">Auto-classifies type & department from file contents</p>
+              </div>
               <button type="button" onClick={() => setIsUploadOpen(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Department</label>
-                <select 
-                  value={uploadDept} 
+            {uploadFeedback && (
+              <div className="bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs p-3 rounded-lg">
+                {uploadFeedback}
+              </div>
+            )}
+
+            <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
+              <button
+                type="button"
+                onClick={() => setUploadMode('file')}
+                className={`flex-1 py-1.5 rounded-md font-medium transition ${uploadMode === 'file' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                Upload File (PDF / CSV / ALE)
+              </button>
+              <button
+                type="button"
+                onClick={() => setUploadMode('text')}
+                className={`flex-1 py-1.5 rounded-md font-medium transition ${uploadMode === 'text' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                Paste Raw Text
+              </button>
+            </div>
+
+            {uploadMode === 'file' ? (
+              <div className="border-2 border-dashed border-slate-700 hover:border-blue-500/50 rounded-xl p-6 text-center bg-slate-950/50 transition">
+                <input 
+                  type="file" 
+                  id="doc-upload" 
+                  accept=".pdf,.csv,.ale,.xml,.txt" 
                   onChange={e => {
-                    setUploadDept(e.target.value);
-                    if (e.target.value === 'camera') setUploadDocType('camera_csv');
-                    if (e.target.value === 'sound') setUploadDocType('sound_ale');
-                    if (e.target.value === 'dit') setUploadDocType('silverstack_xml');
+                    if (e.target.files && e.target.files[0]) {
+                      setSelectedFile(e.target.files[0]);
+                    }
                   }}
-                  className="w-full bg-slate-950 border border-slate-700 text-xs px-2.5 py-1.5 rounded text-white focus:outline-none focus:border-blue-500"
-                >
-                  <option value="camera">Camera (Belief)</option>
-                  <option value="sound">Sound (Belief)</option>
-                  <option value="dit">DIT / Silverstack (Existence)</option>
-                  <option value="script">Script Supervisor (Belief)</option>
-                </select>
+                  className="hidden" 
+                />
+                <label htmlFor="doc-upload" className="cursor-pointer space-y-2 block">
+                  <FileText className="w-8 h-8 text-blue-400 mx-auto" />
+                  <div className="text-xs text-slate-300">
+                    {selectedFile ? (
+                      <span className="font-mono text-blue-400 font-bold">{selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)</span>
+                    ) : (
+                      <>Click to select or drop <span className="text-blue-400 font-bold">PDF, CSV, ALE, or XML</span></>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-500">Supports ZoeLog PDFs, Sound reports, Script Editor logs & Lined pages</p>
+                </label>
               </div>
-
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Doc Type</label>
-                <select 
-                  value={uploadDocType} 
-                  onChange={e => setUploadDocType(e.target.value)}
+            ) : (
+              <div className="space-y-2">
+                <input 
+                  type="text" 
+                  placeholder="Optional filename (e.g. camera_d31.csv)"
+                  value={uploadFilename}
+                  onChange={e => setUploadFilename(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-700 text-xs px-2.5 py-1.5 rounded text-white focus:outline-none focus:border-blue-500"
-                >
-                  <option value="camera_csv">Camera CSV</option>
-                  <option value="sound_ale">Sound ALE / CSV</option>
-                  <option value="silverstack_xml">Silverstack XML</option>
-                  <option value="script_lined">Script Lined Page</option>
-                </select>
+                />
+                <textarea 
+                  rows={5}
+                  value={uploadContent}
+                  onChange={e => setUploadContent(e.target.value)}
+                  placeholder="Paste CSV / ALE / XML text..."
+                  className="w-full bg-slate-950 border border-slate-700 text-xs p-2.5 rounded font-mono text-white focus:outline-none focus:border-blue-500"
+                />
               </div>
-            </div>
-
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">Raw File Content (CSV / ALE / XML / JSON)</label>
-              <textarea 
-                rows={6}
-                value={uploadContent}
-                onChange={e => setUploadContent(e.target.value)}
-                placeholder="Paste CSV / ALE / XML content here..."
-                className="w-full bg-slate-950 border border-slate-700 text-xs p-2.5 rounded font-mono text-white focus:outline-none focus:border-blue-500"
-                required
-              />
-            </div>
+            )}
 
             <button 
               type="submit" 
-              className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold transition"
+              disabled={loading || (uploadMode === 'file' && !selectedFile) || (uploadMode === 'text' && !uploadContent.trim())}
+              className="w-full py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-600 text-white rounded-lg text-xs font-semibold transition"
             >
-              Ingest Document to Confluent Stream
+              {loading ? 'Processing Stream...' : 'Auto-Classify & Ingest to CineSpine'}
             </button>
           </form>
         </div>

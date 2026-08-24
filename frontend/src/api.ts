@@ -17,11 +17,11 @@ export async function fetchDiscrepancies(productionId: string, shootDay: string)
 export async function uploadDocument(payload: {
   production_id: string;
   shoot_day: string;
-  axis: string;
-  department: string;
-  doc_type: string;
   raw_content: string;
   filename?: string;
+  axis?: string;
+  department?: string;
+  doc_type?: string;
 }): Promise<any> {
   const res = await fetch(`${API_BASE}/upload`, {
     method: 'POST',
@@ -29,6 +29,20 @@ export async function uploadDocument(payload: {
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error('Upload failed');
+  return res.json();
+}
+
+export async function uploadFile(productionId: string, shootDay: string, file: File): Promise<any> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('production_id', productionId);
+  formData.append('shoot_day', shootDay);
+
+  const res = await fetch(`${API_BASE}/upload/file`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) throw new Error('File upload failed');
   return res.json();
 }
 

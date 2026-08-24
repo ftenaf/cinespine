@@ -2,7 +2,7 @@
 FastAPI Route Handlers for CineSpine.
 """
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response, UploadFile, File, Form
 from pydantic import BaseModel, Field
 from backend.app.streaming.models import EventEnvelope, AxisType, DepartmentType, DocumentType
 from backend.app.streaming.bus import EventBus
@@ -10,6 +10,8 @@ from backend.app.streaming.dispatcher import IngestionDispatcher
 from backend.app.spine.writer import SpineWriter
 from backend.app.reconciliation.engine import ReconciliationEngine
 from backend.app.agents.mcp_server import ClickHouseMCPServer, GeminiDiscrepancyAssistant
+from backend.app.parsers.classifier import classify_document
+from backend.app.parsers.pdf_parsers import extract_text_from_pdf
 from backend.app.core.telemetry import TelemetryExporter
 
 router = APIRouter(prefix="/api")
@@ -35,11 +37,11 @@ event_bus.subscribe("production.events.dlq", lambda e: (
 class UploadRequest(BaseModel):
     production_id: str
     shoot_day: str
-    axis: AxisType
-    department: DepartmentType
-    doc_type: DocumentType
     raw_content: str
     filename: Optional[str] = None
+    axis: Optional[AxisType] = None
+    department: Optional[DepartmentType] = None
+    doc_type: Optional[DocumentType] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -57,20 +59,85 @@ def health_check():
 
 @router.post("/upload")
 def upload_document(req: UploadRequest):
+    """
+    Ingests document with automatic type and department classification.
+    """
+    # Auto-classify if not explicitly specified
+    classification = classify_document(filename=req.filename, content=req.raw_content)
+    axis = req.axis or classification.axis
+    department = req.department or classification.department
+    doc_type = req.doc_type or classification.doc_type
+
     envelope = EventEnvelope(
         production_id=req.production_id,
         shoot_day=req.shoot_day,
-        axis=req.axis,
-        department=req.department,
-        doc_type=req.doc_type,
+        axis=axis,
+        department=department,
+        doc_type=doc_type,
         raw_content=req.raw_content,
         filename=req.filename,
         metadata=req.metadata,
     )
-    # Route topic based on department
-    topic = f"production.raw.{req.department.value}"
+
+    topic = f"production.raw.{department.value}"
     event_bus.publish(topic, envelope)
-    return {"status": "INGESTED", "event_id": envelope.event_id, "shoot_day": envelope.shoot_day}
+    return {
+        "status": "INGESTED",
+        "event_id": envelope.event_id,
+        "shoot_day": envelope.shoot_day,
+        "detected_doc_type": doc_type.value,
+        "detected_department": department.value,
+        "detected_axis": axis.value,
+    }
+
+
+@router.post("/upload/file")
+async def upload_document_file(
+    file: UploadFile = File(...),
+    production_id: str = Form(...),
+    shoot_day: str = Form(...),
+):
+    """
+    Accepts binary PDF, CSV, ALE, or XML file drops and extracts/routes automatically.
+    """
+    content_bytes = await file.read()
+    filename = file.filename or "unknown_drop"
+
+    # Extract text if PDF
+    if filename.lower().endswith(".pdf"):
+        try:
+            raw_text = extract_text_from_pdf(content_bytes)
+        except Exception as e:
+            raw_text = content_bytes.decode("utf-8", errors="ignore")
+    else:
+        raw_text = content_bytes.decode("utf-8", errors="ignore")
+
+    classification = classify_document(filename=filename, content=content_bytes)
+
+    envelope = EventEnvelope(
+        production_id=production_id,
+        shoot_day=shoot_day,
+        axis=classification.axis,
+        department=classification.department,
+        doc_type=classification.doc_type,
+        raw_content=raw_text,
+        filename=filename,
+        metadata={"file_size": len(content_bytes), "content_type": file.content_type},
+    )
+
+    topic = f"production.raw.{classification.department.value}"
+    event_bus.publish(topic, envelope)
+
+    return {
+        "status": "INGESTED",
+        "filename": filename,
+        "event_id": envelope.event_id,
+        "shoot_day": envelope.shoot_day,
+        "detected_doc_type": classification.doc_type.value,
+        "detected_department": classification.department.value,
+        "detected_axis": classification.axis.value,
+        "is_multimodal": classification.is_multimodal,
+    }
 
 
 @router.get("/takes")

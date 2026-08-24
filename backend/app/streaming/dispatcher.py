@@ -1,7 +1,7 @@
 """
 Ingestion Dispatcher Worker.
 
-Consumes raw document events from Kafka, runs parsers, and emits verified events onto the spine topic.
+Consumes raw document events from Kafka, runs auto-classification, parsers, and emits verified events onto the spine topic.
 """
 from typing import Dict, Any
 from backend.app.streaming.models import EventEnvelope, DocumentType
@@ -9,6 +9,12 @@ from backend.app.streaming.bus import EventBus
 from backend.app.parsers.sound_ale import parse_sound_ale
 from backend.app.parsers.camera_csv import parse_camera_csv
 from backend.app.parsers.silverstack_xml import parse_silverstack_xml
+from backend.app.parsers.pdf_parsers import (
+    extract_text_from_pdf,
+    parse_zoelog_camera_text,
+    parse_editors_log_text,
+    parse_silverstack_volume_text,
+)
 from backend.app.parsers.base import ParserFailureError
 
 
@@ -22,6 +28,7 @@ class IngestionDispatcher:
         self.bus.subscribe("production.raw.camera", self.handle_camera_drop)
         self.bus.subscribe("production.raw.dit", self.handle_silverstack_drop)
         self.bus.subscribe("production.raw.silverstack", self.handle_silverstack_drop)
+        self.bus.subscribe("production.raw.script", self.handle_script_drop)
 
     def handle_sound_drop(self, envelope: EventEnvelope) -> None:
         try:
@@ -40,6 +47,7 @@ class IngestionDispatcher:
                         "slate": rec.slate,
                         "take_id": rec.take_id,
                         "sound_roll": rec.sound_roll,
+                        "camera_roll": rec.camera_roll,
                         "timecode_in": rec.timecode_in,
                         "timecode_out": rec.timecode_out,
                         "tracks": rec.tracks,
@@ -59,7 +67,15 @@ class IngestionDispatcher:
 
     def handle_camera_drop(self, envelope: EventEnvelope) -> None:
         try:
-            records = parse_camera_csv(envelope.raw_content)
+            fn = (envelope.filename or "").upper()
+            content = envelope.raw_content
+
+            # Check if PDF format
+            if fn.endswith(".PDF") or "ZOELOG" in content.upper():
+                records = parse_zoelog_camera_text(content)
+            else:
+                records = parse_camera_csv(content)
+
             for rec in records:
                 spine_event: Dict[str, Any] = {
                     "event_id": envelope.event_id,
@@ -92,9 +108,50 @@ class IngestionDispatcher:
         except Exception as e:
             self._emit_dlq(envelope, "SYSTEM_ERROR", str(e))
 
+    def handle_script_drop(self, envelope: EventEnvelope) -> None:
+        try:
+            fn = (envelope.filename or "").upper()
+            content = envelope.raw_content
+
+            if "EDITOR" in fn or "DAILY EDITOR'S LOG" in content.upper():
+                records = parse_editors_log_text(content)
+                for rec in records:
+                    spine_event: Dict[str, Any] = {
+                        "event_id": envelope.event_id,
+                        "production_id": envelope.production_id,
+                        "shoot_day": envelope.shoot_day,
+                        "axis": envelope.axis.value,
+                        "department": envelope.department.value,
+                        "doc_type": envelope.doc_type.value,
+                        "entity_type": "take",
+                        "payload": {
+                            "scene": rec.scene,
+                            "slate": rec.slate,
+                            "take_id": rec.take_id,
+                            "sound_roll": rec.sound_roll,
+                            "camera_roll": rec.camera_roll,
+                            "is_starred": rec.is_starred,
+                            "is_pickup": rec.is_pickup,
+                            "note": rec.note,
+                        },
+                        "timestamp": envelope.timestamp,
+                    }
+                    self.bus.publish("production.events.spine", spine_event)
+        except ParserFailureError as e:
+            self._emit_dlq(envelope, "PARSER_FAILURE", str(e))
+        except Exception as e:
+            self._emit_dlq(envelope, "SYSTEM_ERROR", str(e))
+
     def handle_silverstack_drop(self, envelope: EventEnvelope) -> None:
         try:
-            records = parse_silverstack_xml(envelope.raw_content)
+            fn = (envelope.filename or "").upper()
+            content = envelope.raw_content
+
+            if fn.endswith(".PDF") or "VOLUME REPORT" in content.upper():
+                records = parse_silverstack_volume_text(content)
+            else:
+                records = parse_silverstack_xml(content)
+
             for clip in records:
                 spine_event: Dict[str, Any] = {
                     "event_id": envelope.event_id,

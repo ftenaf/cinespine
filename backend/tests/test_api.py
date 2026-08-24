@@ -73,7 +73,20 @@ def test_api_get_takes_and_discrepancies(client):
     assert response_disc.status_code == 200
 
 
+def test_api_upload_multipart_file(client):
+    file_bytes = SAMPLE_CAMERA_CSV.encode("utf-8")
+    files = {"file": ("DemoProduction-2026-7-28_CAM_A.csv", file_bytes, "text/csv")}
+    data = {"production_id": "PROD_01", "shoot_day": "31"}
+    
+    response = client.post("/api/upload/file", files=files, data=data)
+    assert response.status_code == 200
+    res_data = response.json()
+    assert res_data["status"] == "INGESTED"
+    assert res_data["detected_department"] == "camera"
+
+
 def test_api_metrics_endpoint(client):
     response = client.get("/api/metrics")
     assert response.status_code == 200
     assert b"cinespine_ingested_events_total" in response.content
+
