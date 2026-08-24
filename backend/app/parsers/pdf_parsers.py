@@ -41,7 +41,7 @@ def extract_text_from_pdf(pdf_bytes_or_file) -> str:
 def extract_thumbnails_from_pdf(pdf_bytes_or_file) -> Dict[str, str]:
     """
     Extracts embedded scene/take JPEG thumbnail pictures from a Pomfort Silverstack Thumbnail PDF.
-    Returns a mapping of {clip_name: data_uri}.
+    Returns a mapping of {clip_name/key: data_uri}.
     """
     thumbnails: Dict[str, str] = {}
     try:
@@ -51,18 +51,42 @@ def extract_thumbnails_from_pdf(pdf_bytes_or_file) -> Dict[str, str]:
             reader = pypdf.PdfReader(pdf_bytes_or_file)
 
         for page in reader.pages:
-            text = page.extract_text() or ""
-            name_m = re.search(r"Name\s+([A-Za-z0-9_\-]+)", text)
-            if not name_m:
+            txt = page.extract_text() or ""
+            imgs = [img for img in page.images if len(img.data) > 2000 and any(img.name.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png"])]
+            if not imgs:
                 continue
-            clip_name = name_m.group(1)
-            for img in page.images:
-                if len(img.data) > 2000 and any(img.name.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png"]):
-                    b64 = base64.b64encode(img.data).decode("utf-8")
-                    mime = "image/jpeg" if "jp" in img.name.lower() else "image/png"
-                    data_uri = f"data:{mime};base64,{b64}"
-                    thumbnails[clip_name] = data_uri
-                    break
+
+            img = imgs[0]
+            b64 = base64.b64encode(img.data).decode("utf-8")
+            mime = "image/jpeg" if "jp" in img.name.lower() else "image/png"
+            data_uri = f"data:{mime};base64,{b64}"
+
+            lines = [l.strip() for l in txt.splitlines() if l.strip()]
+            for i, line in enumerate(lines):
+                if line.startswith("Name "):
+                    cname = line[5:].strip()
+                    if i + 1 < len(lines) and len(lines[i + 1]) <= 4 and not any(k in lines[i + 1] for k in ["ShotID", "Duration", "Camera", "Reel", "Scene", "Take", "Director", "Sensor"]):
+                        cname += lines[i + 1].strip()
+
+                    thumbnails[cname] = data_uri
+                    short_m = re.match(r"^([A-Za-z0-9_]+)", cname)
+                    if short_m:
+                        thumbnails[short_m.group(1)] = data_uri
+                        norm_m = re.match(r"^([A-Z])_0*(\d{3,4})C(\d{3,4})", short_m.group(1))
+                        if norm_m:
+                            norm_key = f"{norm_m.group(1)}{norm_m.group(2)[-3:]}_C{int(norm_m.group(3)):03d}"
+                            thumbnails[norm_key] = data_uri
+
+            sc_m = re.search(r"Scene\s+([0-9A-Za-z]+)", txt)
+            sh_m = re.search(r"Shot\s+([0-9A-Za-z]+)", txt)
+            tk_m = re.search(r"Take\s+([0-9A-Za-z*]+)", txt)
+            if sc_m and sh_m and tk_m:
+                tk_clean = tk_m.group(1).replace("VFX", "").replace("PK", "").strip()
+                if tk_clean.startswith("0") and len(tk_clean) > 1:
+                    tk_clean = str(int(tk_clean))
+                scene_key = f"{sc_m.group(1)}/{sh_m.group(1)}_{tk_clean}"
+                if scene_key not in thumbnails:
+                    thumbnails[scene_key] = data_uri
     except Exception as e:
         pass
     return thumbnails
@@ -774,66 +798,84 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
     if not text or not text.strip():
         raise ParserFailureError("Empty Silverstack Thumbnail text")
 
-    cleaned_text = re.sub(
-        r"Thumbnail Report[^\n]*\nPomfort Silverstack[^\n]*\n(?:Offloads started[^\n]*\nand[^\n]*\n)?(?:260728_SD31\nDEMO PRODUCTION\n)?",
-        "",
-        text,
-    )
-    blocks = re.split(r"\nName\s+", "\n" + cleaned_text)
-    clips: List[ParsedSilverstackClip] = []
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    clip_blocks: List[List[str]] = []
+    current_block: List[str] = []
 
-    for block in blocks[1:]:
-        lines = [l.strip() for l in block.strip().splitlines() if l.strip()]
-        if not lines:
+    for line in lines:
+        # Filter out repetitive page header and footer tokens that disrupt multi-page fields
+        if (
+            "Thumbnail Report" in line
+            or "Pomfort Silverstack" in line
+            or "Offloads started" in line
+            or "and 28 July" in line
+            or "260728_SD31" in line
+            or "DEMO PRODUCTION" in line
+            or "★★★★★" in line
+        ):
             continue
 
-        name_line = lines[0]
-        name_match = re.match(r"^([A-Za-z0-9_\-]+)", name_line)
-        clip_name = name_match.group(1) if name_match else name_line
+        if line.startswith("Name "):
+            if current_block:
+                clip_blocks.append(current_block)
+            current_block = [line]
+        elif current_block:
+            current_block.append(line)
 
-        if len(lines) > 1 and len(lines[1]) <= 4 and not any(k in lines[1] for k in ["ShotID", "Duration", "Camera", "Reel"]):
-            clip_name += lines[1]
+    if current_block:
+        clip_blocks.append(current_block)
+
+    clips: List[ParsedSilverstackClip] = []
+
+    for blk in clip_blocks:
+        blk_txt = " \n ".join(blk)
+        name_line = blk[0]
+        raw_name = name_line[5:].strip()
+
+        # Handle wrapped trailing character (e.g. 'A_0120C001_260728_091309_h1EI' + 'C')
+        if len(blk) > 1 and len(blk[1]) <= 4 and not any(k in blk[1] for k in ["ShotID", "Duration", "Camera", "Reel", "Scene", "Take", "Director", "Sensor"]):
+            raw_name += blk[1].strip()
 
         # Reel / Tape
-        reel_m = re.search(r"Reel/Tape\s*([A-Za-z0-9_]+)", block)
+        reel_m = re.search(r"Reel/Tape\s*([A-Za-z0-9_]+)", blk_txt)
         reel_tape = reel_m.group(1).strip() if reel_m else None
 
         # Scene
-        scene_m = re.search(r"\n\s*Scene\s+([0-9A-Za-z]+)", block)
+        scene_m = re.search(r"Scene\s+([0-9A-Za-z]+)", blk_txt)
         scene = scene_m.group(1).strip() if scene_m else None
 
         # Shot
-        shot_m = re.search(r"\n\s*Shot\s+([0-9A-Za-z]+)", block)
+        shot_m = re.search(r"Shot\s+([0-9A-Za-z]+)", blk_txt)
         shot = shot_m.group(1).strip() if shot_m else None
 
         # Take
-        take_m = re.search(r"\n\s*Take\s+([0-9A-Za-z*]+(?:\s+VFX|\s+PK)?)", block)
+        take_m = re.search(r"Take\s+([0-9A-Za-z*]+(?:\s+VFX|\s+PK)?)", blk_txt)
         raw_take = take_m.group(1).strip() if take_m else None
 
         # Codec
-        codec_m = re.search(r"Codec\s*(.+?)(?=\s+Recording Date|\s+Location|\n[A-Z]|\Z)", block, re.DOTALL)
+        codec_m = re.search(r"Codec\s*(.+?)(?=\s+Recording Date|\s+Location|\n|\Z)", blk_txt)
         codec = re.sub(r"\s+", " ", codec_m.group(1)).strip() if codec_m else None
 
         # Recording Date
-        rec_m = re.search(r"Recording Date\s*([0-9/]+,\s*[0-9:]+)", block)
+        rec_m = re.search(r"Recording Date\s*([0-9/]+,\s*[0-9:]+)", blk_txt)
         rec_date = rec_m.group(1).strip() if rec_m else None
 
         # Duration
-        dur_m = re.search(r"Duration\s*([0-9:]+\s*(?:min|sec))", block)
+        dur_m = re.search(r"Duration\s*([0-9:]+\s*(?:min|sec))", blk_txt)
         duration = dur_m.group(1).strip() if dur_m else None
 
         # Camera
-        cam_m = re.search(r"Camera\s*([A-C_]+)", block)
+        cam_m = re.search(r"Camera\s*([A-C_]+)", blk_txt)
         camera = cam_m.group(1).strip() if cam_m else None
 
         # FPS, ISO, T-Stop
-        fps_m = re.search(r"Sensor FPS\s*([0-9.]+)", block)
-        fps = float(fps_m.group(1)) if fps_m else None
+        fps_m = re.search(r"Sensor FPS\s*([0-9.]+)", blk_txt)
+        fps = float(fps_m.group(1)) if fps_m else 24.0
 
-        iso_m = re.search(r"EI/ISO \(clip\)\s*([0-9]+)", block)
-        iso = int(iso_m.group(1)) if iso_m else None
+        iso_m = re.search(r"EI/ISO \(clip\)\s*([0-9]+)", blk_txt)
+        iso = int(iso_m.group(1)) if iso_m else 800
 
-        tstop_m = re.search(r"T-Stop\s*([0-9./ ]+)", block)
+        tstop_m = re.search(r"T-Stop\s*([0-9./ ]+)", blk_txt)
         tstop = tstop_m.group(1).strip() if tstop_m else None
 
         # Infer camera roll from reel_tape (e.g. A_0120_1EIC -> A120)
@@ -845,26 +887,32 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
                 num = roll_m.group(2)[-3:]
                 roll = normalize_camera_roll(f"{prefix}{num}")
 
-        is_audio = "PCM" in (codec or "") or (reel_tape and "664" in reel_tape) or (reel_tape and "26Y" in reel_tape) or clip_name.endswith("T01") or clip_name.endswith("T02")
+        is_audio = "PCM" in (codec or "") or (reel_tape and ("664" in reel_tape or "26Y" in reel_tape)) or raw_name.endswith(".WAV") or ("T01" in raw_name and "-" in raw_name)
         card_type = "sound" if is_audio else "camera"
         file_ext = ".WAV" if is_audio else ".mxf"
-        full_fname = clip_name if ("." in clip_name) else f"{clip_name}{file_ext}"
+        full_fname = raw_name if ("." in raw_name) else f"{raw_name}{file_ext}"
 
-        is_vfx = "VFX" in (raw_take or "") or "VFX" in block
+        is_vfx = "VFX" in (raw_take or "") or "VFX" in blk_txt
 
         take_id = raw_take.replace("VFX", "").replace("PK", "").strip() if raw_take else None
         if take_id and take_id.startswith("0") and len(take_id) > 1:
             take_id = str(int(take_id))
 
-        # Find thumbnail image in map
+        # Multi-tier thumbnail image resolution
         thumb_uri = None
         if thumbnails_map:
-            thumb_uri = thumbnails_map.get(clip_name) or thumbnails_map.get(clip_name.split(".")[0])
-            if not thumb_uri:
-                for k, v in thumbnails_map.items():
-                    if k in clip_name or clip_name in k:
-                        thumb_uri = v
-                        break
+            thumb_uri = (
+                thumbnails_map.get(raw_name)
+                or thumbnails_map.get(full_fname)
+                or thumbnails_map.get(raw_name.split(".")[0])
+            )
+            if not thumb_uri and roll:
+                m_c = re.search(r"C(\d{3,4})", raw_name)
+                if m_c:
+                    norm_k = f"{roll}_C{int(m_c.group(1)):03d}"
+                    thumb_uri = thumbnails_map.get(norm_k)
+            if not thumb_uri and scene and shot and take_id:
+                thumb_uri = thumbnails_map.get(f"{scene}/{shot}_{take_id}")
 
         clips.append(
             ParsedSilverstackClip(

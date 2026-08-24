@@ -127,17 +127,33 @@ class TestRealPDFExamples:
         assert audio_clip.card_type == "sound"
         assert audio_clip.recording_date is not None
 
-        # Verify Camera clip fields: Name, Reel/Tape, Scene/Shot/Take, Codec, Recording Date, FPS, ISO, card_type, thumbnail
-        camera_clip = next(r for r in records if "A_0120C001" in r.file_name)
-        assert camera_clip.camera_roll == "A120"
-        assert camera_clip.reel_tape == "A_0120_1EIC"
-        assert camera_clip.scene == "27"
-        assert camera_clip.shot == "7"
-        assert camera_clip.take_id == "1"
-        assert "ARRIRAW" in (camera_clip.codec or "")
-        assert camera_clip.fps == 24.0
-        assert camera_clip.iso == 800
-        assert camera_clip.card_type == "camera"
-        assert camera_clip.thumbnail_b64 is not None
-        assert camera_clip.thumbnail_b64.startswith("data:image/jpeg;base64,")
-        assert "28/7/26" in (camera_clip.recording_date or "")
+        # Verify Camera A clip fields: Name, Reel/Tape, Scene/Shot/Take, Codec, Recording Date, FPS, ISO, card_type, thumbnail
+        camera_clip_a = next(r for r in records if "A_0120C001" in r.file_name)
+        assert camera_clip_a.camera_roll == "A120"
+        assert camera_clip_a.reel_tape == "A_0120_1EIC"
+        assert camera_clip_a.scene == "27"
+        assert camera_clip_a.shot == "7"
+        assert camera_clip_a.take_id == "1"
+        assert "ARRIRAW" in (camera_clip_a.codec or "")
+        assert camera_clip_a.fps == 24.0
+        assert camera_clip_a.iso == 800
+        assert camera_clip_a.card_type == "camera"
+        assert camera_clip_a.thumbnail_b64 is not None
+        assert camera_clip_a.thumbnail_b64.startswith("data:image/jpeg;base64,")
+        assert "28/7/26" in (camera_clip_a.recording_date or "")
+
+        # Verify Camera B (B_0039C001) for Scene 27/7 Take 1
+        camera_clip_b = next(r for r in records if "B_0039C001" in r.file_name)
+        assert camera_clip_b.camera_roll == "B039"
+        assert camera_clip_b.scene == "27"
+        assert camera_clip_b.shot == "7"
+        assert camera_clip_b.take_id == "1"
+        assert camera_clip_b.thumbnail_b64 is not None
+
+        # Verify Camera C (C_0005C001) for Scene 27/7 Take 1
+        camera_clip_c = next(r for r in records if "C_0005C001" in r.file_name)
+        assert camera_clip_c.camera_roll == "C005"
+        assert camera_clip_c.scene == "27"
+        assert camera_clip_c.shot == "7"
+        assert camera_clip_c.take_id == "1"
+        assert camera_clip_c.thumbnail_b64 is not None
