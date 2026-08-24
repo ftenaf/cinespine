@@ -343,7 +343,10 @@ def is_take_media_match(media_info: Dict[str, Any], slate: str, take_id: str, ca
         else:
             tk_match = tk_norm.upper() == m_tk_norm.upper()
 
-        if sc.upper() == m_scene.upper() and tk_match:
+        sc_clean = sc.lstrip("+").upper()
+        m_sc_clean = m_scene.lstrip("+").upper()
+
+        if (sc.upper() == m_scene.upper() or sc_clean == m_sc_clean) and tk_match:
             if sh and m_shot:
                 if sh.upper() == m_shot.upper():
                     return True
@@ -361,14 +364,15 @@ def is_take_media_match(media_info: Dict[str, Any], slate: str, take_id: str, ca
         elif clip_name in fn:
             return True
 
-    # 3. Audio WAV Name matching (e.g. '27-7T01.WAV' for Slate '27/7' Take '1')
+    # 3. Audio WAV Name matching (e.g. '+99BDF-9T01.WAV', '27-7T01.WAV', '49WTT01.WAV')
     if fn.upper().endswith(".WAV"):
         if tk_norm.isdigit():
             tk_int = int(tk_norm)
+            sc_esc = rf"(?:\+)?{re.escape(sc.lstrip('+'))}"
             if sh:
-                pattern = rf"^{re.escape(sc)}-{re.escape(sh)}T0*{tk_int}\.WAV$"
+                pattern = rf"^{sc_esc}-{re.escape(sh)}T0*{tk_int}\.WAV$"
             else:
-                pattern = rf"^{re.escape(sc)}T0*{tk_int}\.WAV$"
+                pattern = rf"^{sc_esc}(?:-?T|WTT)0*{tk_int}\.WAV$"
             if re.search(pattern, fn, re.IGNORECASE):
                 return True
 

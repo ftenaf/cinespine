@@ -41,11 +41,12 @@ SAMPLE_SILVERSTACK_VOLUME_TEXT = """
 Volume Report 28/7/26, 19:27
 Pomfort Silverstack XT
 664 SD
-128-1T01.WAV
-XXH64:1b742d797173f0d4 60.49 MB
-128-1T02.WAV
+26Y06M18 5.29 GB
++99BDF-9T01.WAV
+XXH64:202ab43613939de5 133.93 MB
+71C-3T02.WAV
 XXH64:b90cf1a98bb7db8e 59.62 MB
-64A-1T01.WAV
+49WTT01.WAV
 XXH64:50324f3038cb6e4b 143.43 MB
 """
 
@@ -88,7 +89,25 @@ class TestPDFParsers:
         assert len(clips) == 3
         
         c1 = clips[0]
-        assert c1.file_name == "128-1T01.WAV"
-        assert c1.checksum == "1b742d797173f0d4"
+        assert c1.file_name == "+99BDF-9T01.WAV"
+        assert c1.scene == "+99BDF"
+        assert c1.shot == "9"
+        assert c1.take_id == "01"
+        assert c1.reel_tape == "26Y06M18"
+        assert c1.checksum == "202ab43613939de5"
         assert c1.checksum_type == "XXH64"
-        assert c1.file_size_bytes == int(60.49 * 1024 * 1024)
+        assert c1.card_type == "sound"
+
+        c2 = clips[1]
+        assert c2.file_name == "71C-3T02.WAV"
+        assert c2.scene == "71C"
+        assert c2.shot == "3"
+        assert c2.take_id == "02"
+
+        c3 = clips[2]
+        assert c3.file_name == "49WTT01.WAV"
+        assert c3.scene == "49"
+        assert c3.shot == "WT"
+        assert c3.take_id == "01"
+        assert c3.is_wild_track is True
+

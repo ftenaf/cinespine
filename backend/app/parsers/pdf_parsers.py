@@ -620,8 +620,8 @@ def parse_silverstack_volume_text(text: str) -> List[ParsedSilverstackClip]:
         if folder_m:
             current_folder = folder_m.group(1)
 
-        # 2. Media file line (e.g. '71C-3T02.WAV' or 'A120_C001_260728.MOV')
-        file_match = re.match(r"^([A-Za-z0-9_\-\.]+\.(?:WAV|MOV|BRAW|ARI|ARX|MXF|MP4))$", cleaned, re.IGNORECASE)
+        # 2. Media file line (e.g. '+99BDF-9T01.WAV', '71C-3T02.WAV', or 'A120_C001_260728.MOV')
+        file_match = re.match(r"^([\+A-Za-z0-9_\-\.]+\.(?:WAV|MOV|BRAW|ARI|ARX|MXF|MP4))$", cleaned, re.IGNORECASE)
         if file_match:
             current_file = file_match.group(1)
             current_checksum = None
@@ -656,20 +656,37 @@ def parse_silverstack_volume_text(text: str) -> List[ParsedSilverstackClip]:
             is_wt: bool = False
 
             if is_wav:
-                # WAV filename format: [Scene]-[Shot]T[Take].WAV, e.g. 71C-3T02.WAV, 64A-2PkT5.WAV, 6WT-1T01.WAV
-                wav_m = re.match(r"^([0-9A-Za-z]+)-([0-9A-Za-z]+)T([0-9A-Za-z_*]+)\.WAV$", current_file, re.IGNORECASE)
-                if wav_m:
-                    scene = wav_m.group(1)
-                    raw_shot = wav_m.group(2)
-                    raw_take = wav_m.group(3)
+                base = current_file[:-4] if current_file.lower().endswith(".wav") else current_file
+
+                # 1. Standard WAV format: [Scene]-[Shot]T[Take].WAV, e.g. +99BDF-9T01.WAV, 71C-3T02.WAV, 64A-2PkT5.WAV, 41-122a-1T01.WAV
+                m1 = re.match(r"^(.+?)-([A-Za-z0-9_]+)T([A-Za-z0-9_*]+)$", base, re.IGNORECASE)
+                if m1:
+                    scene = m1.group(1)
+                    raw_shot = m1.group(2)
+                    raw_take = m1.group(3)
                     if "PK" in raw_shot.upper() or "PK" in raw_take.upper():
                         is_pk = True
                         raw_shot = re.sub(r"pk", "", raw_shot, flags=re.IGNORECASE)
                         raw_take = re.sub(r"pk", "", raw_take, flags=re.IGNORECASE)
-                    if "WT" in scene.upper() or "WT" in raw_shot.upper():
+                    if "WT" in scene.upper() or "WT" in raw_shot.upper() or "WT" in raw_take.upper():
                         is_wt = True
                     shot = raw_shot
-                    take_id = str(int(raw_take)) if raw_take.isdigit() else raw_take
+                    take_id = raw_take
+                else:
+                    # 2. Wild track without hyphen: e.g. 101AWTT01.WAV, 49WTT01.WAV, 68A68WTT01.WAV
+                    m2 = re.match(r"^(.+?)WTT([A-Za-z0-9_*]+)$", base, re.IGNORECASE)
+                    if m2:
+                        scene = m2.group(1)
+                        shot = "WT"
+                        take_id = m2.group(2)
+                        is_wt = True
+                    else:
+                        # 3. Scene + Take only: e.g. 68T01.WAV
+                        m3 = re.match(r"^(.+?)T([A-Za-z0-9_*]+)$", base, re.IGNORECASE)
+                        if m3:
+                            scene = m3.group(1)
+                            shot = None
+                            take_id = m3.group(2)
 
             roll: Optional[str] = None
             if not is_wav:
