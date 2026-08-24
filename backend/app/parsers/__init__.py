@@ -14,7 +14,7 @@ from .pdf_parsers import (
     parse_editors_log_text,
     parse_silverstack_volume_text,
 )
-from .classifier import classify_document, DocumentClassification
+from .classifier import classify_document, infer_production_and_day, DocumentClassification
 
 __all__ = [
     "ParserFailureError",
@@ -29,5 +29,6 @@ __all__ = [
     "parse_editors_log_text",
     "parse_silverstack_volume_text",
     "classify_document",
+    "infer_production_and_day",
     "DocumentClassification",
 ]

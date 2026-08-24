@@ -1,32 +1,60 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Film, AlertTriangle, CheckCircle2, Upload, MessageSquare, 
-  RefreshCw, Activity, Layers, Database, ShieldAlert, Sparkles, FileText
+  RefreshCw, Activity, Layers, Database, ShieldAlert, Sparkles, 
+  FileText, Clapperboard, Plus, Calendar
 } from 'lucide-react';
-import { TakeRecord, Discrepancy } from './types';
-import { fetchTakes, fetchDiscrepancies, uploadDocument, uploadFile, askAssistant } from './api';
+import { TakeRecord, Discrepancy, Production } from './types';
+import { 
+  fetchTakes, fetchDiscrepancies, fetchProductions, 
+  createProduction, uploadDocument, uploadFile, askAssistant 
+} from './api';
 
 export default function App() {
-  const [productionId, setProductionId] = useState('PROD_01');
-  const [shootDay, setShootDay] = useState('31');
+  const [productions, setProductions] = useState<Production[]>([]);
+  const [selectedProductionId, setSelectedProductionId] = useState('DEMO_PRODUCTION');
+  const [selectedDay, setSelectedDay] = useState('31');
   const [takes, setTakes] = useState<TakeRecord[]>([]);
   const [discrepancies, setDiscrepancies] = useState<Discrepancy[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedTake, setSelectedTake] = useState<{ slate: string; take_id: string } | null>(null);
   const [assistantExplanation, setAssistantExplanation] = useState<string | null>(null);
+  
+  // Modals
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isManageProdOpen, setIsManageProdOpen] = useState(false);
+  const [isNewProdOpen, setIsNewProdOpen] = useState(false);
+
+  // Upload Form State
   const [uploadMode, setUploadMode] = useState<'file' | 'text'>('file');
   const [uploadContent, setUploadContent] = useState('');
   const [uploadFilename, setUploadFilename] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
 
-  const loadData = async () => {
+  // New Production Form
+  const [newProdId, setNewProdId] = useState('');
+  const [newProdName, setNewProdName] = useState('');
+  const [newProdDirector, setNewProdDirector] = useState('');
+
+  const loadProductions = async () => {
+    try {
+      const prods = await fetchProductions();
+      setProductions(prods);
+      if (prods.length > 0 && !prods.some(p => p.production_id === selectedProductionId)) {
+        setSelectedProductionId(prods[0].production_id);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const loadSpineData = async () => {
     setLoading(true);
     try {
       const [t, d] = await Promise.all([
-        fetchTakes(productionId, shootDay),
-        fetchDiscrepancies(productionId, shootDay),
+        fetchTakes(selectedProductionId, selectedDay),
+        fetchDiscrepancies(selectedProductionId, selectedDay),
       ]);
       setTakes(t);
       setDiscrepancies(d);
@@ -38,20 +66,34 @@ export default function App() {
   };
 
   useEffect(() => {
-    loadData();
-  }, [productionId, shootDay]);
+    loadProductions();
+  }, []);
 
-  const handleSeedDemoData = async () => {
+  useEffect(() => {
+    loadSpineData();
+  }, [selectedProductionId, selectedDay]);
+
+  const activeProduction: Production = productions.find(p => p.production_id === selectedProductionId) || {
+    production_id: selectedProductionId,
+    name: selectedProductionId.replace('_', ' '),
+    shoot_days: ['31', '39'],
+    total_events: 0,
+    total_takes: 0,
+    description: 'Active studio production',
+  };
+
+  const handleSeedDemoDay = async (dayToSeed: string = '31') => {
     setLoading(true);
     const sampleCamera = `Slate,Take,Roll,FPS,Lens,ISO,Start TC,End TC,Clip Name\n27/7,1,A120,24,50mm,800,10:14:22:00,10:15:10:00,A120_C001_260728.MOV\n27/7,2PK,A120,24,50mm,800,10:16:05:00,10:17:00:00,A120_C002_260728.MOV\n27/7,3 VFX,A120,24,50mm,800,10:18:12:00,10:19:30:00,A120_C003_260728.MOV`;
-    const sampleSound = `Heading\nFIELD_DELIM\tTABS\nColumn\nName\tTracks\tStart\tEnd\tTape\tScene\tTake\tSound Roll\nData\n27-7_T01\t1,2,3,4\t10:14:22:00\t10:15:10:00\tSR01\t27/7\t1\tSR01\n27-7_T02\t1,2,3,4\t10:16:05:00\t10:17:00:00\tSR01\t27/7\t2PK\tSR01\n27-7_T03\t1,2,3,4\t10:18:12:05\t10:19:30:00\tSR01\t27/7\t3*\tSR01`;
+    const sampleSound = `SOUND REPORT\nProject:,"GREAT HALL",\nDate:,"28/07/26",\nSound Mixer:,"SOUND MIXER",\nFile Name,Scene,Take,Length,Start TC,Trk 1,Trk 2,Notes\n27-7T01.WAV,27-7,01,00:03:00,10:14:22:00,"MixL","MixR",""\n27-7T02.WAV,27-7,02,00:03:32,10:16:05:00,"MixL","MixR",""\n27-7T03.WAV,27-7,03,00:03:32,10:18:12:05,"MixL","MixR",""`;
     const sampleSilverstack = `<?xml version="1.0" encoding="UTF-8"?><SilverstackReport version="1.0"><Volume name="MAG_A_120"><Clip><FileName>A120_C001_260728.MOV</FileName><Reel>A_0120</Reel><Bytes>4294967296</Bytes><Hash type="MD5">e99a18c428cb38d5f260853678922e03</Hash><DurationFrames>1152</DurationFrames></Clip></Volume></SilverstackReport>`;
 
     try {
-      await uploadDocument({ production_id: productionId, shoot_day: shootDay, raw_content: sampleCamera, filename: 'DemoProduction-2026-7-28_CAM_A.csv' });
-      await uploadDocument({ production_id: productionId, shoot_day: shootDay, raw_content: sampleSound, filename: '260728_Report.csv' });
-      await uploadDocument({ production_id: productionId, shoot_day: shootDay, raw_content: sampleSilverstack, filename: 'Volume-664_SD.xml' });
-      await loadData();
+      await uploadDocument({ raw_content: sampleCamera, filename: `DemoProduction-2026-7-28_CAM_A.csv`, production_id: selectedProductionId, shoot_day: dayToSeed });
+      await uploadDocument({ raw_content: sampleSound, filename: `260728_Report.csv`, production_id: selectedProductionId, shoot_day: dayToSeed });
+      await uploadDocument({ raw_content: sampleSilverstack, filename: `Volume-664_SD.xml`, production_id: selectedProductionId, shoot_day: dayToSeed });
+      await loadProductions();
+      await loadSpineData();
     } catch (err) {
       console.error(err);
     } finally {
@@ -59,11 +101,31 @@ export default function App() {
     }
   };
 
+  const handleCreateProduction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProdId.trim() || !newProdName.trim()) return;
+    try {
+      const created = await createProduction({
+        production_id: newProdId.trim().toUpperCase().replace(/\s+/g, '_'),
+        name: newProdName.trim(),
+        director: newProdDirector.trim(),
+      });
+      setIsNewProdOpen(false);
+      setNewProdId('');
+      setNewProdName('');
+      setNewProdDirector('');
+      await loadProductions();
+      setSelectedProductionId(created.production_id);
+    } catch (err: any) {
+      alert(`Failed to create production: ${err.message}`);
+    }
+  };
+
   const handleAskAssistant = async (slate: string, takeId: string) => {
     setSelectedTake({ slate, take_id: takeId });
     setAssistantExplanation('Querying Gemini Discrepancy Agent via ClickHouse MCP...');
     try {
-      const exp = await askAssistant(productionId, shootDay, slate, takeId);
+      const exp = await askAssistant(selectedProductionId, selectedDay, slate, takeId);
       setAssistantExplanation(exp);
     } catch (e) {
       setAssistantExplanation('Error retrieving assistant explanation.');
@@ -77,21 +139,24 @@ export default function App() {
 
     try {
       if (uploadMode === 'file' && selectedFile) {
-        const res = await uploadFile(productionId, shootDay, selectedFile);
-        setUploadFeedback(`✅ Ingested ${res.filename} as ${res.detected_doc_type} (${res.detected_department.toUpperCase()})`);
+        const res = await uploadFile(selectedFile);
+        setUploadFeedback(`✅ Ingested to ${res.production_id} (Day ${res.shoot_day}) as ${res.detected_doc_type} [${res.detected_department.toUpperCase()}]`);
+        if (res.production_id) setSelectedProductionId(res.production_id);
+        if (res.shoot_day) setSelectedDay(res.shoot_day);
       } else if (uploadMode === 'text' && uploadContent.trim()) {
         const res = await uploadDocument({
-          production_id: productionId,
-          shoot_day: shootDay,
           raw_content: uploadContent,
           filename: uploadFilename || 'manual_drop.txt',
         });
-        setUploadFeedback(`✅ Ingested as ${res.detected_doc_type} (${res.detected_department.toUpperCase()})`);
+        setUploadFeedback(`✅ Ingested to ${res.production_id} (Day ${res.shoot_day}) as ${res.detected_doc_type} [${res.detected_department.toUpperCase()}]`);
+        if (res.production_id) setSelectedProductionId(res.production_id);
+        if (res.shoot_day) setSelectedDay(res.shoot_day);
       }
       setSelectedFile(null);
       setUploadContent('');
       setUploadFilename('');
-      await loadData();
+      await loadProductions();
+      await loadSpineData();
     } catch (err: any) {
       alert(`Upload failed: ${err.message}`);
     } finally {
@@ -102,38 +167,73 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       {/* Top Navigation */}
-      <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur-md px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-20">
-        <div className="flex items-center gap-3">
-          <div className="bg-blue-600/20 p-2.5 rounded-xl border border-blue-500/30 text-blue-400">
-            <Film className="w-6 h-6" />
+      <header className="border-b border-slate-800 bg-slate-900/70 backdrop-blur-md px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-20">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3">
+            <div className="bg-blue-600/20 p-2 rounded-xl border border-blue-500/30 text-blue-400">
+              <Film className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                CineSpine
+                <span className="text-[10px] bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono px-2 py-0.2 rounded-full">v0.1</span>
+              </h1>
+              <p className="text-[11px] text-slate-400">3-Axis Production Reconciliation</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-              CineSpine
-              <span className="text-xs bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono px-2 py-0.5 rounded-full">v0.1-Hackathon</span>
-            </h1>
-            <p className="text-xs text-slate-400">3-Axis Production Reconciliation Engine</p>
+
+          {/* Production Selector Hub */}
+          <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-xl p-1 px-2.5">
+            <Clapperboard className="w-4 h-4 text-blue-400" />
+            <select
+              value={selectedProductionId}
+              onChange={e => setSelectedProductionId(e.target.value)}
+              className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer pr-4"
+            >
+              {productions.map(p => (
+                <option key={p.production_id} value={p.production_id} className="bg-slate-900 text-white">
+                  {p.name} ({p.production_id})
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setIsManageProdOpen(true)}
+              className="text-[11px] text-blue-400 hover:text-blue-300 ml-1 pl-2 border-l border-slate-700 font-medium"
+            >
+              Manage
+            </button>
+          </div>
+
+          {/* Shoot Day Selector */}
+          <div className="flex items-center gap-1.5 bg-slate-900/80 border border-slate-800 rounded-xl p-1 px-2">
+            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+            <span className="text-xs text-slate-400 font-semibold">Day:</span>
+            {['31', '39'].map(day => (
+              <button
+                key={day}
+                onClick={() => setSelectedDay(day)}
+                className={`px-2.5 py-0.5 rounded-lg text-xs font-mono font-medium transition ${
+                  selectedDay === day 
+                    ? 'bg-blue-600 text-white shadow-sm' 
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                Day {day}
+              </button>
+            ))}
+            <input
+              type="text"
+              placeholder="Other"
+              value={selectedDay !== '31' && selectedDay !== '39' ? selectedDay : ''}
+              onChange={e => e.target.value && setSelectedDay(e.target.value)}
+              className="w-12 bg-slate-950 border border-slate-700 text-xs px-1.5 py-0.5 rounded text-white font-mono text-center focus:outline-none focus:border-blue-500"
+            />
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center bg-slate-800/80 rounded-lg p-1 border border-slate-700">
-            <span className="text-xs font-semibold px-2.5 text-slate-400">Production:</span>
-            <input 
-              value={productionId} 
-              onChange={e => setProductionId(e.target.value)}
-              className="bg-slate-900 border border-slate-700 text-xs px-2 py-1 rounded text-white font-mono w-24 focus:outline-none focus:border-blue-500"
-            />
-            <span className="text-xs font-semibold px-2.5 text-slate-400 ml-2">Day:</span>
-            <input 
-              value={shootDay} 
-              onChange={e => setShootDay(e.target.value)}
-              className="bg-slate-900 border border-slate-700 text-xs px-2 py-1 rounded text-white font-mono w-14 focus:outline-none focus:border-blue-500"
-            />
-          </div>
-
           <button 
-            onClick={loadData}
+            onClick={loadSpineData}
             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition"
             title="Refresh Spine"
           >
@@ -141,11 +241,11 @@ export default function App() {
           </button>
 
           <button 
-            onClick={handleSeedDemoData}
+            onClick={() => handleSeedDemoDay(selectedDay)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-medium transition"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            Seed Demo Day
+            Seed Day {selectedDay}
           </button>
 
           <button 
@@ -160,6 +260,21 @@ export default function App() {
 
       {/* Main Workspace */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
+        {/* Production Title Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-white flex items-center gap-2.5">
+              {activeProduction.name}
+              <span className="text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full font-normal">
+                Shooting Day {selectedDay}
+              </span>
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {activeProduction.description || 'Active studio production'}
+            </p>
+          </div>
+        </div>
+
         {/* Lighthouse Telemetry Strip */}
         <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
@@ -243,7 +358,9 @@ export default function App() {
           <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
             <div>
               <h2 className="text-base font-bold text-white">3-Axis Witness Inspector</h2>
-              <p className="text-xs text-slate-400">Comparing Intent (Office) vs Belief (Set) vs Existence (Post/DIT)</p>
+              <p className="text-xs text-slate-400">
+                Reconciling Intent (Office) vs Belief (Set) vs Existence (Post/DIT) for {activeProduction.name} — Day {selectedDay}
+              </p>
             </div>
             <span className="text-xs font-mono text-slate-400">{takes.length} Takes Indexed</span>
           </div>
@@ -264,7 +381,7 @@ export default function App() {
                 {takes.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
-                      No takes found for Shoot Day {shootDay}. Click "Seed Demo Day" or drop PDF/CSV documents to ingest.
+                      No takes found for {activeProduction.name} on Shoot Day {selectedDay}. Click "Seed Day {selectedDay}" or drop PDF/CSV files to ingest.
                     </td>
                   </tr>
                 ) : (
@@ -332,6 +449,145 @@ export default function App() {
         </section>
       </main>
 
+      {/* Productions Management Modal */}
+      {isManageProdOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-white flex items-center gap-2">
+                <Clapperboard className="w-5 h-5 text-blue-400" />
+                Studio Production Portfolio
+              </h3>
+              <button onClick={() => setIsManageProdOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 max-h-96 overflow-y-auto pr-1">
+              {productions.map(p => (
+                <div 
+                  key={p.production_id}
+                  className={`p-4 rounded-xl border transition ${
+                    selectedProductionId === p.production_id 
+                      ? 'bg-blue-950/30 border-blue-500/50' 
+                      : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-white text-sm">{p.name}</h4>
+                        <span className="text-[10px] font-mono bg-slate-800 px-2 py-0.5 rounded text-slate-400">
+                          {p.production_id}
+                        </span>
+                        <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded">
+                          {p.status || 'Active'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">{p.description || `Director: ${p.director || 'N/A'}`}</p>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setSelectedProductionId(p.production_id);
+                        if (p.shoot_days.length > 0) setSelectedDay(p.shoot_days[0]);
+                        setIsManageProdOpen(false);
+                      }}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold"
+                    >
+                      {selectedProductionId === p.production_id ? 'Current Workspace' : 'Select'}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 font-mono">
+                    <div>Shoot Days: <span className="text-white font-bold">{p.shoot_days?.length ? p.shoot_days.join(', ') : 'None yet'}</span></div>
+                    <div>Takes Indexed: <span className="text-white font-bold">{p.total_takes || 0}</span></div>
+                    <div>Spine Events: <span className="text-white font-bold">{p.total_events || 0}</span></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-slate-800 pt-3 flex justify-between items-center">
+              <button
+                onClick={() => setIsNewProdOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-medium border border-slate-700"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Register New Production
+              </button>
+              <button
+                onClick={() => setIsManageProdOpen(false)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Production Modal */}
+      {isNewProdOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <form onSubmit={handleCreateProduction} className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+              <Plus className="w-4 h-4 text-blue-400" />
+              Register New Production
+            </h3>
+
+            <div>
+              <label className="text-xs text-slate-400 block mb-1">Production Code (e.g. DUNE_3)</label>
+              <input
+                type="text"
+                required
+                placeholder="DUNE_3"
+                value={newProdId}
+                onChange={e => setNewProdId(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 text-xs px-2.5 py-1.5 rounded text-white font-mono uppercase focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-slate-400 block mb-1">Production Title</label>
+              <input
+                type="text"
+                required
+                placeholder="Dune: Part Three"
+                value={newProdName}
+                onChange={e => setNewProdName(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 text-xs px-2.5 py-1.5 rounded text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-slate-400 block mb-1">Director / Unit</label>
+              <input
+                type="text"
+                placeholder="Denis Villeneuve"
+                value={newProdDirector}
+                onChange={e => setNewProdDirector(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 text-xs px-2.5 py-1.5 rounded text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsNewProdOpen(false)}
+                className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold"
+              >
+                Create Production
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* Gemini Assistant Explanation Modal */}
       {selectedTake && assistantExplanation && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -365,7 +621,9 @@ export default function App() {
                   <Upload className="w-4 h-4 text-blue-400" />
                   Drop Department Paperwork
                 </h3>
-                <p className="text-[11px] text-slate-400 mt-0.5">Auto-classifies type & department from file contents</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Auto-infers production, shoot day, department & document type
+                </p>
               </div>
               <button type="button" onClick={() => setIsUploadOpen(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
@@ -415,7 +673,7 @@ export default function App() {
                       <>Click to select or drop <span className="text-blue-400 font-bold">PDF, CSV, ALE, or XML</span></>
                     )}
                   </div>
-                  <p className="text-[10px] text-slate-500">Supports ZoeLog PDFs, Sound reports, Script Editor logs & Lined pages</p>
+                  <p className="text-[10px] text-slate-500">Auto-detects project name, shoot day & document type</p>
                 </label>
               </div>
             ) : (
@@ -442,7 +700,7 @@ export default function App() {
               disabled={loading || (uploadMode === 'file' && !selectedFile) || (uploadMode === 'text' && !uploadContent.trim())}
               className="w-full py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-600 text-white rounded-lg text-xs font-semibold transition"
             >
-              {loading ? 'Processing Stream...' : 'Auto-Classify & Ingest to CineSpine'}
+              {loading ? 'Processing Stream...' : 'Auto-Classify & Ingest to Spine'}
             </button>
           </form>
         </div>

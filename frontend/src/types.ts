@@ -1,5 +1,17 @@
 export type Severity = 'CRITICAL' | 'WARNING' | 'INFO';
 
+export interface Production {
+  production_id: string;
+  name: string;
+  director?: string;
+  status?: string;
+  description?: string;
+  shoot_days: string[];
+  total_events: number;
+  total_takes: number;
+  last_activity?: string | null;
+}
+
 export interface Discrepancy {
   discrepancy_id: string;
   production_id: string;

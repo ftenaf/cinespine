@@ -1,6 +1,27 @@
-import { TakeRecord, Discrepancy } from './types';
+import { TakeRecord, Discrepancy, Production } from './types';
 
 const API_BASE = '/api';
+
+export async function fetchProductions(): Promise<Production[]> {
+  const res = await fetch(`${API_BASE}/productions`);
+  if (!res.ok) throw new Error('Failed to fetch productions');
+  return res.json();
+}
+
+export async function createProduction(payload: {
+  production_id: string;
+  name: string;
+  director?: string;
+  description?: string;
+}): Promise<Production> {
+  const res = await fetch(`${API_BASE}/productions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to create production');
+  return res.json();
+}
 
 export async function fetchTakes(productionId: string, shootDay: string): Promise<TakeRecord[]> {
   const res = await fetch(`${API_BASE}/takes?production_id=${productionId}&shoot_day=${shootDay}`);
@@ -15,10 +36,10 @@ export async function fetchDiscrepancies(productionId: string, shootDay: string)
 }
 
 export async function uploadDocument(payload: {
-  production_id: string;
-  shoot_day: string;
   raw_content: string;
   filename?: string;
+  production_id?: string;
+  shoot_day?: string;
   axis?: string;
   department?: string;
   doc_type?: string;
@@ -32,11 +53,11 @@ export async function uploadDocument(payload: {
   return res.json();
 }
 
-export async function uploadFile(productionId: string, shootDay: string, file: File): Promise<any> {
+export async function uploadFile(file: File, productionId?: string, shootDay?: string): Promise<any> {
   const formData = new FormData();
   formData.append('file', file);
-  formData.append('production_id', productionId);
-  formData.append('shoot_day', shootDay);
+  if (productionId) formData.append('production_id', productionId);
+  if (shootDay) formData.append('shoot_day', shootDay);
 
   const res = await fetch(`${API_BASE}/upload/file`, {
     method: 'POST',

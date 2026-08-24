@@ -10,7 +10,7 @@ from backend.app.streaming.dispatcher import IngestionDispatcher
 from backend.app.spine.writer import SpineWriter
 from backend.app.reconciliation.engine import ReconciliationEngine
 from backend.app.agents.mcp_server import ClickHouseMCPServer, GeminiDiscrepancyAssistant
-from backend.app.parsers.classifier import classify_document
+from backend.app.parsers.classifier import classify_document, infer_production_and_day
 from backend.app.parsers.pdf_parsers import extract_text_from_pdf
 from backend.app.core.telemetry import TelemetryExporter
 
@@ -34,11 +34,18 @@ event_bus.subscribe("production.events.dlq", lambda e: (
 ))
 
 
-class UploadRequest(BaseModel):
+class CreateProductionRequest(BaseModel):
     production_id: str
-    shoot_day: str
+    name: str
+    director: Optional[str] = None
+    description: Optional[str] = None
+
+
+class UploadRequest(BaseModel):
     raw_content: str
     filename: Optional[str] = None
+    production_id: Optional[str] = None
+    shoot_day: Optional[str] = None
     axis: Optional[AxisType] = None
     department: Optional[DepartmentType] = None
     doc_type: Optional[DocumentType] = None
@@ -57,20 +64,44 @@ def health_check():
     return {"status": "ok", "version": "0.1.0", "service": "cinespine"}
 
 
+@router.get("/productions")
+def get_productions():
+    """
+    Lists all registered studio productions with metrics and active shoot days.
+    """
+    return spine_writer.list_productions()
+
+
+@router.post("/productions")
+def create_production(req: CreateProductionRequest):
+    """
+    Registers a new production into the studio workspace.
+    """
+    return spine_writer.register_production(
+        production_id=req.production_id,
+        name=req.name,
+        director=req.director,
+        description=req.description,
+    )
+
+
 @router.post("/upload")
 def upload_document(req: UploadRequest):
     """
-    Ingests document with automatic type and department classification.
+    Ingests document with automatic type, department, production, and shoot day inference.
     """
-    # Auto-classify if not explicitly specified
     classification = classify_document(filename=req.filename, content=req.raw_content)
+    
+    # Infer or fallback
+    production_id = req.production_id or classification.inferred_production_id or "DEMO_PRODUCTION"
+    shoot_day = req.shoot_day or classification.inferred_shoot_day or "31"
     axis = req.axis or classification.axis
     department = req.department or classification.department
     doc_type = req.doc_type or classification.doc_type
 
     envelope = EventEnvelope(
-        production_id=req.production_id,
-        shoot_day=req.shoot_day,
+        production_id=production_id,
+        shoot_day=shoot_day,
         axis=axis,
         department=department,
         doc_type=doc_type,
@@ -84,6 +115,7 @@ def upload_document(req: UploadRequest):
     return {
         "status": "INGESTED",
         "event_id": envelope.event_id,
+        "production_id": envelope.production_id,
         "shoot_day": envelope.shoot_day,
         "detected_doc_type": doc_type.value,
         "detected_department": department.value,
@@ -94,8 +126,8 @@ def upload_document(req: UploadRequest):
 @router.post("/upload/file")
 async def upload_document_file(
     file: UploadFile = File(...),
-    production_id: str = Form(...),
-    shoot_day: str = Form(...),
+    production_id: Optional[str] = Form(None),
+    shoot_day: Optional[str] = Form(None),
 ):
     """
     Accepts binary PDF, CSV, ALE, or XML file drops and extracts/routes automatically.
@@ -114,9 +146,13 @@ async def upload_document_file(
 
     classification = classify_document(filename=filename, content=content_bytes)
 
+    # Inferred production & shoot day
+    final_prod = production_id or classification.inferred_production_id or "DEMO_PRODUCTION"
+    final_day = shoot_day or classification.inferred_shoot_day or "31"
+
     envelope = EventEnvelope(
-        production_id=production_id,
-        shoot_day=shoot_day,
+        production_id=final_prod,
+        shoot_day=final_day,
         axis=classification.axis,
         department=classification.department,
         doc_type=classification.doc_type,
@@ -132,7 +168,8 @@ async def upload_document_file(
         "status": "INGESTED",
         "filename": filename,
         "event_id": envelope.event_id,
-        "shoot_day": envelope.shoot_day,
+        "production_id": final_prod,
+        "shoot_day": final_day,
         "detected_doc_type": classification.doc_type.value,
         "detected_department": classification.department.value,
         "detected_axis": classification.axis.value,
