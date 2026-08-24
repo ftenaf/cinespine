@@ -73,4 +73,6 @@ class ParsedSilverstackClip:
     iso: Optional[int] = None
     tstop: Optional[str] = None
     is_vfx: bool = False
+    card_type: Optional[str] = None
+    thumbnail_b64: Optional[str] = None
     raw_payload: Dict[str, Any] = field(default_factory=dict)

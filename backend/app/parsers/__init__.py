@@ -10,6 +10,7 @@ from .camera_csv import parse_camera_csv
 from .silverstack_xml import parse_silverstack_xml
 from .pdf_parsers import (
     extract_text_from_pdf,
+    extract_thumbnails_from_pdf,
     parse_zoelog_camera_text,
     parse_editors_log_text,
     parse_scripte_tclog_text,
@@ -31,6 +32,7 @@ __all__ = [
     "parse_camera_csv",
     "parse_silverstack_xml",
     "extract_text_from_pdf",
+    "extract_thumbnails_from_pdf",
     "parse_zoelog_camera_text",
     "parse_editors_log_text",
     "parse_scripte_tclog_text",

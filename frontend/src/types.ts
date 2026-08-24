@@ -62,6 +62,7 @@ export interface TakeRecord {
   storage_volumes: string[];
   codec?: string;
   recording_date?: string;
+  thumbnail_url?: string;
   matched_media_files: Array<{
     file_name: string;
     camera_roll?: string;

@@ -190,9 +190,12 @@ async def upload_document_file(
     checksum = hashlib.sha256(content_bytes).hexdigest()
 
     # Extract text if PDF
+    thumbnails_map = {}
     if filename.lower().endswith(".pdf"):
         try:
             raw_text = extract_text_from_pdf(content_bytes)
+            if "thumbnail" in filename.lower() or "thumbnail report" in raw_text.lower():
+                thumbnails_map = extract_thumbnails_from_pdf(content_bytes)
         except Exception as e:
             raw_text = content_bytes.decode("utf-8", errors="ignore")
     else:
@@ -231,7 +234,13 @@ async def upload_document_file(
         doc_type=classification.doc_type,
         raw_content=raw_text,
         filename=filename,
-        metadata={"doc_id": doc_id, "file_size": len(content_bytes), "checksum": checksum, "content_type": file.content_type},
+        metadata={
+            "doc_id": doc_id,
+            "file_size": len(content_bytes),
+            "checksum": checksum,
+            "content_type": file.content_type,
+            "thumbnails": thumbnails_map,
+        },
     )
 
     topic = f"production.raw.{classification.department.value}"
@@ -275,6 +284,8 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                 "fps": p.get("fps"),
                 "iso": p.get("iso"),
                 "tstop": p.get("tstop"),
+                "card_type": p.get("card_type"),
+                "thumbnail_b64": p.get("thumbnail_b64"),
                 "volume_name": p.get("volume_name") or "Offload Drive",
                 "file_size_bytes": p.get("file_size_bytes", 0),
                 "checksum": p.get("checksum"),
@@ -308,6 +319,7 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                         "is_pickup": False,
                         "codec": None,
                         "recording_date": None,
+                        "thumbnail_url": None,
                     }
 
                 axis = evt.get("axis", "belief")
@@ -329,6 +341,8 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                     takes_map[key]["codec"] = p.get("codec")
                 if p.get("recording_date"):
                     takes_map[key]["recording_date"] = p.get("recording_date")
+                if p.get("thumbnail_b64") and not takes_map[key].get("thumbnail_url"):
+                    takes_map[key]["thumbnail_url"] = p.get("thumbnail_b64")
 
                 if doc_name and doc_name not in [d.get("filename") for d in takes_map[key]["source_documents"]]:
                     takes_map[key]["source_documents"].append({
@@ -342,7 +356,7 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                 if cr:
                     takes_map[key]["camera_cards"].add(f"Card {cr}")
                 
-                sr = p.get("sound_roll")
+                sr = p.get("sound_roll") or (p.get("reel_tape") if p.get("card_type") == "sound" else None)
                 if sr:
                     takes_map[key]["sound_cards"].add(f"Sound {sr}")
 
@@ -362,6 +376,8 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                         if clip_name in fn or (cr and cr in fn):
                             takes_map[key]["existence"]["dit"] = media_info
                             takes_map[key]["storage_volumes"].add(media_info.get("volume_name", "Offload Drive"))
+                            if media_info.get("thumbnail_b64") and not takes_map[key].get("thumbnail_url"):
+                                takes_map[key]["thumbnail_url"] = media_info.get("thumbnail_b64")
                             if media_info not in takes_map[key]["matched_media_files"]:
                                 takes_map[key]["matched_media_files"].append(media_info)
 

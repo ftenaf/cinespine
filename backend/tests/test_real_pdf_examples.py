@@ -96,21 +96,28 @@ class TestRealPDFExamples:
     def test_parse_real_silverstack_thumbnail_pdf(self):
         thumb_path = os.path.join(EXAMPLES_DIR, "Thumbnail-260728_SD31-20260728-1927.pdf")
         with open(thumb_path, "rb") as f:
-            text = extract_text_from_pdf(f.read())
+            pdf_bytes = f.read()
+            text = extract_text_from_pdf(pdf_bytes)
         
-        records = parse_silverstack_pdf_text(text)
+        # Test thumbnail extraction
+        from backend.app.parsers.pdf_parsers import extract_thumbnails_from_pdf
+        thumbnails_map = extract_thumbnails_from_pdf(pdf_bytes)
+        assert len(thumbnails_map) > 50
+
+        records = parse_silverstack_pdf_text(text, thumbnails_map=thumbnails_map)
         assert len(records) > 100
 
-        # Verify Audio clip fields: Name, Reel/Tape, Scene/Shot/Take, Codec, Recording Date
+        # Verify Audio clip fields: Name, Reel/Tape, Scene/Shot/Take, Codec, Recording Date, card_type
         audio_clip = next(r for r in records if "27-7T01" in r.file_name)
         assert audio_clip.reel_tape == "26Y07M27"
         assert audio_clip.scene == "27"
         assert audio_clip.shot == "7"
         assert audio_clip.take_id == "1"
         assert "PCM" in (audio_clip.codec or "")
+        assert audio_clip.card_type == "sound"
         assert audio_clip.recording_date is not None
 
-        # Verify Camera clip fields: Name, Reel/Tape, Scene/Shot/Take, Codec, Recording Date, FPS, ISO
+        # Verify Camera clip fields: Name, Reel/Tape, Scene/Shot/Take, Codec, Recording Date, FPS, ISO, card_type, thumbnail
         camera_clip = next(r for r in records if "A_0120C001" in r.file_name)
         assert camera_clip.camera_roll == "A120"
         assert camera_clip.reel_tape == "A_0120_1EIC"
@@ -120,4 +127,7 @@ class TestRealPDFExamples:
         assert "ARRIRAW" in (camera_clip.codec or "")
         assert camera_clip.fps == 24.0
         assert camera_clip.iso == 800
+        assert camera_clip.card_type == "camera"
+        assert camera_clip.thumbnail_b64 is not None
+        assert camera_clip.thumbnail_b64.startswith("data:image/jpeg;base64,")
         assert "28/7/26" in (camera_clip.recording_date or "")

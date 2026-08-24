@@ -6,7 +6,8 @@ Evidence:
 """
 import io
 import re
-from typing import List, Optional
+import base64
+from typing import List, Optional, Dict
 import pypdf
 from backend.app.parsers.base import (
     ParsedCameraRecord,
@@ -35,6 +36,36 @@ def extract_text_from_pdf(pdf_bytes_or_file) -> str:
             pages_text.append(txt)
 
     return "\n".join(pages_text)
+
+
+def extract_thumbnails_from_pdf(pdf_bytes_or_file) -> Dict[str, str]:
+    """
+    Extracts embedded scene/take JPEG thumbnail pictures from a Pomfort Silverstack Thumbnail PDF.
+    Returns a mapping of {clip_name: data_uri}.
+    """
+    thumbnails: Dict[str, str] = {}
+    try:
+        if isinstance(pdf_bytes_or_file, bytes):
+            reader = pypdf.PdfReader(io.BytesIO(pdf_bytes_or_file))
+        else:
+            reader = pypdf.PdfReader(pdf_bytes_or_file)
+
+        for page in reader.pages:
+            text = page.extract_text() or ""
+            name_m = re.search(r"Name\s+([A-Za-z0-9_\-]+)", text)
+            if not name_m:
+                continue
+            clip_name = name_m.group(1)
+            for img in page.images:
+                if len(img.data) > 2000 and any(img.name.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png"]):
+                    b64 = base64.b64encode(img.data).decode("utf-8")
+                    mime = "image/jpeg" if "jp" in img.name.lower() else "image/png"
+                    data_uri = f"data:{mime};base64,{b64}"
+                    thumbnails[clip_name] = data_uri
+                    break
+    except Exception as e:
+        pass
+    return thumbnails
 
 
 def parse_zoelog_camera_text(text: str) -> List[ParsedCameraRecord]:
@@ -679,10 +710,11 @@ def parse_silverstack_clips_text(text: str) -> List[ParsedSilverstackClip]:
     return clips
 
 
-def parse_silverstack_thumbnail_text(text: str) -> List[ParsedSilverstackClip]:
+def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[str, str]] = None) -> List[ParsedSilverstackClip]:
     """
     Parses Pomfort Silverstack Thumbnail Reports (e.g. Thumbnail-260728_SD31-20260728-1927.pdf).
-    Extracts clip Name, Reel/Tape, Scene, Shot, Take, Codec, Recording Date, Duration, FPS, ISO, T-Stop.
+    Extracts clip Name, Reel/Tape, Scene, Shot, Take, Codec, Recording Date, Duration, FPS, ISO, T-Stop,
+    and attaches visual thumbnail pictures and card classification.
     """
     if not text or not text.strip():
         raise ParserFailureError("Empty Silverstack Thumbnail text")
@@ -758,7 +790,8 @@ def parse_silverstack_thumbnail_text(text: str) -> List[ParsedSilverstackClip]:
                 num = roll_m.group(2)[-3:]
                 roll = normalize_camera_roll(f"{prefix}{num}")
 
-        is_audio = "PCM" in (codec or "") or (reel_tape and "664" in reel_tape) or (reel_tape and "26Y" in reel_tape)
+        is_audio = "PCM" in (codec or "") or (reel_tape and "664" in reel_tape) or (reel_tape and "26Y" in reel_tape) or clip_name.endswith("T01") or clip_name.endswith("T02")
+        card_type = "sound" if is_audio else "camera"
         file_ext = ".WAV" if is_audio else ".mxf"
         full_fname = clip_name if ("." in clip_name) else f"{clip_name}{file_ext}"
 
@@ -767,6 +800,16 @@ def parse_silverstack_thumbnail_text(text: str) -> List[ParsedSilverstackClip]:
         take_id = raw_take.replace("VFX", "").replace("PK", "").strip() if raw_take else None
         if take_id and take_id.startswith("0") and len(take_id) > 1:
             take_id = str(int(take_id))
+
+        # Find thumbnail image in map
+        thumb_uri = None
+        if thumbnails_map:
+            thumb_uri = thumbnails_map.get(clip_name) or thumbnails_map.get(clip_name.split(".")[0])
+            if not thumb_uri:
+                for k, v in thumbnails_map.items():
+                    if k in clip_name or clip_name in k:
+                        thumb_uri = v
+                        break
 
         clips.append(
             ParsedSilverstackClip(
@@ -787,12 +830,15 @@ def parse_silverstack_thumbnail_text(text: str) -> List[ParsedSilverstackClip]:
                 iso=iso,
                 tstop=tstop,
                 is_vfx=is_vfx,
+                card_type=card_type,
+                thumbnail_b64=thumb_uri,
                 raw_payload={
                     "duration": duration,
                     "reel_tape": reel_tape,
                     "codec": codec,
                     "recording_date": rec_date,
                     "is_audio": is_audio,
+                    "card_type": card_type,
                 },
             )
         )
@@ -803,12 +849,12 @@ def parse_silverstack_thumbnail_text(text: str) -> List[ParsedSilverstackClip]:
     return clips
 
 
-def parse_silverstack_pdf_text(text: str) -> List[ParsedSilverstackClip]:
+def parse_silverstack_pdf_text(text: str, thumbnails_map: Optional[Dict[str, str]] = None) -> List[ParsedSilverstackClip]:
     """
     Unified entry point for all Silverstack PDF formats (Volume, Shooting Day, Clips, Thumbnail).
     """
     if "Thumbnail Report" in text:
-        return parse_silverstack_thumbnail_text(text)
+        return parse_silverstack_thumbnail_text(text, thumbnails_map=thumbnails_map)
     elif "Volume Report" in text or "XXH64:" in text or "MD5:" in text:
         return parse_silverstack_volume_text(text)
     elif "Shooting Day Report" in text:

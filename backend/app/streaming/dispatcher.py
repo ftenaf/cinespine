@@ -164,8 +164,10 @@ class IngestionDispatcher:
             fn = (envelope.filename or "").upper()
             content = envelope.raw_content
 
+            thumbnails_map = envelope.metadata.get("thumbnails")
+
             if fn.endswith(".PDF") or "POMFORT" in content.upper() or "SILVERSTACK" in content.upper() or "VOLUME REPORT" in content.upper() or "SHOOTING DAY" in content.upper():
-                records = parse_silverstack_pdf_text(content)
+                records = parse_silverstack_pdf_text(content, thumbnails_map=thumbnails_map)
             else:
                 records = parse_silverstack_xml(content)
 
@@ -197,6 +199,8 @@ class IngestionDispatcher:
                         "iso": clip.iso,
                         "tstop": clip.tstop,
                         "is_vfx": clip.is_vfx,
+                        "card_type": clip.card_type,
+                        "thumbnail_b64": clip.thumbnail_b64,
                     },
                     "metadata": envelope.metadata,
                     "timestamp": envelope.timestamp,
@@ -228,6 +232,8 @@ class IngestionDispatcher:
                             "iso": clip.iso,
                             "tstop": clip.tstop,
                             "is_vfx": clip.is_vfx,
+                            "card_type": clip.card_type,
+                            "thumbnail_b64": clip.thumbnail_b64,
                         },
                         "metadata": envelope.metadata,
                         "timestamp": envelope.timestamp,
