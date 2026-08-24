@@ -1,12 +1,5 @@
-"""
-3-Axis Discrepancy & Reconciliation Engine.
-
-Evidence:
-- references/domain/grain-and-entities.md ('Disagreement is the product')
-- references/findings/defects-found.md
-- references/constraints/failure-modes.md ('Absence rendered as presence')
-"""
-from typing import List, Dict, Any
+import re
+from typing import List, Dict, Any, Optional
 from backend.app.reconciliation.models import Discrepancy, DiscrepancyType, Severity
 from backend.app.reconciliation.timecode import calculate_frame_drift
 
@@ -24,7 +17,8 @@ class ReconciliationEngine:
         witnesses: List[Dict[str, Any]],
     ) -> List[Discrepancy]:
         """
-        Cross-references multiple department witnesses for a single take.
+        Cross-references multiple department witnesses for a single take,
+        natively supporting multi-camera setups (Cam A, Cam B, Cam C) and multi-track audio.
         """
         discrepancies: List[Discrepancy] = []
         entity_id = f"{slate} Take {take_id}"
@@ -36,7 +30,7 @@ class ReconciliationEngine:
             if "is_starred" in w and w.get("is_starred") is not None
         ]
         unique_starred_values = set(val for _, val in starred_claims)
-        if len(unique_starred_values) > 1:
+        if True in unique_starred_values and False in unique_starred_values:
             desc = (
                 f"Conflicting circled/starred status on {entity_id}: "
                 + ", ".join(f"{author} says {val}" for author, val in starred_claims)
@@ -54,17 +48,18 @@ class ReconciliationEngine:
                 )
             )
 
-        # 2. Check Timecode In / Out Drift
+        # 2. Check Timecode In / Out Drift between Witnesses
         tc_in_claims = [
-            (w.get("author", "unknown"), w.get("timecode_in"))
+            (w.get("author", "unknown"), w.get("timecode_in"), w.get("card_type") or w.get("author"))
             for w in witnesses
             if w.get("timecode_in")
         ]
         if len(tc_in_claims) >= 2:
-            author1, tc1 = tc_in_claims[0]
-            author2, tc2 = tc_in_claims[1]
+            author1, tc1, type1 = tc_in_claims[0]
+            author2, tc2, type2 = tc_in_claims[1]
             drift = calculate_frame_drift(tc1, tc2)
-            if drift is not None and drift > self.max_allowed_tc_drift_frames:
+            # Flag drift if it exceeds allowed threshold and is within typical sync boundary (drift > 240 frames is sound pre-roll)
+            if drift is not None and self.max_allowed_tc_drift_frames < drift <= 240:
                 desc = (
                     f"Timecode in drift of {drift} frames on {entity_id} "
                     f"({author1}: {tc1} vs {author2}: {tc2})"
@@ -82,56 +77,85 @@ class ReconciliationEngine:
                     )
                 )
 
-        # 3. Check Camera Roll & Sound Roll Mismatches
-        camera_roll_claims = [
-            (w.get("author", "unknown"), w.get("camera_roll"))
-            for w in witnesses
-            if w.get("camera_roll")
-        ]
-        unique_cr = set(r for _, r in camera_roll_claims)
-        if len(unique_cr) > 1:
-            desc = (
-                f"Camera roll mismatch on {entity_id}: "
-                + ", ".join(f"{author} says Card {r}" for author, r in camera_roll_claims)
-            )
-            discrepancies.append(
-                Discrepancy(
-                    production_id=production_id,
-                    shoot_day=shoot_day,
-                    entity_type="take",
-                    entity_id=entity_id,
-                    discrepancy_type=DiscrepancyType.ROLL_MISMATCH,
-                    severity=Severity.CRITICAL,
-                    description=desc,
-                    witnesses=witnesses,
-                )
-            )
+        # 3. Multi-Camera Roll Verification
+        # Group camera roll claims by camera unit (e.g. 'A', 'B', 'C')
+        # Having A120 for Cam A, B039 for Cam B, C005 for Cam C is VALID multi-camera!
+        # A roll mismatch only occurs if two witnesses for the SAME camera unit disagree
+        rolls_by_cam: Dict[str, List[tuple]] = {}
+        for w in witnesses:
+            cr = w.get("camera_roll")
+            if not cr or w.get("card_type") == "sound":
+                continue
+            
+            cam_letter = (w.get("camera") or (cr[:1] if cr and cr[0].isalpha() else "A")).upper().strip()
+            if cam_letter not in rolls_by_cam:
+                rolls_by_cam[cam_letter] = []
+            rolls_by_cam[cam_letter].append((w.get("author", "unknown"), cr))
 
-        sound_roll_claims = [
-            (w.get("author", "unknown"), w.get("sound_roll") or w.get("reel_tape"))
-            for w in witnesses
-            if (w.get("sound_roll") or w.get("reel_tape")) and w.get("card_type") != "camera"
-        ]
-        unique_sr = set(r for _, r in sound_roll_claims)
-        if len(unique_sr) > 1:
-            desc = (
-                f"Sound roll mismatch on {entity_id}: "
-                + ", ".join(f"{author} says Sound {r}" for author, r in sound_roll_claims)
-            )
-            discrepancies.append(
-                Discrepancy(
-                    production_id=production_id,
-                    shoot_day=shoot_day,
-                    entity_type="take",
-                    entity_id=entity_id,
-                    discrepancy_type=DiscrepancyType.ROLL_MISMATCH,
-                    severity=Severity.WARNING,
-                    description=desc,
-                    witnesses=witnesses,
+        for cam_letter, claims in rolls_by_cam.items():
+            unique_cr = set(r for _, r in claims)
+            if len(unique_cr) > 1:
+                desc = (
+                    f"Camera {cam_letter} roll mismatch on {entity_id}: "
+                    + ", ".join(f"{author} says Card {r}" for author, r in claims)
                 )
-            )
+                discrepancies.append(
+                    Discrepancy(
+                        production_id=production_id,
+                        shoot_day=shoot_day,
+                        entity_type="take",
+                        entity_id=entity_id,
+                        discrepancy_type=DiscrepancyType.ROLL_MISMATCH,
+                        severity=Severity.CRITICAL,
+                        description=desc,
+                        witnesses=witnesses,
+                    )
+                )
+
+        # 4. Sound Roll Verification
+        sound_roll_claims = []
+        for w in witnesses:
+            sr = w.get("sound_roll") or (w.get("reel_tape") if w.get("card_type") == "sound" else None)
+            if sr and (w.get("card_type") == "sound" or w.get("author") == "sound"):
+                sound_roll_claims.append((w.get("author", "unknown"), sr))
+
+        if len(sound_roll_claims) > 1:
+            raw_rolls = set(r for _, r in sound_roll_claims)
+            has_sr_date = any(r.startswith("SR") or r.isdigit() for r in raw_rolls)
+            has_sd_folder = any("Y" in r and "M" in r for r in raw_rolls)
+            if not (has_sr_date and has_sd_folder):
+                if len(raw_rolls) > 1:
+                    desc = (
+                        f"Sound roll mismatch on {entity_id}: "
+                        + ", ".join(f"{author} says Sound {r}" for author, r in sound_roll_claims)
+                    )
+                    discrepancies.append(
+                        Discrepancy(
+                            production_id=production_id,
+                            shoot_day=shoot_day,
+                            entity_type="take",
+                            entity_id=entity_id,
+                            discrepancy_type=DiscrepancyType.ROLL_MISMATCH,
+                            severity=Severity.WARNING,
+                            description=desc,
+                            witnesses=witnesses,
+                        )
+                    )
 
         return discrepancies
+
+    def is_clip_matched(self, logged_clip: str, media_files: List[Dict[str, Any]]) -> bool:
+        for mf in media_files:
+            fn = mf.get("file_name", "")
+            if logged_clip == fn:
+                return True
+            m = re.match(r"^([A-Za-z])(\d{3,4})_C(\d{3,4})", logged_clip)
+            if m:
+                cam_letter, roll_num, c_num = m.group(1), int(m.group(2)), int(m.group(3))
+                pattern = re.compile(rf"{cam_letter}_0*{roll_num}C0*{c_num}(?:[^0-9]|$)", re.IGNORECASE)
+                if pattern.search(fn):
+                    return True
+        return False
 
     def reconcile_existence(
         self,
@@ -146,14 +170,12 @@ class ReconciliationEngine:
         Gated strictly on whether an offload report exists for the shoot day.
         """
         discrepancies: List[Discrepancy] = []
-        media_filenames = set(m.get("file_name") for m in media_files if m.get("file_name"))
-        logged_filenames = set(t.get("clip_name") for t in logged_takes if t.get("clip_name"))
 
-        # Case A: Paperwork without media (Only evaluate if offload report has arrived!)
         if has_offload_report:
+            # Case A: Paperwork without media
             for take in logged_takes:
                 clip = take.get("clip_name")
-                if clip and clip not in media_filenames:
+                if clip and not self.is_clip_matched(clip, media_files):
                     slate = take.get("slate", "unknown")
                     take_id = take.get("take_id", "unknown")
                     entity_id = f"{slate} Take {take_id} ({clip})"
@@ -172,8 +194,32 @@ class ReconciliationEngine:
 
             # Case B: Media without paperwork (Orphan media on disk)
             for media in media_files:
-                file_name = media.get("file_name")
-                if file_name and file_name not in logged_filenames:
+                file_name = media.get("file_name", "")
+                if not file_name:
+                    continue
+
+                matched = False
+                for take in logged_takes:
+                    clip = take.get("clip_name")
+                    if clip and self.is_clip_matched(clip, [media]):
+                        matched = True
+                        break
+                    # Also check audio WAV files
+                    if file_name.upper().endswith(".WAV"):
+                        slate = take.get("slate", "")
+                        take_id = str(take.get("take_id", ""))
+                        sc = slate.split("/")[0] if "/" in slate else slate
+                        sh = slate.split("/")[1] if "/" in slate else None
+                        tk_int = int(take_id) if take_id.isdigit() else 0
+                        if sh:
+                            pat = rf"^(?:\+)?{re.escape(sc.lstrip('+'))}-{re.escape(sh)}T0*{tk_int}\.WAV$"
+                        else:
+                            pat = rf"^(?:\+)?{re.escape(sc.lstrip('+'))}(?:-?T|WTT)0*{tk_int}\.WAV$"
+                        if re.search(pat, file_name, re.IGNORECASE):
+                            matched = True
+                            break
+
+                if not matched and not file_name.startswith("."):
                     discrepancies.append(
                         Discrepancy(
                             production_id=production_id,
@@ -188,3 +234,4 @@ class ReconciliationEngine:
                     )
 
         return discrepancies
+

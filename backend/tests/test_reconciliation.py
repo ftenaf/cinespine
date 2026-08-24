@@ -111,3 +111,68 @@ class TestReconciliationEngine:
         assert discrepancies[0].discrepancy_type == DiscrepancyType.MEDIA_WITHOUT_PAPERWORK
         assert discrepancies[0].severity == Severity.WARNING
         assert discrepancies[0].entity_id == "A120_C999_260728.MOV"
+
+    def test_multi_camera_valid_rolls_no_discrepancy(self):
+        """
+        Verify that a multi-camera shoot with Cam A on A120, Cam B on B039, Cam C on C005,
+        and Sound on 26Y07M27 does NOT trigger false roll mismatches.
+        """
+        w_cam_a = {"author": "camera", "camera": "A", "camera_roll": "A120", "clip_name": "A120_C001", "is_starred": True}
+        w_cam_b = {"author": "camera", "camera": "B", "camera_roll": "B039", "clip_name": "B039_C001", "is_starred": True}
+        w_cam_c = {"author": "camera", "camera": "C", "camera_roll": "C005", "clip_name": "C005_C001", "is_starred": True}
+        w_script = {"author": "script", "camera_roll": "A120", "sound_roll": "SR280726", "is_starred": True}
+        w_sound = {"author": "sound", "sound_roll": "26Y07M27", "card_type": "sound"}
+
+        discrepancies = self.engine.reconcile_take_witnesses(
+            production_id="PROD_01",
+            shoot_day="31",
+            slate="27/7",
+            take_id="1",
+            witnesses=[w_cam_a, w_cam_b, w_cam_c, w_script, w_sound],
+        )
+        assert len(discrepancies) == 0
+
+    def test_multi_camera_specific_roll_conflict(self):
+        """
+        Verify that if ZoeLog Camera A says A120 and Scripte says Camera A was A121,
+        a real ROLL_MISMATCH is detected for Camera A.
+        """
+        w_cam_a = {"author": "camera", "camera": "A", "camera_roll": "A120"}
+        w_script_err = {"author": "script", "camera": "A", "camera_roll": "A121"}
+
+        discrepancies = self.engine.reconcile_take_witnesses(
+            production_id="PROD_01",
+            shoot_day="31",
+            slate="27/7",
+            take_id="1",
+            witnesses=[w_cam_a, w_script_err],
+        )
+        assert len(discrepancies) == 1
+        assert discrepancies[0].discrepancy_type == DiscrepancyType.ROLL_MISMATCH
+        assert "Camera A" in discrepancies[0].description
+
+    def test_multi_camera_existence_regex_matching(self):
+        """
+        Verify that ZoeLog clip 'A120_C001' correctly matches Silverstack file 'A_0120C001_260728_091309_h1EIC.mxf'.
+        """
+        logged_takes = [
+            {"slate": "27/7", "take_id": "1", "clip_name": "A120_C001"},
+            {"slate": "27/7", "take_id": "1", "clip_name": "B039_C001"},
+            {"slate": "27/7", "take_id": "1", "clip_name": "C005_C001"},
+        ]
+        media_files = [
+            {"file_name": "A_0120C001_260728_091309_h1EIC.mxf"},
+            {"file_name": "B_0039C001_260728_091309_h1EIC.mxf"},
+            {"file_name": "C_0005C001_260728_091309_h1EIC.mxf"},
+            {"file_name": "27-7T01.WAV"},
+        ]
+
+        discrepancies = self.engine.reconcile_existence(
+            production_id="PROD_01",
+            shoot_day="31",
+            logged_takes=logged_takes,
+            media_files=media_files,
+            has_offload_report=True,
+        )
+        assert len(discrepancies) == 0
+
