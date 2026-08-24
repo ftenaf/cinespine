@@ -21,6 +21,7 @@ class ParsedSoundRecord:
     sound_roll: Optional[str]
     timecode_in: Optional[str]
     timecode_out: Optional[str]
+    camera_roll: Optional[str] = None
     tracks: Optional[str] = None
     tape: Optional[str] = None
     is_starred: bool = False
