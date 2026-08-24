@@ -207,7 +207,7 @@ class IngestionDispatcher:
                 }
                 self.bus.publish("production.events.spine", spine_event)
 
-                # If the Silverstack report contains Scene/Take (e.g. Thumbnail report), emit take existence record
+                # If the Silverstack report contains Scene/Take (e.g. Thumbnail or Volume report), emit take existence record
                 if clip.scene and clip.take_id:
                     slate_val = f"{clip.scene}/{clip.shot}" if clip.shot else clip.scene
                     take_event: Dict[str, Any] = {
@@ -223,6 +223,7 @@ class IngestionDispatcher:
                             "slate": slate_val,
                             "take_id": clip.take_id,
                             "camera_roll": clip.camera_roll,
+                            "sound_roll": clip.reel_tape if clip.card_type == "sound" else None,
                             "clip_name": clip.file_name,
                             "codec": clip.codec,
                             "recording_date": clip.recording_date,
@@ -232,6 +233,8 @@ class IngestionDispatcher:
                             "iso": clip.iso,
                             "tstop": clip.tstop,
                             "is_vfx": clip.is_vfx,
+                            "is_pickup": clip.is_pickup,
+                            "is_wild_track": clip.is_wild_track,
                             "card_type": clip.card_type,
                             "thumbnail_b64": clip.thumbnail_b64,
                         },

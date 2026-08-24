@@ -427,17 +427,31 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                 if p.get("is_vfx") or "VFX" in slate.upper():
                     takes_map[key]["is_vfx"] = True
 
-                # Match with DIT Media Files
+                # Match with DIT Media Files (both video and audio WAV clips)
                 clip_name = p.get("clip_name")
-                if clip_name:
-                    for fn, media_info in media_files_map.items():
-                        if clip_name in fn or (cr and cr in fn):
-                            takes_map[key]["existence"]["dit"] = media_info
-                            takes_map[key]["storage_volumes"].add(media_info.get("volume_name", "Offload Drive"))
-                            if media_info.get("thumbnail_b64") and not takes_map[key].get("thumbnail_url"):
-                                takes_map[key]["thumbnail_url"] = media_info.get("thumbnail_b64")
-                            if media_info not in takes_map[key]["matched_media_files"]:
-                                takes_map[key]["matched_media_files"].append(media_info)
+                scene_num = takes_map[key]["scene"]
+                take_num = takes_map[key]["take_id"]
+
+                for fn, media_info in media_files_map.items():
+                    is_match = False
+                    if clip_name and (clip_name in fn or (cr and cr in fn)):
+                        is_match = True
+                    elif fn.lower().endswith(".wav") and scene_num and take_num:
+                        # Match audio WAV filename e.g. '27-7T01.WAV' or '71C-3T02.WAV' or '117-1T01.WAV'
+                        clean_sc = scene_num.replace("/", "-")
+                        if f"{clean_sc}-" in fn and (f"T0{take_num}." in fn or f"T{take_num}." in fn or f"T{take_num}" in fn):
+                            is_match = True
+
+                    if is_match:
+                        takes_map[key]["existence"]["dit"] = media_info
+                        vol = media_info.get("volume_name") or "Offload Drive"
+                        takes_map[key]["storage_volumes"].add(vol)
+                        if media_info.get("card_type") == "sound" and media_info.get("reel_tape"):
+                            takes_map[key]["sound_cards"].add(f"Sound {media_info['reel_tape']}")
+                        if media_info.get("thumbnail_b64") and not takes_map[key].get("thumbnail_url"):
+                            takes_map[key]["thumbnail_url"] = media_info.get("thumbnail_b64")
+                        if media_info not in takes_map[key]["matched_media_files"]:
+                            takes_map[key]["matched_media_files"].append(media_info)
 
     # Convert sets to sorted lists for JSON serialization
     results = []

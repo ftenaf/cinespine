@@ -557,7 +557,8 @@ def parse_editors_log_text(text: str) -> List[ParsedSoundRecord]:
 def parse_silverstack_volume_text(text: str) -> List[ParsedSilverstackClip]:
     """
     Parses Silverstack volume report text (e.g. Volume-664 SD-20260728-1927.pdf) into media existence clips.
-    Captures exact filename, volume name, camera roll, file size in bytes, and xxHash64/MD5 checksums.
+    Extracts sound card folders (e.g. 26Y07M27), WAV filenames with scene/shot/take (e.g. 71C-3T02.WAV),
+    verified xxHash64 checksums, file sizes, and audio wild tracks.
     """
     if not text or not text.strip():
         raise ParserFailureError("Empty Silverstack Volume text")
@@ -568,24 +569,39 @@ def parse_silverstack_volume_text(text: str) -> List[ParsedSilverstackClip]:
     clips: List[ParsedSilverstackClip] = []
     lines = text.strip().splitlines()
 
-    current_file = None
+    current_file: Optional[str] = None
+    current_folder: Optional[str] = None
+    current_checksum: Optional[str] = None
+    current_hash_type: str = "XXH64"
 
     for line in lines:
         cleaned = line.strip()
         if not cleaned:
             continue
 
+        # 1. Sound Card / Reel folder header (e.g. '26Y07M27 5.51 GB' or '04Y00M12')
+        folder_m = re.search(r"\b(\d{2}Y\d{2}M\d{2})\b", cleaned)
+        if folder_m:
+            current_folder = folder_m.group(1)
+
+        # 2. Media file line (e.g. '71C-3T02.WAV' or 'A120_C001_260728.MOV')
         file_match = re.match(r"^([A-Za-z0-9_\-\.]+\.(?:WAV|MOV|BRAW|ARI|ARX|MXF|MP4))$", cleaned, re.IGNORECASE)
         if file_match:
             current_file = file_match.group(1)
+            current_checksum = None
             continue
 
-        hash_match = re.search(r"(XXH64|MD5|SHA1):([a-f0-9]+)\s+([\d.]+)\s*(MB|GB|KB|Bytes)", cleaned, re.IGNORECASE)
-        if hash_match and current_file:
-            hash_type = hash_match.group(1).upper()
-            checksum = hash_match.group(2)
-            size_val = float(hash_match.group(3))
-            unit = hash_match.group(4).upper()
+        # 3. Checksum line (e.g. 'XXH64:1b742d797173f0d4' or 'MD5:abc123')
+        hash_m = re.search(r"(XXH64|MD5|SHA1):([a-f0-9]+)", cleaned, re.IGNORECASE)
+        if hash_m:
+            current_hash_type = hash_m.group(1).upper()
+            current_checksum = hash_m.group(2)
+
+        # 4. File Size line (e.g. '60.49 MB' or inline with hash)
+        size_m = re.search(r"([\d.]+)\s*(MB|GB|KB|Bytes)", cleaned, re.IGNORECASE)
+        if size_m and current_file and current_checksum:
+            size_val = float(size_m.group(1))
+            unit = size_m.group(2).upper()
 
             if unit == "GB":
                 size_bytes = int(size_val * 1024 * 1024 * 1024)
@@ -596,22 +612,61 @@ def parse_silverstack_volume_text(text: str) -> List[ParsedSilverstackClip]:
             else:
                 size_bytes = int(size_val)
 
-            # Infer camera roll from filename if applicable (e.g. A120C001 -> A120)
-            roll_m = re.match(r"^([A-Z]\d{3})", current_file)
-            inferred_roll = normalize_camera_roll(roll_m.group(1)) if roll_m else None
+            is_wav = current_file.lower().endswith(".wav")
+            scene: Optional[str] = None
+            shot: Optional[str] = None
+            take_id: Optional[str] = None
+            is_pk: bool = False
+            is_wt: bool = False
+
+            if is_wav:
+                # WAV filename format: [Scene]-[Shot]T[Take].WAV, e.g. 71C-3T02.WAV, 64A-2PkT5.WAV, 6WT-1T01.WAV
+                wav_m = re.match(r"^([0-9A-Za-z]+)-([0-9A-Za-z]+)T([0-9A-Za-z_*]+)\.WAV$", current_file, re.IGNORECASE)
+                if wav_m:
+                    scene = wav_m.group(1)
+                    raw_shot = wav_m.group(2)
+                    raw_take = wav_m.group(3)
+                    if "PK" in raw_shot.upper() or "PK" in raw_take.upper():
+                        is_pk = True
+                        raw_shot = re.sub(r"pk", "", raw_shot, flags=re.IGNORECASE)
+                        raw_take = re.sub(r"pk", "", raw_take, flags=re.IGNORECASE)
+                    if "WT" in scene.upper() or "WT" in raw_shot.upper():
+                        is_wt = True
+                    shot = raw_shot
+                    take_id = str(int(raw_take)) if raw_take.isdigit() else raw_take
+
+            roll: Optional[str] = None
+            if not is_wav:
+                roll_m = re.match(r"^([A-Z]\d{3})", current_file)
+                roll = normalize_camera_roll(roll_m.group(1)) if roll_m else None
 
             clips.append(
                 ParsedSilverstackClip(
                     file_name=current_file,
-                    camera_roll=inferred_roll,
+                    camera_roll=roll,
                     file_size_bytes=size_bytes,
-                    checksum=checksum,
-                    checksum_type=hash_type,
+                    checksum=current_checksum,
+                    checksum_type=current_hash_type,
                     volume_name=vol_name,
-                    raw_payload={"volume": vol_name, "checksum": checksum, "hash_type": hash_type},
+                    reel_tape=current_folder,
+                    scene=scene,
+                    shot=shot,
+                    take_id=take_id,
+                    codec="Linear PCM (24bit, 48kHz)" if is_wav else None,
+                    card_type="sound" if is_wav else "camera",
+                    is_pickup=is_pk,
+                    is_wild_track=is_wt,
+                    raw_payload={
+                        "volume": vol_name,
+                        "checksum": current_checksum,
+                        "hash_type": current_hash_type,
+                        "sound_roll": current_folder,
+                        "card_type": "sound" if is_wav else "camera",
+                    },
                 )
             )
             current_file = None
+            current_checksum = None
 
     if not clips:
         raise ParserFailureError("Silverstack Volume text parser yielded zero valid records")

@@ -82,6 +82,55 @@ class ReconciliationEngine:
                     )
                 )
 
+        # 3. Check Camera Roll & Sound Roll Mismatches
+        camera_roll_claims = [
+            (w.get("author", "unknown"), w.get("camera_roll"))
+            for w in witnesses
+            if w.get("camera_roll")
+        ]
+        unique_cr = set(r for _, r in camera_roll_claims)
+        if len(unique_cr) > 1:
+            desc = (
+                f"Camera roll mismatch on {entity_id}: "
+                + ", ".join(f"{author} says Card {r}" for author, r in camera_roll_claims)
+            )
+            discrepancies.append(
+                Discrepancy(
+                    production_id=production_id,
+                    shoot_day=shoot_day,
+                    entity_type="take",
+                    entity_id=entity_id,
+                    discrepancy_type=DiscrepancyType.ROLL_MISMATCH,
+                    severity=Severity.CRITICAL,
+                    description=desc,
+                    witnesses=witnesses,
+                )
+            )
+
+        sound_roll_claims = [
+            (w.get("author", "unknown"), w.get("sound_roll") or w.get("reel_tape"))
+            for w in witnesses
+            if (w.get("sound_roll") or w.get("reel_tape")) and w.get("card_type") != "camera"
+        ]
+        unique_sr = set(r for _, r in sound_roll_claims)
+        if len(unique_sr) > 1:
+            desc = (
+                f"Sound roll mismatch on {entity_id}: "
+                + ", ".join(f"{author} says Sound {r}" for author, r in sound_roll_claims)
+            )
+            discrepancies.append(
+                Discrepancy(
+                    production_id=production_id,
+                    shoot_day=shoot_day,
+                    entity_type="take",
+                    entity_id=entity_id,
+                    discrepancy_type=DiscrepancyType.ROLL_MISMATCH,
+                    severity=Severity.WARNING,
+                    description=desc,
+                    witnesses=witnesses,
+                )
+            )
+
         return discrepancies
 
     def reconcile_existence(

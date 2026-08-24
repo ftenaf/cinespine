@@ -49,6 +49,21 @@ class ClickHouseMCPServer:
             for d in discs:
                 all_discrepancies.append(d.model_dump())
 
+        # 2. Check Set Belief vs Post/DIT Existence
+        media_files = [evt.get("payload", {}) for evt in events if evt.get("entity_type") == "media_file"]
+        has_offload_report = len(media_files) > 0
+        if has_offload_report:
+            flat_takes = [w for witnesses in takes_map.values() for w in witnesses if w.get("axis") == "belief"]
+            exist_discs = self.reconciler.reconcile_existence(
+                production_id=production_id,
+                shoot_day=shoot_day,
+                logged_takes=flat_takes,
+                media_files=media_files,
+                has_offload_report=has_offload_report,
+            )
+            for d in exist_discs:
+                all_discrepancies.append(d.model_dump())
+
         return all_discrepancies
 
     def get_take_witnesses(self, production_id: str, shoot_day: str, slate: str, take_id: str) -> List[Dict[str, Any]]:

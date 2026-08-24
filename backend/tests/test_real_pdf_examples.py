@@ -70,9 +70,19 @@ class TestRealPDFExamples:
             text = extract_text_from_pdf(f.read())
         
         records = parse_silverstack_volume_text(text)
-        assert len(records) > 0
+        assert len(records) > 900
         assert records[0].checksum is not None
         assert records[0].volume_name == "664 SD"
+
+        # Verify WAV clip parsing with scene/shot/take and sound roll folder
+        wav_clip = next(r for r in records if "117-1T01" in r.file_name)
+        assert wav_clip.card_type == "sound"
+        assert wav_clip.reel_tape == "26Y07M27"
+        assert wav_clip.scene == "117"
+        assert wav_clip.shot == "1"
+        assert wav_clip.take_id == "1"
+        assert wav_clip.checksum is not None
+        assert "PCM" in (wav_clip.codec or "")
 
     def test_parse_real_silverstack_shooting_day_pdf(self):
         day_path = os.path.join(EXAMPLES_DIR, "Shooting Day-260728_SD31-20260728-1927.pdf")
