@@ -82,11 +82,7 @@ class LiveEventBroker:
 
     def publish_sync(self, event: SpineLiveEvent) -> None:
         """Synchronous wrapper to publish an event from synchronous endpoints or background threads."""
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(self.publish(event))
-        except RuntimeError:
-            self._broadcast_nowait(event)
+        self._broadcast_nowait(event)
 
     async def publish(self, event: SpineLiveEvent) -> None:
         """Broadcasts event to all matching subscribers."""

@@ -22,6 +22,7 @@ import {
   updateRequirement, deleteRequirement,
   markNotificationRead, markAllNotificationsRead
 } from './api';
+import { ScriptStudio } from './components/ScriptStudio';
 
 
 export default function App() {
@@ -88,7 +89,7 @@ export default function App() {
   const [reqSearchQuery, setReqSearchQuery] = useState<string>('');
 
   // Active View & Filters
-  const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents' | 'requirements'>('master');
+  const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents' | 'requirements' | 'script_studio'>('master');
   const [masterLayout, setMasterLayout] = useState<'grid' | 'slate'>('grid');
   const [focusTakeIndex, setFocusTakeIndex] = useState<number>(0);
   const [selectedSceneFilter, setSelectedSceneFilter] = useState<string>('ALL');
@@ -1051,6 +1052,18 @@ export default function App() {
                   {reqMetrics.open} open
                 </span>
               )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('script_studio')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                activeTab === 'script_studio'
+                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-600/30 ring-1 ring-purple-400/50'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              Script &amp; Previz Studio
             </button>
           </div>
 
@@ -2993,6 +3006,13 @@ export default function App() {
                 })}
               </div>
             )}
+          </section>
+        )}
+
+        {/* TAB 6: SCRIPT BREAKDOWN & PREVIZ STUDIO VIEW */}
+        {activeTab === 'script_studio' && (
+          <section className="h-[calc(100vh-145px)] -mx-6 -mb-6 mt-1 overflow-hidden border border-slate-800 shadow-2xl rounded-xl">
+            <ScriptStudio />
           </section>
         )}
       </main>

@@ -1513,3 +1513,120 @@ def get_prometheus_metrics():
         content=TelemetryExporter.get_metrics_payload(),
         media_type=TelemetryExporter.get_content_type(),
     )
+
+
+# ---------------------------------------------------------------------------
+# Script Breakdown, DoP Cinematography & Previz Storyboard Endpoints
+# ---------------------------------------------------------------------------
+
+from backend.app.script.parser import parse_fountain_screenplay, Screenplay, ScreenplayScene
+from backend.app.script.dop_presets import DOP_MASTER_PRESETS, resolve_dop_specification
+from backend.app.script.breakdown_engine import breakdown_scene_to_shots, ShotProposal
+from backend.app.script.storyboard_generator import render_cinematic_storyboard_svg
+
+
+class ScriptParseRequest(BaseModel):
+    script_text: str
+    title: str = "Screenplay"
+
+
+class ScriptBreakdownRequest(BaseModel):
+    scene: ScreenplayScene
+    dop_preset: Optional[str] = "Roger Deakins"
+    dop_overrides: Optional[Dict[str, Any]] = None
+    custom_prompt: Optional[str] = None
+    aspect_ratio: str = "2.39:1"
+
+
+class GenerateStoryboardRequest(BaseModel):
+    shot_id: str
+    prompt: str
+    scene_number: str = "1"
+    shot_number: str = "1"
+    shot_size: str = "WS"
+    focal_length: int = 35
+    aperture: str = "T2.8"
+    dop_preset: str = "Roger Deakins"
+    aspect_ratio: str = "2.39:1"
+
+
+@router.post("/script/parse", response_model=Screenplay)
+def parse_script(req: ScriptParseRequest):
+    """
+    Parses raw Fountain / standard screenplay text into structured scenes.
+    """
+    return parse_fountain_screenplay(req.script_text, req.title)
+
+
+@router.get("/script/presets")
+def get_dop_presets():
+    """
+    Returns curated Master Director of Photography presets and styles.
+    """
+    return {
+        "presets": DOP_MASTER_PRESETS,
+        "aspect_ratios": ["2.39:1", "1.85:1", "16:9", "4:3"],
+        "shot_sizes": ["EWS", "WS", "MWS", "MS", "MCU", "CU", "ECU", "OTS", "POV", "INSERT"],
+        "camera_movements": ["STATIC", "PAN_TILT", "DOLLY_IN", "DOLLY_OUT", "SLIDER", "HANDHELD", "STEADICAM", "CRANE"],
+    }
+
+
+@router.post("/script/breakdown")
+def generate_shot_breakdown(req: ScriptBreakdownRequest):
+    """
+    Generates a cinematic shot coverage list with technical DoP parameters
+    and synthesized generative image prompts.
+    """
+    shots = breakdown_scene_to_shots(
+        scene=req.scene,
+        dop_style_name=req.dop_preset,
+        dop_overrides=req.dop_overrides,
+        custom_mood_prompt=req.custom_prompt,
+        aspect_ratio=req.aspect_ratio,
+    )
+
+    # Pre-render visual concept preview for each shot
+    for s in shots:
+        s.storyboard.image_url = render_cinematic_storyboard_svg(
+            prompt=s.storyboard.prompt,
+            scene_number=s.scene_number,
+            shot_number=s.shot_number,
+            shot_size=s.shot_size,
+            focal_length=s.dop_spec.focal_length,
+            aperture=s.dop_spec.aperture,
+            dop_preset=s.dop_spec.dop_preset,
+            aspect_ratio=req.aspect_ratio,
+        )
+        s.storyboard.status = "generated"
+
+    return {
+        "scene_number": req.scene.scene_number,
+        "shots_count": len(shots),
+        "shots": [s.model_dump() for s in shots],
+    }
+
+
+@router.post("/script/generate-storyboard")
+def generate_storyboard_frame(req: GenerateStoryboardRequest):
+    """
+    Generates / re-renders a photorealistic cinematic concept art frame
+    matching DoP specifications and aspect ratio.
+    """
+    img_b64 = render_cinematic_storyboard_svg(
+        prompt=req.prompt,
+        scene_number=req.scene_number,
+        shot_number=req.shot_number,
+        shot_size=req.shot_size,
+        focal_length=req.focal_length,
+        aperture=req.aperture,
+        dop_preset=req.dop_preset,
+        aspect_ratio=req.aspect_ratio,
+    )
+    return {
+        "shot_id": req.shot_id,
+        "status": "generated",
+        "image_url": img_b64,
+        "prompt": req.prompt,
+        "aspect_ratio": req.aspect_ratio,
+    }
+
