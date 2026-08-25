@@ -72,3 +72,22 @@ class TestScripteParsers:
         vfx_rec = [r for r in records if "49/4" in (r.slate or "")][0]
         assert vfx_rec.is_vfx is True
         assert vfx_rec.camera_roll == "B040"
+
+    def test_parse_real_tclog_vector_circles(self):
+        import os
+        from backend.app.parsers.pdf_parsers import extract_text_from_pdf
+        pdf_path = "data/examples/DEMO_TCLog_D031_280726.pdf"
+        if os.path.exists(pdf_path):
+            with open(pdf_path, "rb") as f:
+                txt = extract_text_from_pdf(f.read())
+            recs = parse_scripte_tclog_text(txt)
+            t27_7 = [r for r in recs if r.slate == "27/7"]
+            t27_7_1 = [r for r in t27_7 if r.take_id == "1"]
+            assert len(t27_7_1) == 3
+            # All 3 cameras (A120, B039, C005) on 27/7 Take 1 must be starred / circled
+            for r in t27_7_1:
+                assert r.is_starred is True
+            # Take 2 on 27/7 must not be starred
+            t27_7_2 = [r for r in t27_7 if r.take_id == "2"]
+            for r in t27_7_2:
+                assert r.is_starred is False

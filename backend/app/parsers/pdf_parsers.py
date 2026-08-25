@@ -9,6 +9,10 @@ import re
 import base64
 from typing import List, Optional, Dict
 import pypdf
+try:
+    import pdfplumber
+except ImportError:
+    pdfplumber = None
 from backend.app.parsers.base import (
     ParsedCameraRecord,
     ParsedSoundRecord,
@@ -22,20 +26,56 @@ from backend.app.normalizers.takes import normalize_take
 
 def extract_text_from_pdf(pdf_bytes_or_file) -> str:
     """
-    Extracts concatenated text from all pages of a PDF.
+    Extracts concatenated text from all pages of a PDF, detecting both text characters
+    and graphical vector circle curves drawn over circled takes.
     """
     if isinstance(pdf_bytes_or_file, bytes):
-        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes_or_file))
+        pdf_bytes = pdf_bytes_or_file
+    elif hasattr(pdf_bytes_or_file, "read"):
+        pdf_bytes = pdf_bytes_or_file.read()
     else:
-        reader = pypdf.PdfReader(pdf_bytes_or_file)
+        pdf_bytes = bytes(pdf_bytes_or_file)
 
-    pages_text = []
-    for page in reader.pages:
-        txt = page.extract_text()
-        if txt:
-            pages_text.append(txt)
+    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+    raw_pages = [p.extract_text() or "" for p in reader.pages]
 
-    return "\n".join(pages_text)
+    if pdfplumber:
+        try:
+            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+                for idx, page in enumerate(pdf.pages):
+                    take_curves = [
+                        c for c in page.curves
+                        if 60 <= c.get("x0", 0) <= 130 and 8 <= c.get("width", 0) <= 35 and 4 <= c.get("height", 0) <= 30
+                    ]
+                    if not take_curves or idx >= len(raw_pages):
+                        continue
+
+                    words = page.extract_words()
+                    circled_takes_on_page = []
+                    for tc in take_curves:
+                        matching = [
+                            w for w in words
+                            if abs(w["top"] - tc["top"]) < 10 and 65 <= w["x0"] <= 130
+                        ]
+                        for w in matching:
+                            circled_takes_on_page.append((w["text"].replace("*", ""), tc["top"]))
+
+                    lines = raw_pages[idx].splitlines()
+                    enriched_lines = []
+                    for line in lines:
+                        m = re.search(r"^(\d+[A-Z]?/\d+|\d+WT)\s+(\d{1,2}[A-Z*]?|FALSE)(?=(\d{2}:\d{2}:\d{2}:\d{2})|\s+|$)", line)
+                        if m:
+                            raw_slate = m.group(1)
+                            raw_take = m.group(2)
+                            base_take = raw_take.replace("*", "")
+                            if not raw_take.endswith("*") and any(ct[0] == base_take for ct in circled_takes_on_page):
+                                line = re.sub(rf"^({re.escape(raw_slate)}\s+){re.escape(raw_take)}", rf"\g<1>{raw_take}* ", line)
+                        enriched_lines.append(line)
+                    raw_pages[idx] = "\n".join(enriched_lines)
+        except Exception:
+            pass
+
+    return "\n".join(raw_pages)
 
 
 def extract_thumbnails_from_pdf(pdf_bytes_or_file) -> Dict[str, str]:
