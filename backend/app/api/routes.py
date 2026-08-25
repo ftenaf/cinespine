@@ -386,10 +386,10 @@ def is_take_media_match(media_info: Dict[str, Any], slate: str, take_id: str, ca
         if tk_norm.isdigit():
             tk_int = int(tk_norm)
             sc_esc = rf"(?:\+)?{re.escape(sc.lstrip('+'))}"
-            if sh:
-                pattern = rf"^{sc_esc}-{re.escape(sh)}T0*{tk_int}\.WAV$"
+            if sh and sh != "WT":
+                pattern = rf"^{sc_esc}(?:-|\/)?{re.escape(sh)}T0*{tk_int}\.WAV$"
             else:
-                pattern = rf"^{sc_esc}(?:-?T|WTT)0*{tk_int}\.WAV$"
+                pattern = rf"^{sc_esc}(?:-|\/)?(?:WTT|-?WTT?|-?T)0*{tk_int}\.WAV$"
             if re.search(pattern, fn, re.IGNORECASE):
                 return True
 

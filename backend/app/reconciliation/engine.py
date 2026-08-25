@@ -226,10 +226,10 @@ class ReconciliationEngine:
                         sc = slate.split("/")[0] if "/" in slate else slate
                         sh = slate.split("/")[1] if "/" in slate else None
                         tk_int = int(take_id) if take_id.isdigit() else 0
-                        if sh:
-                            pat = rf"^(?:\+)?{re.escape(sc.lstrip('+'))}-{re.escape(sh)}T0*{tk_int}\.WAV$"
+                        if sh and sh != "WT":
+                            pat = rf"^(?:\+)?{re.escape(sc.lstrip('+'))}(?:-|\/)?{re.escape(sh)}T0*{tk_int}\.WAV$"
                         else:
-                            pat = rf"^(?:\+)?{re.escape(sc.lstrip('+'))}(?:-?T|WTT)0*{tk_int}\.WAV$"
+                            pat = rf"^(?:\+)?{re.escape(sc.lstrip('+'))}(?:-|\/)?(?:WTT|-?WTT?|-?T)0*{tk_int}\.WAV$"
                         if re.search(pat, file_name, re.IGNORECASE):
                             matched = True
                             break

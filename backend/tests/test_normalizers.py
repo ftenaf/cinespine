@@ -71,7 +71,24 @@ class TestSlateNormalization:
         assert normalize_slate("27/7") == "27/7"
         assert normalize_slate("27-7") == "27/7"
         assert normalize_slate("27-7T01") == "27/7"
+        assert normalize_slate("27/7T01") == "27/7"
         assert normalize_slate("64A/1") == "64A/1"
+        assert normalize_slate("64A-1") == "64A/1"
+
+    def test_wild_track_slate_folding(self):
+        # 49WT vs 49/WT vs 49-WT vs 49 WT vs 49WTT01 all fold to 49/WT
+        assert normalize_slate("49WT") == "49/WT"
+        assert normalize_slate("49/WT") == "49/WT"
+        assert normalize_slate("49-WT") == "49/WT"
+        assert normalize_slate("49 WT") == "49/WT"
+        assert normalize_slate("49_WT") == "49/WT"
+        assert normalize_slate("49WTT01") == "49/WT"
+        assert normalize_slate("6WT") == "6/WT"
+        assert normalize_slate("6/WT") == "6/WT"
+        assert normalize_slate("WT49") == "49/WT"
+        assert normalize_slate("WT/49") == "49/WT"
+        assert normalize_slate("WT") == "WT"
+        assert normalize_slate("WILD") == "WT"
 
     def test_compound_scene_expansion(self):
         assert parse_scene_compound("21+25") == ["21", "25"]

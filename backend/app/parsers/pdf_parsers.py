@@ -519,11 +519,13 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             raw_take = wt_m.group(2)
             comments = wt_m.group(5).strip() if wt_m.group(5) else "Wild Track"
             take_info = normalize_take(raw_take)
+            norm_slate = normalize_slate(raw_slate)
+            scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
 
             records.append(
                 ParsedScriptRecord(
-                    scene=raw_slate,
-                    slate=raw_slate,
+                    scene=scene,
+                    slate=norm_slate,
                     take_id=take_info.take_id or raw_take,
                     camera_roll=None,
                     timecode_in=None,
