@@ -3,6 +3,7 @@ Deterministic Parser for Sound ALE and Sound CSV logs.
 """
 import csv
 import io
+import re
 from typing import List, Optional
 from backend.app.parsers.base import ParsedSoundRecord, ParserFailureError
 from backend.app.normalizers.rolls import normalize_sound_roll
@@ -124,13 +125,35 @@ def parse_sound_ale(content: str) -> List[ParsedSoundRecord]:
         take_info = normalize_take(raw_take)
         norm_sr = normalize_sound_roll(raw_sr)
 
-        # Extract scene number from slate (e.g. 27/7 -> scene 27)
-        scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
+        # Detect wild track from take box, slate, or file name (e.g. 49WT, WT 01, 49WTT01.WAV)
+        is_wild = (
+            take_info.is_wild_track
+            or "WT" in (raw_slate or "").upper()
+            or "WILD" in (raw_slate or "").upper()
+            or bool(file_name and ("WT" in file_name.upper() or "WILD" in file_name.upper()))
+        )
 
-        # Detect wild track from take box or slate (e.g. 49WT, WT 01)
-        is_wild = take_info.is_wild_track or "WT" in (raw_slate or "").upper() or "WILD" in (raw_slate or "").upper()
-        if file_name and ("WT" in file_name.upper() or "WILD" in file_name.upper()):
-            is_wild = True
+        # If it's a wild track and slate does not already have /WT (e.g. raw_slate was '49' with take 'WT 01' or file '49WTT01.WAV')
+        if is_wild and norm_slate and "/" not in norm_slate and norm_slate != "WT":
+            norm_slate = f"{norm_slate}/WT"
+
+        # If raw_slate was missing but file_name is available (e.g. 49WTT01.WAV or 27-7T01.WAV)
+        if not norm_slate and file_name:
+            m_fn_wt = re.match(r"^(.+?)WTT?(\d+)\.WAV$", file_name, re.IGNORECASE)
+            if m_fn_wt:
+                norm_slate = f"{m_fn_wt.group(1)}/WT"
+                if not take_info.take_id:
+                    take_info = normalize_take(m_fn_wt.group(2))
+                is_wild = True
+            else:
+                m_fn = re.match(r"^([A-Za-z0-9+]+)-([A-Za-z0-9]+)T?(\d+)\.WAV$", file_name, re.IGNORECASE)
+                if m_fn:
+                    norm_slate = f"{m_fn.group(1)}/{m_fn.group(2)}"
+                    if not take_info.take_id:
+                        take_info = normalize_take(m_fn.group(3))
+
+        # Extract scene number from slate (e.g. 27/7 -> scene 27, 49/WT -> scene 49)
+        scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
 
         final_note = row_note or take_info.note
 

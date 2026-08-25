@@ -102,12 +102,39 @@ File Name,Scene,Take,Length,Start TC,Trk 1,Trk 2,Notes
         assert records[0].take_id == "1"
         assert records[0].timecode_in == "09:25:40:00"
 
-        # Check wild track isolation
+        # Check wild track isolation and canonical slate/scene format
         assert records[1].is_wild_track is True
+        assert records[1].slate == "49/WT"
+        assert records[1].scene == "49"
+        assert records[1].take_id == "1"
+        assert records[1].note == "wildtrack_exit"
 
         # Check scene 117 take 1
         assert records[2].slate == "117/1"
         assert records[2].take_id == "1"
+
+    def test_parse_sound_csv_wild_track_variations(self):
+        csv_variations = """File Name,Scene,Take,Length,Start TC,Trk 1,Notes
+49WTT01.WAV,49,WT 01,00:00:58,13:59:20:00,"MixL","wild track take in take col"
+6WT_T01.WAV,6WT,1,00:00:45,14:00:00:00,"MixL","6WT in scene col"
+WT49_01.WAV,WT 49,01,00:01:00,14:05:00:00,"MixL","WT 49 prefix"
+"""
+        records = parse_sound_ale(csv_variations)
+        assert len(records) == 3
+        assert records[0].slate == "49/WT"
+        assert records[0].scene == "49"
+        assert records[0].take_id == "1"
+        assert records[0].is_wild_track is True
+
+        assert records[1].slate == "6/WT"
+        assert records[1].scene == "6"
+        assert records[1].take_id == "1"
+        assert records[1].is_wild_track is True
+
+        assert records[2].slate == "49/WT"
+        assert records[2].scene == "49"
+        assert records[2].take_id == "1"
+        assert records[2].is_wild_track is True
 
     def test_reject_empty_or_corrupt_sound_ale(self):
         with pytest.raises(ParserFailureError):
