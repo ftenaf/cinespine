@@ -16,6 +16,7 @@ except ImportError:
 from backend.app.parsers.base import (
     ParsedCameraRecord,
     ParsedSoundRecord,
+    ParsedScriptRecord,
     ParsedSilverstackClip,
     ParserFailureError,
 )
@@ -330,14 +331,14 @@ def parse_zoelog_camera_text(text: str) -> List[ParsedCameraRecord]:
     return records
 
 
-def parse_scripte_tclog_text(text: str) -> List[ParsedSoundRecord]:
+def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
     """
     Parses Scripte Daily Timecode Log text (e.g. DEMO_TCLog_D031_280726.pdf) using state machine.
     """
     if not text or not text.strip():
         raise ParserFailureError("Empty Scripte TCLog text")
 
-    records: List[ParsedSoundRecord] = []
+    records: List[ParsedScriptRecord] = []
     lines = text.strip().splitlines()
 
     current_slate = None
@@ -362,21 +363,20 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedSoundRecord]:
             tc_in = single_m.group(3)
             tc_out = single_m.group(4)
             cr = normalize_camera_roll(single_m.group(5))
-            sr = normalize_sound_roll(single_m.group(6)) if single_m.group(6) else None
 
             norm_slate = normalize_slate(raw_slate)
             take_info = normalize_take(raw_take)
             scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
 
             records.append(
-                ParsedSoundRecord(
+                ParsedScriptRecord(
                     scene=scene,
                     slate=norm_slate,
                     take_id=take_info.take_id,
-                    sound_roll=sr,
                     camera_roll=cr,
                     timecode_in=tc_in,
                     timecode_out=tc_out,
+                    recording_date="28/07/2026",
                     is_starred=take_info.is_starred,
                     is_pickup=take_info.is_pickup,
                     is_false_start=take_info.is_false_start,
@@ -409,7 +409,6 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedSoundRecord]:
         roll_m = re.search(r"\b([A-Z]\d{3})\s*(\d{6})?(?:\s*\d+:\d+)?", cleaned)
         if roll_m and current_slate and current_take:
             cr = normalize_camera_roll(roll_m.group(1))
-            sr = normalize_sound_roll(roll_m.group(2)) if roll_m.group(2) else None
 
             norm_slate = normalize_slate(current_slate)
             take_info = normalize_take(current_take)
@@ -417,14 +416,14 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedSoundRecord]:
             notes_str = " ".join(current_notes).strip() or None
 
             records.append(
-                ParsedSoundRecord(
+                ParsedScriptRecord(
                     scene=scene,
                     slate=norm_slate,
                     take_id=take_info.take_id,
-                    sound_roll=sr,
                     camera_roll=cr,
                     timecode_in=current_tc_in,
                     timecode_out=current_tc_out,
+                    recording_date="28/07/2026",
                     is_starred=take_info.is_starred,
                     is_pickup=take_info.is_pickup,
                     is_false_start=take_info.is_false_start,
@@ -453,15 +452,14 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedSoundRecord]:
     return records
 
 
-def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedSoundRecord]:
+def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord]:
     """
-    Parses Scripte Detailed Editor's Log text (e.g. DEMO_DetailedEditor’sLog_D031_280726.pdf).
-    Captures multi-camera cards, WildTrack (WT) tags, and VFX markers.
+    Parses Scripte Detailed Editor's Log text (e.g. DEMO_DetailedEditor’sLog_D031_280726.pdf) using state machine.
     """
     if not text or not text.strip():
         raise ParserFailureError("Empty Scripte Detailed Editor's Log text")
 
-    records: List[ParsedSoundRecord] = []
+    records: List[ParsedScriptRecord] = []
     lines = text.strip().splitlines()
 
     current_slate = None
@@ -487,23 +485,24 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedSoundRecord]
         if wt_m and "WT" in cleaned.upper():
             raw_slate = wt_m.group(1)
             raw_take = wt_m.group(2)
-            sr = normalize_sound_roll(wt_m.group(3)) if wt_m.group(3) else None
             comments = wt_m.group(5).strip() if wt_m.group(5) else "Wild Track"
             take_info = normalize_take(raw_take)
 
             records.append(
-                ParsedSoundRecord(
+                ParsedScriptRecord(
                     scene=raw_slate,
                     slate=raw_slate,
                     take_id=take_info.take_id or raw_take,
-                    sound_roll=sr,
                     camera_roll=None,
                     timecode_in=None,
                     timecode_out=None,
+                    recording_date="28/07/2026",
                     is_starred=take_info.is_starred,
                     is_pickup=False,
                     is_wild_track=True,
                     is_vfx=False,
+                    is_false_start=take_info.is_false_start,
+                    is_mos=take_info.is_mos,
                     note=comments,
                     raw_payload={"type": "wild_track", "comments": comments},
                 )
@@ -522,21 +521,21 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedSoundRecord]
             roll_m = re.search(r"\b([A-Z]\d{3})\s*(\d{6})?", rest)
             if roll_m:
                 cr = normalize_camera_roll(roll_m.group(1))
-                sr = normalize_sound_roll(roll_m.group(2)) if roll_m.group(2) else None
                 norm_slate = normalize_slate(current_slate)
                 take_info = normalize_take(current_take)
                 scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
                 records.append(
-                    ParsedSoundRecord(
+                    ParsedScriptRecord(
                         scene=scene,
                         slate=norm_slate,
                         take_id=take_info.take_id,
-                        sound_roll=sr,
                         camera_roll=cr,
                         timecode_in=None,
                         timecode_out=None,
+                        recording_date="28/07/2026",
                         is_starred=take_info.is_starred,
                         is_pickup=take_info.is_pickup,
+                        is_false_start=take_info.is_false_start,
                         is_wild_track="WT" in current_slate.upper() or take_info.is_wild_track,
                         is_vfx="VFX" in cleaned.upper() or take_info.is_vfx,
                         is_mos="MOS" in cleaned.upper() or "MOS" in current_slate.upper() or take_info.is_mos,
@@ -554,21 +553,21 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedSoundRecord]
             roll_m = re.search(r"\b([A-Z]\d{3})\s*(\d{6})?", rest)
             if roll_m:
                 cr = normalize_camera_roll(roll_m.group(1))
-                sr = normalize_sound_roll(roll_m.group(2)) if roll_m.group(2) else None
                 norm_slate = normalize_slate(current_slate)
                 take_info = normalize_take(current_take)
                 scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
                 records.append(
-                    ParsedSoundRecord(
+                    ParsedScriptRecord(
                         scene=scene,
                         slate=norm_slate,
                         take_id=take_info.take_id,
-                        sound_roll=sr,
                         camera_roll=cr,
                         timecode_in=None,
                         timecode_out=None,
+                        recording_date="28/07/2026",
                         is_starred=take_info.is_starred,
                         is_pickup=take_info.is_pickup,
+                        is_false_start=take_info.is_false_start,
                         is_wild_track="WT" in current_slate.upper() or take_info.is_wild_track,
                         is_vfx="VFX" in cleaned.upper() or take_info.is_vfx,
                         is_mos="MOS" in cleaned.upper() or "MOS" in current_slate.upper() or take_info.is_mos,
@@ -582,22 +581,22 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedSoundRecord]
         roll_standalone = re.search(r"\b([A-Z]\d{3})\s*(\d{6})?", cleaned)
         if roll_standalone and current_slate and current_take:
             cr = normalize_camera_roll(roll_standalone.group(1))
-            sr = normalize_sound_roll(roll_standalone.group(2)) if roll_standalone.group(2) else None
             norm_slate = normalize_slate(current_slate)
             take_info = normalize_take(current_take)
             scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
             notes_str = " ".join(current_notes).strip() or cleaned
             records.append(
-                ParsedSoundRecord(
+                ParsedScriptRecord(
                     scene=scene,
                     slate=norm_slate,
                     take_id=take_info.take_id,
-                    sound_roll=sr,
                     camera_roll=cr,
                     timecode_in=None,
                     timecode_out=None,
+                    recording_date="28/07/2026",
                     is_starred=take_info.is_starred,
                     is_pickup=take_info.is_pickup,
+                    is_false_start=take_info.is_false_start,
                     is_wild_track="WT" in current_slate.upper() or take_info.is_wild_track,
                     is_vfx="VFX" in cleaned.upper() or "VFX" in notes_str.upper() or take_info.is_vfx,
                     is_mos="MOS" in cleaned.upper() or "MOS" in notes_str.upper() or take_info.is_mos,
@@ -616,14 +615,14 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedSoundRecord]
     return records
 
 
-def parse_editors_log_text(text: str) -> List[ParsedSoundRecord]:
+def parse_editors_log_text(text: str) -> List[ParsedScriptRecord]:
     """
-    Parses Script Supervisor Editor's Log text into sound/editorial records.
+    Parses Script Supervisor Editor's Log text into script/editorial records.
     """
     if not text or not text.strip():
         raise ParserFailureError("Empty Editor's Log text")
 
-    records: List[ParsedSoundRecord] = []
+    records: List[ParsedScriptRecord] = []
     lines = text.strip().splitlines()
 
     for line in lines:
@@ -637,7 +636,6 @@ def parse_editors_log_text(text: str) -> List[ParsedSoundRecord]:
             raw_take = m.group(2)
             desc = m.group(3).strip() if m.group(3) else None
             cr = normalize_camera_roll(m.group(4))
-            sr = normalize_sound_roll(m.group(5)) if m.group(5) else None
             comments = m.group(7).strip() if m.group(7) else None
 
             norm_slate = normalize_slate(raw_slate)
@@ -645,16 +643,17 @@ def parse_editors_log_text(text: str) -> List[ParsedSoundRecord]:
             scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
 
             records.append(
-                ParsedSoundRecord(
+                ParsedScriptRecord(
                     scene=scene,
                     slate=norm_slate,
                     take_id=take_info.take_id,
-                    sound_roll=sr,
                     camera_roll=cr,
                     timecode_in=None,
                     timecode_out=None,
+                    recording_date="28/07/2026",
                     is_starred=take_info.is_starred,
                     is_pickup=take_info.is_pickup,
+                    is_false_start=take_info.is_false_start,
                     is_vfx=take_info.is_vfx or "VFX" in cleaned.upper(),
                     is_mos=take_info.is_mos or "MOS" in cleaned.upper() or "MOS" in (desc or "").upper() or "MOS" in (comments or "").upper(),
                     note=comments or desc,

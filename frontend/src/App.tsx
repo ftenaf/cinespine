@@ -1947,13 +1947,49 @@ export default function App() {
             </div>
 
             {/* Department Witness Breakdown with Preview Links */}
+            {/* Department Witness Breakdown with Preview Links */}
             <div className="space-y-3">
               <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Source Document Witness Claims</h4>
 
-              {/* 1. Camera Witness */}
+              {/* 1. Script Supervisor Witness */}
               <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-blue-400">1. Camera Department (Belief)</span>
+                  <span className="text-xs font-bold text-amber-400">1. Script Supervisor (Editorial & Continuity)</span>
+                  {inspectedTake.belief.script?.source_document && (
+                    <button
+                      onClick={() => handleOpenPreviewDoc(inspectedTake.belief.script?.source_doc_id, inspectedTake.belief.script?.source_document)}
+                      className="text-[11px] text-purple-400 hover:text-purple-300 flex items-center gap-1 font-medium underline"
+                    >
+                      <Eye className="w-3 h-3" />
+                      Preview {inspectedTake.belief.script.source_document}
+                    </button>
+                  )}
+                </div>
+                {inspectedTake.belief.script ? (
+                  <div className="space-y-2">
+                    <div className="text-xs font-mono text-slate-300 grid grid-cols-2 gap-2">
+                      <div>Camera Roll: <span className="text-white font-bold">{inspectedTake.belief.script.camera_roll || '--'}</span></div>
+                      <div>Date: <span className="text-white">{inspectedTake.belief.script.recording_date || inspectedTake.recording_date || '--'}</span></div>
+                      <div>Timecode In: <span className="text-white">{inspectedTake.belief.script.timecode_in || '--'}</span></div>
+                      <div>Timecode Out: <span className="text-white">{inspectedTake.belief.script.timecode_out || '--'}</span></div>
+                      <div>Circled Take: <span className={inspectedTake.belief.script.is_starred ? 'text-amber-400 font-bold' : 'text-slate-400'}>{inspectedTake.belief.script.is_starred ? '⭐ YES (Chosen)' : 'NO'}</span></div>
+                      <div>MOS (Silent): <span className={inspectedTake.belief.script.is_mos ? 'text-indigo-400 font-bold' : 'text-slate-400'}>{inspectedTake.belief.script.is_mos ? '🔇 YES (MOS)' : 'NO (Sync Audio)'}</span></div>
+                    </div>
+                    {inspectedTake.belief.script.note && (
+                      <div className="text-[11px] text-slate-300 italic pt-1 border-t border-slate-900">
+                        "{inspectedTake.belief.script.note}"
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-xs font-mono text-slate-500 italic">No script supervisor log ingested for this slate yet.</div>
+                )}
+              </div>
+
+              {/* 2. Camera Witness */}
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-blue-400">2. Camera Department (Belief)</span>
                   {inspectedTake.belief.camera?.source_document && (
                     <button
                       onClick={() => handleOpenPreviewDoc(inspectedTake.belief.camera?.source_doc_id, inspectedTake.belief.camera?.source_document)}
@@ -1964,18 +2000,22 @@ export default function App() {
                     </button>
                   )}
                 </div>
-                <div className="text-xs font-mono text-slate-300 grid grid-cols-2 gap-2">
-                  <div>Card Roll: <span className="text-white font-bold">{inspectedTake.belief.camera?.camera_roll || '--'}</span></div>
-                  <div>Clip: <span className="text-white font-bold">{inspectedTake.belief.camera?.clip_name || '--'}</span></div>
-                  <div>FPS / ISO: <span className="text-white">{inspectedTake.belief.camera?.fps || 24}fps / {inspectedTake.belief.camera?.iso || 800}</span></div>
-                  <div>Lens: <span className="text-white">{inspectedTake.belief.camera?.lens || 'Standard'}</span></div>
-                </div>
+                {inspectedTake.belief.camera ? (
+                  <div className="text-xs font-mono text-slate-300 grid grid-cols-2 gap-2">
+                    <div>Card Roll: <span className="text-white font-bold">{inspectedTake.belief.camera?.camera_roll || '--'}</span></div>
+                    <div>Clip: <span className="text-white font-bold">{inspectedTake.belief.camera?.clip_name || '--'}</span></div>
+                    <div>FPS / ISO: <span className="text-white">{inspectedTake.belief.camera?.fps || 24}fps / {inspectedTake.belief.camera?.iso || 800}</span></div>
+                    <div>Lens: <span className="text-white">{inspectedTake.belief.camera?.lens || 'Standard'}</span></div>
+                  </div>
+                ) : (
+                  <div className="text-xs font-mono text-slate-500 italic">No camera log (ZoeLog / CSV) ingested for this slate yet.</div>
+                )}
               </div>
 
-              {/* 2. Sound Witness */}
+              {/* 3. Sound Witness */}
               <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-emerald-400">2. Sound Department (Belief)</span>
+                  <span className="text-xs font-bold text-emerald-400">3. Sound Department (Belief)</span>
                   {inspectedTake.belief.sound?.source_document && (
                     <button
                       onClick={() => handleOpenPreviewDoc(inspectedTake.belief.sound?.source_doc_id, inspectedTake.belief.sound?.source_document)}
@@ -1986,18 +2026,26 @@ export default function App() {
                     </button>
                   )}
                 </div>
-                <div className="text-xs font-mono text-slate-300 grid grid-cols-2 gap-2">
-                  <div>Sound Roll: <span className="text-white font-bold">{inspectedTake.belief.sound?.sound_roll || '--'}</span></div>
-                  <div>Timecode In: <span className="text-white">{inspectedTake.belief.sound?.timecode_in || '--'}</span></div>
-                  <div>Tracks: <span className="text-white">{inspectedTake.belief.sound?.tracks || '4ch Poly'}</span></div>
-                  <div>Wild Track: <span className="text-white">{inspectedTake.belief.sound?.is_wild_track ? 'YES' : 'NO'}</span></div>
-                </div>
+                {inspectedTake.is_mos ? (
+                  <div className="text-xs font-mono text-indigo-300/90 bg-indigo-950/40 p-2.5 rounded-lg border border-indigo-500/30">
+                    🔇 MOS Take — Filmed without sync sound on set as directed.
+                  </div>
+                ) : inspectedTake.belief.sound ? (
+                  <div className="text-xs font-mono text-slate-300 grid grid-cols-2 gap-2">
+                    <div>Sound Roll: <span className="text-white font-bold">{inspectedTake.belief.sound?.sound_roll || '--'}</span></div>
+                    <div>Timecode In: <span className="text-white">{inspectedTake.belief.sound?.timecode_in || '--'}</span></div>
+                    <div>Tracks: <span className="text-white">{inspectedTake.belief.sound?.tracks || 'Poly WAV'}</span></div>
+                    <div>Wild Track: <span className="text-white">{inspectedTake.belief.sound?.is_wild_track ? 'YES' : 'NO'}</span></div>
+                  </div>
+                ) : (
+                  <div className="text-xs font-mono text-slate-500 italic">No sound report (Sound ALE / CSV) ingested for this slate yet.</div>
+                )}
               </div>
 
-              {/* 3. DIT Physical Existence */}
+              {/* 4. DIT Physical Existence */}
               <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-cyan-400">3. DIT / Pomfort Silverstack Notary (Existence)</span>
+                  <span className="text-xs font-bold text-cyan-400">4. DIT / Pomfort Silverstack Notary (Existence)</span>
                   {inspectedTake.matched_media_files.length > 0 && (
                     <span className="text-[10px] text-cyan-300 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-500/30 font-mono">
                       ✓ Notary Verified

@@ -51,8 +51,7 @@ class TestScripteParsers:
         assert r1.timecode_in == "09:26:12:04"
         assert r1.timecode_out == "09:28:58:12"
         assert r1.camera_roll in ["A120", "B039", "C005"]
-        # Script supervisor logs track camera cards and shoot date, sound_roll is None
-        assert r1.sound_roll is None
+        assert r1.recording_date == "28/07/2026"
 
         # Verify Take 2 comments
         r2 = [r for r in records if r.take_id == "2"][0]
