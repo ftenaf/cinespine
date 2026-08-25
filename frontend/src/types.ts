@@ -171,6 +171,8 @@ export interface SequenceRecord {
   is_wild_track: boolean;
   is_vfx: boolean;
   takes_count: number;
+  circled_takes?: string[];
+  circled_takes_count?: number;
   takes: string[];
 }
 

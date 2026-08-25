@@ -427,7 +427,16 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedSoundRecord]
 
     for line in lines:
         cleaned = line.strip()
-        if not cleaned or "DETAILED EDITOR'S LOG" in cleaned or "Date:" in cleaned or "Slate TakeDescription" in cleaned:
+        if (
+            not cleaned
+            or "EDITOR'S LOG" in cleaned.upper()
+            or "Date:" in cleaned
+            or "Slate Take" in cleaned
+            or "Script / Continuity" in cleaned
+            or "Page " in cleaned
+            or "Day:Day " in cleaned
+            or cleaned.startswith("LAC - ")
+        ):
             continue
 
         # 1. Wild Track entries: 6WT 1 Scene(s): 6, 49 Wild Track: 6WT n/a2807260:29 pasos de LEAD
@@ -437,17 +446,18 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedSoundRecord]
             raw_take = wt_m.group(2)
             sr = normalize_sound_roll(wt_m.group(3)) if wt_m.group(3) else None
             comments = wt_m.group(5).strip() if wt_m.group(5) else "Wild Track"
+            take_info = normalize_take(raw_take)
 
             records.append(
                 ParsedSoundRecord(
                     scene=raw_slate,
                     slate=raw_slate,
-                    take_id=raw_take,
+                    take_id=take_info.take_id or raw_take,
                     sound_roll=sr,
                     camera_roll=None,
                     timecode_in=None,
                     timecode_out=None,
-                    is_starred=False,
+                    is_starred=take_info.is_starred,
                     is_pickup=False,
                     is_wild_track=True,
                     is_vfx=False,
@@ -457,11 +467,11 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedSoundRecord]
             )
             continue
 
-        # 2. Main Slate + Take header (e.g. '27/7 1 Scene(s): 27' or '49/1 1 Scene(s): 49')
-        new_slate_m = re.search(r"^(\d+[A-Z]?/\d+|\d+WT)\s+(\d+[A-Z*]?|FALSE)\s*(.*)", cleaned)
+        # 2. Main Slate + Take header (e.g. '27/7 1 Scene(s): 27' or '49/1 1 Scene(s): 49' or '117/1 4* Scene(s): 117')
+        new_slate_m = re.search(r"^(\d+[A-Z]?/\d+|\d+WT)\s+(\d+[A-Z]?\s*\*?|\d+\*|FALSE)\s*(.*)", cleaned)
         if new_slate_m:
             current_slate = new_slate_m.group(1)
-            current_take = new_slate_m.group(2)
+            current_take = new_slate_m.group(2).replace(" ", "")
             rest = new_slate_m.group(3)
             current_notes = [rest] if rest else []
 
@@ -492,10 +502,10 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedSoundRecord]
                 )
             continue
 
-        # 3. Subsequent take or multi-camera setup angle: '1 Dolly - wide... B039 2:46' or '2 A120 2:53'
-        sub_m = re.search(r"^(\d+[A-Z*]?|FALSE)\s+(.*)", cleaned)
+        # 3. Subsequent take or multi-camera setup angle: '1 Dolly - wide... B039 2:46' or '2 A120 2:53' or '3* A122 3:23'
+        sub_m = re.search(r"^(\d+[A-Z]?\s*\*?|\d+\*|FALSE)\s+(.*)", cleaned)
         if sub_m and current_slate:
-            current_take = sub_m.group(1)
+            current_take = sub_m.group(1).replace(" ", "")
             rest = sub_m.group(2)
             roll_m = re.search(r"\b([A-Z]\d{3})\s*(\d{6})?", rest)
             if roll_m:

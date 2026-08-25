@@ -861,6 +861,8 @@ def get_sequences(production_id: str = "DEMO_PRODUCTION", shoot_day: str = "31")
                 cleaned = re.sub(r"^\s*[-–>]+\s*", "", cleaned).strip()
                 if cleaned and len(cleaned) > 5 and cleaned not in descriptions:
                     descriptions.append(cleaned)
+        # Prioritize primary action descriptions shot on the active day
+        descriptions.sort(key=lambda d: ("Shot on Day" in d, -len(d)))
         desc_str = " | ".join(descriptions[:2]) if descriptions else "Recorded sequence"
 
         # Infer sequence location
@@ -914,7 +916,9 @@ def get_sequences(production_id: str = "DEMO_PRODUCTION", shoot_day: str = "31")
             "is_wild_track": is_wt,
             "is_vfx": is_vfx,
             "takes_count": len(s_takes),
-            "takes": [f"{t.get('slate')} T{t.get('take_id')}" for t in s_takes[:8]],
+            "circled_takes": [f"{t.get('slate')} T{t.get('take_id')}" for t in s_takes if t.get("is_starred")],
+            "circled_takes_count": len([t for t in s_takes if t.get("is_starred")]),
+            "takes": [f"{t.get('slate')} T{t.get('take_id')}{' ⭐' if t.get('is_starred') else ''}" for t in s_takes[:8]],
         }
         sequence_records.append(rec)
 

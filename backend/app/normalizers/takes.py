@@ -49,9 +49,16 @@ def normalize_take(raw_take: Optional[str]) -> TakeResult:
     if cleaned.startswith("WT") or cleaned.startswith("WILD"):
         return TakeResult(take_id=None, is_valid_take=False, is_wild_track=True)
 
-    # 3. Check for Star / Marked note indicator
-    is_starred = "*" in cleaned
-    cleaned = cleaned.replace("*", "").strip()
+    # 3. Check for Star / Circled / Chosen / Print take indicator
+    is_starred = "*" in cleaned or "CIRCLED" in cleaned or "CHOSEN" in cleaned or "PRINT" in cleaned or "STAR" in cleaned
+    cleaned = (
+        cleaned.replace("*", " ")
+        .replace("CIRCLED", " ")
+        .replace("CHOSEN", " ")
+        .replace("PRINT", " ")
+        .replace("STAR", " ")
+        .strip()
+    )
 
     # 4. Tokenize to separate take from notes (e.g. '3 VFX')
     tokens = cleaned.split()

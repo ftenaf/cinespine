@@ -1248,8 +1248,13 @@ export default function App() {
                               </span>
                               <ExternalLink className="w-3 h-3 text-cyan-400/70" />
                             </button>
-                            <div className="text-[10px] text-slate-400 font-mono">
-                              {seq.takes_count} {seq.takes_count === 1 ? 'take' : 'takes'}
+                            <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5">
+                              <span>{seq.takes_count} {seq.takes_count === 1 ? 'take' : 'takes'}</span>
+                              {seq.circled_takes_count && seq.circled_takes_count > 0 ? (
+                                <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.2 rounded font-bold" title={`Chosen / Circled takes: ${seq.circled_takes?.join(', ')}`}>
+                                  ⭐ {seq.circled_takes_count} chosen
+                                </span>
+                              ) : null}
                             </div>
                           </div>
                         </td>

@@ -127,10 +127,16 @@ class IngestionDispatcher:
             # Route to Scripte TCLog vs Detailed Editor Log vs standard Editor Log
             if "TCLOG" in fn or "TIMECODE LOG" in content.upper():
                 records = parse_scripte_tclog_text(content)
-            elif "DETAILED" in fn or "DETAILED EDITOR'S LOG" in content.upper():
-                records = parse_scripte_detailed_editor_log_text(content)
+            elif "DETAILED" in fn or "DETAILED EDITOR'S LOG" in content.upper() or "EDITOR" in fn or "EDITOR'S LOG" in content.upper() or "DAILY EDITOR'S LOG" in content.upper():
+                try:
+                    records = parse_scripte_detailed_editor_log_text(content)
+                except Exception:
+                    records = parse_editors_log_text(content)
             else:
-                records = parse_editors_log_text(content)
+                try:
+                    records = parse_scripte_detailed_editor_log_text(content)
+                except Exception:
+                    records = parse_editors_log_text(content)
 
             for rec in records:
                 spine_event: Dict[str, Any] = {
