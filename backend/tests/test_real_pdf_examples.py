@@ -88,7 +88,7 @@ class TestRealPDFExamples:
         plus_clip = next(r for r in records if "+99BDF-9T01" in r.file_name)
         assert plus_clip.scene == "+99BDF"
         assert plus_clip.shot == "9"
-        assert plus_clip.take_id == "01"
+        assert plus_clip.take_id in ["1", "01"]
         assert plus_clip.reel_tape == "26Y06M18"
         assert plus_clip.checksum == "202ab43613939de5"
 

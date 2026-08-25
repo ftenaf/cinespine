@@ -7,6 +7,7 @@ Evidence:
 from typing import Dict, Any, List, Optional
 from backend.app.spine.writer import SpineWriter
 from backend.app.reconciliation.engine import ReconciliationEngine
+from backend.app.normalizers.takes import normalize_take
 
 
 class ClickHouseMCPServer:
@@ -20,14 +21,16 @@ class ClickHouseMCPServer:
         """
         events = self.spine_writer.get_events(production_id=production_id, shoot_day=shoot_day)
         
-        # Group take events by slate and take_id
+        # Group take events by slate and canonical take_id
         takes_map: Dict[str, List[Dict[str, Any]]] = {}
         for evt in events:
             if evt.get("entity_type") == "take":
                 payload = evt.get("payload", {})
                 slate = payload.get("slate")
-                take_id = payload.get("take_id")
-                if slate and take_id:
+                raw_take = payload.get("take_id")
+                if slate and raw_take:
+                    take_res = normalize_take(raw_take)
+                    take_id = take_res.take_id or raw_take
                     key = f"{slate}_{take_id}"
                     if key not in takes_map:
                         takes_map[key] = []
@@ -102,10 +105,12 @@ class ClickHouseMCPServer:
         """
         events = self.spine_writer.get_events(production_id=production_id, shoot_day=shoot_day)
         witnesses = []
+        norm_req_take = normalize_take(take_id).take_id or take_id
         for evt in events:
             if evt.get("entity_type") == "take":
                 p = evt.get("payload", {})
-                if p.get("slate") == slate and p.get("take_id") == take_id:
+                p_take = normalize_take(p.get("take_id")).take_id or p.get("take_id")
+                if p.get("slate") == slate and p_take == norm_req_take:
                     witnesses.append({
                         "department": evt.get("department"),
                         "axis": evt.get("axis"),

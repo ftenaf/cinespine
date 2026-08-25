@@ -770,21 +770,23 @@ def parse_silverstack_volume_text(text: str) -> List[ParsedSilverstackClip]:
                     scene = m1.group(1)
                     raw_shot = m1.group(2)
                     raw_take = m1.group(3)
-                    if "PK" in raw_shot.upper() or "PK" in raw_take.upper():
+                    take_info = normalize_take(raw_take)
+                    take_id = take_info.take_id or raw_take
+                    if "PK" in raw_shot.upper() or take_info.is_pickup:
                         is_pk = True
                         raw_shot = re.sub(r"pk", "", raw_shot, flags=re.IGNORECASE)
-                        raw_take = re.sub(r"pk", "", raw_take, flags=re.IGNORECASE)
-                    if "WT" in scene.upper() or "WT" in raw_shot.upper() or "WT" in raw_take.upper():
+                    if "WT" in scene.upper() or "WT" in raw_shot.upper() or take_info.is_wild_track:
                         is_wt = True
                     shot = raw_shot
-                    take_id = raw_take
                 else:
                     # 2. Wild track without hyphen: e.g. 101AWTT01.WAV, 49WTT01.WAV, 68A68WTT01.WAV
                     m2 = re.match(r"^(.+?)WTT([A-Za-z0-9_*]+)$", base, re.IGNORECASE)
                     if m2:
                         scene = m2.group(1)
                         shot = "WT"
-                        take_id = m2.group(2)
+                        raw_take = m2.group(2)
+                        take_info = normalize_take(raw_take)
+                        take_id = take_info.take_id or raw_take
                         is_wt = True
                     else:
                         # 3. Scene + Take only: e.g. 68T01.WAV
@@ -792,7 +794,9 @@ def parse_silverstack_volume_text(text: str) -> List[ParsedSilverstackClip]:
                         if m3:
                             scene = m3.group(1)
                             shot = None
-                            take_id = m3.group(2)
+                            raw_take = m3.group(2)
+                            take_info = normalize_take(raw_take)
+                            take_id = take_info.take_id or raw_take
 
             roll: Optional[str] = None
             if not is_wav:
@@ -922,27 +926,31 @@ def parse_silverstack_clips_text(text: str, thumbnails_map: Optional[Dict[str, s
                 scene = m1.group(1)
                 raw_shot = m1.group(2)
                 raw_take = m1.group(3)
-                if "PK" in raw_shot.upper() or "PK" in raw_take.upper():
+                take_info = normalize_take(raw_take)
+                take_id = take_info.take_id or raw_take
+                if "PK" in raw_shot.upper() or take_info.is_pickup:
                     is_pk = True
                     raw_shot = re.sub(r"pk", "", raw_shot, flags=re.IGNORECASE)
-                    raw_take = re.sub(r"pk", "", raw_take, flags=re.IGNORECASE)
-                if "WT" in scene.upper() or "WT" in raw_shot.upper() or "WT" in raw_take.upper():
+                if "WT" in scene.upper() or "WT" in raw_shot.upper() or take_info.is_wild_track:
                     is_wt = True
                 shot = raw_shot
-                take_id = raw_take
             else:
                 m2 = re.match(r"^(.+?)WTT([A-Za-z0-9_*]+)$", base, re.IGNORECASE)
                 if m2:
                     scene = m2.group(1)
                     shot = "WT"
-                    take_id = m2.group(2)
+                    raw_take = m2.group(2)
+                    take_info = normalize_take(raw_take)
+                    take_id = take_info.take_id or raw_take
                     is_wt = True
                 else:
                     m3 = re.match(r"^(.+?)T([A-Za-z0-9_*]+)$", base, re.IGNORECASE)
                     if m3:
                         scene = m3.group(1)
                         shot = None
-                        take_id = m3.group(2)
+                        raw_take = m3.group(2)
+                        take_info = normalize_take(raw_take)
+                        take_id = take_info.take_id or raw_take
 
             clips.append(
                 ParsedSilverstackClip(
@@ -1166,9 +1174,10 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
 
         is_vfx = "VFX" in (raw_take or "") or "VFX" in blk_str
 
-        take_id = raw_take.replace("VFX", "").replace("PK", "").strip() if raw_take else None
-        if take_id and take_id.startswith("0") and len(take_id) > 1:
-            take_id = str(int(take_id))
+        take_info = normalize_take(raw_take)
+        take_id = take_info.take_id
+        if take_info.is_vfx:
+            is_vfx = True
 
         # Multi-tier thumbnail image resolution
         thumb_uri = None

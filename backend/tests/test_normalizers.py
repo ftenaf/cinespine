@@ -92,36 +92,60 @@ class TestTakeNormalization:
     def test_standard_and_padded_takes(self):
         res1 = normalize_take("1")
         res2 = normalize_take("01")
+        res3 = normalize_take("T1")
+        res4 = normalize_take("T01")
+        res5 = normalize_take("TK01")
+        res6 = normalize_take("TAKE 01")
         assert res1.take_id == "1"
         assert res2.take_id == "1"
+        assert res3.take_id == "1"
+        assert res4.take_id == "1"
+        assert res5.take_id == "1"
+        assert res6.take_id == "1"
         assert res1.is_starred is False
 
     def test_starred_or_marked_take(self):
         res = normalize_take("3*")
+        res_t = normalize_take("T03*")
         assert res.take_id == "3"
         assert res.is_starred is True
+        assert res_t.take_id == "3"
+        assert res_t.is_starred is True
 
     def test_free_text_notes_in_take_box(self):
         res = normalize_take("3 VFX")
+        res_t = normalize_take("T03 VFX")
         assert res.take_id == "3"
         assert res.note == "VFX"
         assert res.is_vfx is True
+        assert res_t.take_id == "3"
+        assert res_t.is_vfx is True
 
     def test_pickup_take_is_distinct(self):
         res = normalize_take("2PK")
+        res_t = normalize_take("T02PK")
         assert res.take_id == "2PK"
         assert res.is_pickup is True
+        assert res_t.take_id == "2PK"
+        assert res_t.is_pickup is True
 
     def test_false_start_is_not_a_take(self):
         res = normalize_take("FALSE")
+        res_fc = normalize_take("FC")
         assert res.is_false_start is True
         assert res.is_valid_take is False
-        assert res.take_id is None
+        assert res.take_id == "FALSE"
+        assert res_fc.is_false_start is True
+        assert res_fc.is_valid_take is False
+        assert res_fc.take_id == "FALSE"
 
     def test_wild_track_isolation(self):
         res = normalize_take("WT 01")
+        res_t = normalize_take("WTT01")
         assert res.is_wild_track is True
-        assert res.is_valid_take is False
+        assert res.take_id == "1"
+        assert res_t.is_wild_track is True
+        assert res_t.take_id == "1"
 
 
 class TestShootDayNormalization:

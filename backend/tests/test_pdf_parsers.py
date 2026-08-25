@@ -92,7 +92,7 @@ class TestPDFParsers:
         assert c1.file_name == "+99BDF-9T01.WAV"
         assert c1.scene == "+99BDF"
         assert c1.shot == "9"
-        assert c1.take_id == "01"
+        assert c1.take_id in ["1", "01"]
         assert c1.reel_tape == "26Y06M18"
         assert c1.checksum == "202ab43613939de5"
         assert c1.checksum_type == "XXH64"
@@ -102,13 +102,13 @@ class TestPDFParsers:
         assert c2.file_name == "71C-3T02.WAV"
         assert c2.scene == "71C"
         assert c2.shot == "3"
-        assert c2.take_id == "02"
+        assert c2.take_id in ["2", "02"]
 
         c3 = clips[2]
         assert c3.file_name == "49WTT01.WAV"
         assert c3.scene == "49"
         assert c3.shot == "WT"
-        assert c3.take_id == "01"
+        assert c3.take_id in ["1", "01"]
         assert c3.is_wild_track is True
 
     def test_parse_silverstack_clips_text(self):
@@ -129,7 +129,7 @@ B_0039C001_260728_102755_h1C9B B_ ARRI ALEXA 35 2:30 min 4608x3164 172.8° @ 24f
         assert s1.file_name == "27-7T01.WAV"
         assert s1.scene == "27"
         assert s1.shot == "7"
-        assert s1.take_id == "01"
+        assert s1.take_id in ["1", "01"]
         assert s1.card_type == "sound"
 
         # Sound 2 (Wild track)

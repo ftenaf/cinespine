@@ -13,6 +13,8 @@ from backend.app.reconciliation.engine import ReconciliationEngine
 from backend.app.agents.mcp_server import ClickHouseMCPServer, GeminiDiscrepancyAssistant
 from backend.app.parsers.classifier import classify_document, infer_production_and_day
 from backend.app.parsers.pdf_parsers import extract_text_from_pdf, extract_thumbnails_from_pdf
+from backend.app.normalizers.takes import normalize_take
+from backend.app.normalizers.slates import normalize_slate
 from backend.app.core.telemetry import TelemetryExporter
 
 router = APIRouter(prefix="/api")
@@ -263,14 +265,18 @@ async def upload_document_file(
     if filename.lower().endswith(".pdf"):
         try:
             raw_text = extract_text_from_pdf(content_bytes)
-            if any(k in filename.lower() or k in raw_text.lower() for k in ["thumbnail", "clips", "thumbnail report", "clips report"]):
-                thumbnails_map = extract_thumbnails_from_pdf(content_bytes)
         except Exception as e:
             raw_text = content_bytes.decode("utf-8", errors="ignore")
+
+        if any(k in filename.lower() or (raw_text and k in raw_text.lower()) for k in ["thumbnail", "clips", "thumbnail report", "clips report"]):
+            try:
+                thumbnails_map = extract_thumbnails_from_pdf(content_bytes)
+            except Exception:
+                thumbnails_map = {}
     else:
         raw_text = content_bytes.decode("utf-8", errors="ignore")
 
-    classification = classify_document(filename=filename, content=content_bytes)
+    classification = classify_document(filename=filename, content=raw_text)
 
     final_prod = production_id or classification.inferred_production_id or "DEMO_PRODUCTION"
     final_day = shoot_day or classification.inferred_shoot_day or "31"
@@ -413,21 +419,22 @@ def seed_real_day_data(req: SeedRequest):
             content_bytes = f.read()
 
         checksum = hashlib.sha256(content_bytes).hexdigest()
-        existing = spine_writer.get_document_by_checksum(req.production_id, req.shoot_day, checksum)
-        if existing:
-            continue
-
-        classification = classify_document(filename=fn, content=content_bytes)
         t_map = {}
         if fn.lower().endswith(".pdf"):
             try:
                 txt = extract_text_from_pdf(content_bytes)
-                if any(k in fn.lower() or k in txt.lower() for k in ["thumbnail", "clips", "thumbnail report", "clips report"]):
-                    t_map = extract_thumbnails_from_pdf(content_bytes)
             except Exception:
                 txt = content_bytes.decode("utf-8", errors="ignore")
+
+            if any(k in fn.lower() or (txt and k in txt.lower()) for k in ["thumbnail", "clips", "thumbnail report", "clips report"]):
+                try:
+                    t_map = extract_thumbnails_from_pdf(content_bytes)
+                except Exception:
+                    t_map = {}
         else:
             txt = content_bytes.decode("utf-8", errors="ignore")
+
+        classification = classify_document(filename=fn, content=txt)
 
         doc_id = spine_writer.store_document(
             production_id=req.production_id,
@@ -496,14 +503,15 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                     "source_doc": evt.get("metadata", {}).get("filename"),
                 }
 
-    # 2. Map sound reports (from sound CSV/ALE)
+    # 2. Sound reports lookup
     for evt in events:
         if evt.get("department") == "sound" and evt.get("entity_type") == "take":
             p = evt.get("payload", {})
             slate = p.get("slate")
             raw_take = p.get("take_id")
             if slate and raw_take:
-                tk = "FALSE" if raw_take in ["FC", "FALSE"] else raw_take
+                tk_res = normalize_take(raw_take)
+                tk = tk_res.take_id or raw_take
                 s_key = f"{slate}_{tk}"
                 sound_reports_map[s_key] = {
                     "file_name": p.get("file_name"),
@@ -526,8 +534,9 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
             slate = p.get("slate")
             raw_take = p.get("take_id")
             if slate and raw_take:
-                # Normalize take identifier so FC and FALSE merge gracefully
-                take_id = "FALSE" if raw_take in ["FC", "FALSE"] else raw_take
+                # Canonicalize take identifier so T1, T01, 1, FC, FALSE merge seamlessly
+                take_res = normalize_take(raw_take)
+                take_id = take_res.take_id or raw_take
                 key = f"{slate}_{take_id}"
                 scene = p.get("scene") or (slate.split("/")[0] if "/" in slate else slate)
 
