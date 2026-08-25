@@ -5,7 +5,7 @@ import {
   FileText, Clapperboard, Calendar, Search,
   HardDrive, Eye, FileCode, Check, AlertCircle, Trash2,
   Image as ImageIcon, ChevronLeft, ChevronRight, LayoutGrid,
-  Volume2, Maximize2, ExternalLink, Video, Mic, MapPin
+  Maximize2, ExternalLink, Video, Mic, MapPin
 } from 'lucide-react';
 import { TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, SequenceRecord } from './types';
 import { 
@@ -652,14 +652,38 @@ export default function App() {
                               className="w-full h-full object-cover group-hover:scale-105 transition duration-300 cursor-pointer" 
                             />
                           ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 to-slate-950 text-slate-600 p-4">
-                              <Volume2 className="w-10 h-10 mb-2 text-cyan-400/60" />
-                              <span className="text-[11px] font-mono text-cyan-300/80 font-bold">
-                                {t.is_wild_track ? 'Audio Wild Track' : 'Sound Mix Poly WAV'}
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-slate-400 p-4 text-center">
+                              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 mb-1.5 shadow-sm">
+                                <Film className="w-5 h-5" />
+                              </div>
+                              <span className="text-xs font-mono text-amber-300 font-bold">
+                                {t.belief.script ? "Script Supervisor Slate Entry" : t.is_wild_track ? "Audio Wild Track" : "Awaiting Camera Offload"}
                               </span>
-                              <span className="text-[10px] text-slate-500 font-mono mt-0.5">
-                                {t.sound_cards?.join(', ') || 'Sound Roll'}
-                              </span>
+                              <div className="flex flex-wrap items-center justify-center gap-1.5 mt-1 font-mono text-[10px]">
+                                {t.camera_cards.length > 0 && (
+                                  <span className="bg-blue-950/70 border border-blue-500/40 text-blue-300 px-2 py-0.5 rounded">
+                                    🎴 {t.camera_cards.join(', ')}
+                                  </span>
+                                )}
+                                {t.belief.script?.timecode_in && (
+                                  <span className="bg-slate-900 border border-slate-800 text-slate-400 px-2 py-0.5 rounded">
+                                    TC {t.belief.script.timecode_in}
+                                  </span>
+                                )}
+                              </div>
+                              {t.belief.script?.source_document && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenPreviewDoc(t.belief.script?.source_doc_id, t.belief.script?.source_document);
+                                  }}
+                                  className="mt-1.5 text-[10px] font-mono text-purple-400 hover:text-purple-300 underline flex items-center gap-1"
+                                  title={`Preview ${t.belief.script.source_document}`}
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  <span className="truncate max-w-[180px]">{t.belief.script.source_document}</span>
+                                </button>
+                              )}
                             </div>
                           )}
 
@@ -733,16 +757,26 @@ export default function App() {
                           <div className="flex items-center justify-between text-[11px] pb-1 border-b border-slate-800/80">
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-blue-400 font-semibold flex items-center gap-1">
-                                🎥 {t.video_files?.length || t.camera_cards?.length || 1} Cam{(t.video_files?.length || 1) > 1 ? 's' : ''}
-                                {t.camera_angles?.length > 1 && ` (${t.camera_angles.map(a => a.camera).join(', ')})`}
+                                🎥 {t.camera_cards?.length || t.video_files?.length || 1} Cam{(t.camera_cards?.length || 1) > 1 ? 's' : ''}
+                                {t.camera_cards?.length > 0 && ` (${t.camera_cards.join(', ')})`}
                               </span>
                               <span className="text-slate-600">•</span>
-                              <span className="font-mono text-emerald-400 font-semibold flex items-center gap-1">
-                                🎙️ {t.audio_files?.length || (t.sound_cards?.length ? 1 : 0)} Audio File{(t.audio_files?.length || 1) > 1 ? 's' : ''}
-                              </span>
+                              {t.is_mos ? (
+                                <span className="font-mono text-indigo-400 font-semibold flex items-center gap-1">
+                                  🔇 MOS (Silent)
+                                </span>
+                              ) : t.audio_files?.length > 0 ? (
+                                <span className="font-mono text-emerald-400 font-semibold flex items-center gap-1">
+                                  🎙️ {t.audio_files.length} Audio File{t.audio_files.length > 1 ? 's' : ''}
+                                </span>
+                              ) : (
+                                <span className="font-mono text-slate-500 flex items-center gap-1">
+                                  🎙️ No audio report
+                                </span>
+                              )}
                             </div>
                             <span className="text-[10px] font-mono text-cyan-300">
-                              {t.storage_volumes?.join(', ') || 'Offload Vol'}
+                              {t.storage_volumes?.length > 0 ? t.storage_volumes.join(', ') : 'Paperwork Logged'}
                             </span>
                           </div>
 
@@ -1001,13 +1035,40 @@ export default function App() {
                             <img 
                               src={focusDisplayThumb} 
                               alt="Slate Frame" 
-                              className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                              className="w-full h-full object-cover group-hover:scale-105 transition duration-300" 
                             />
                           ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950 text-slate-500 p-6">
-                              <Volume2 className="w-12 h-12 mb-3 text-cyan-400/70" />
-                              <span className="text-xs font-mono text-cyan-300 font-bold">Audio Recording Clip</span>
-                              <span className="text-[11px] text-slate-400 font-mono mt-1">{currentFocusTake.sound_cards?.join(', ')}</span>
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-slate-400 p-6 text-center">
+                              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 mb-2 shadow-sm">
+                                <Clapperboard className="w-7 h-7" />
+                              </div>
+                              <span className="text-sm font-mono text-amber-300 font-bold">
+                                {currentFocusTake.belief.script ? "Script Supervisor Continuity Slate" : "Awaiting Camera Thumbnail Offload"}
+                              </span>
+                              <div className="flex flex-wrap items-center justify-center gap-1.5 mt-2 font-mono text-xs">
+                                {currentFocusTake.camera_cards?.length > 0 && (
+                                  <span className="bg-blue-950/80 border border-blue-500/40 text-blue-300 px-2.5 py-0.5 rounded-lg">
+                                    🎴 Cards: {currentFocusTake.camera_cards.join(', ')}
+                                  </span>
+                                )}
+                                {currentFocusTake.belief.script?.timecode_in && (
+                                  <span className="bg-slate-900 border border-slate-800 text-slate-300 px-2.5 py-0.5 rounded-lg">
+                                    TC: {currentFocusTake.belief.script.timecode_in} → {currentFocusTake.belief.script.timecode_out || '--'}
+                                  </span>
+                                )}
+                              </div>
+                              {currentFocusTake.belief.script?.source_document && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenPreviewDoc(currentFocusTake.belief.script?.source_doc_id, currentFocusTake.belief.script?.source_document);
+                                  }}
+                                  className="mt-2.5 text-xs font-mono text-purple-400 hover:text-purple-300 underline flex items-center gap-1.5 bg-purple-950/40 px-3 py-1 rounded-lg border border-purple-500/30"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  Preview Source: {currentFocusTake.belief.script.source_document}
+                                </button>
+                              )}
                             </div>
                           )}
                           {focusDisplayThumb && (
@@ -1020,23 +1081,26 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Silverstack Physical Location Card */}
-                      <div className="bg-slate-950 p-4 rounded-xl border border-cyan-500/30 space-y-2">
+                      {/* Physical Location Card */}
+                      <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
                             <HardDrive className="w-4 h-4 text-cyan-400" />
-                            Pomfort Silverstack Notary
+                            Storage & Physical Media Location
                           </span>
-                          <span className="text-[10px] text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/30 font-mono font-bold">
-                            ✓ Checksum OK
+                          <span className={`text-[10px] px-2 py-0.5 rounded border font-mono font-bold ${
+                            currentFocusTake.matched_media_files.length > 0 
+                              ? 'text-emerald-400 bg-emerald-950 border-emerald-500/30' 
+                              : 'text-amber-400 bg-amber-950/60 border-amber-500/30'
+                          }`}>
+                            {currentFocusTake.matched_media_files.length > 0 ? '✓ Checksum OK' : '📄 Paperwork Logged'}
                           </span>
                         </div>
                         <div className="text-xs font-mono text-slate-300 space-y-1.5 pt-1">
-                          <div>Volumes: <span className="text-white font-bold">{currentFocusTake.storage_volumes?.join(', ') || 'MAG_A_120'}</span></div>
-                          <div>Codec: <span className="text-cyan-300 font-semibold">{currentFocusTake.codec || 'ARRIRAW (13bit, HDE)'}</span></div>
-                          <div>Recorded: <span className="text-slate-200">{currentFocusTake.recording_date || '--'}</span></div>
-                          <div>Camera Cards: <span className="text-white font-bold">{currentFocusTake.camera_cards?.join(', ') || 'N/A'}</span></div>
-                          <div>Sound Rolls: <span className="text-emerald-400 font-bold">{currentFocusTake.sound_cards?.join(', ') || 'N/A'}</span></div>
+                          <div>Volumes: <span className="text-white font-bold">{currentFocusTake.storage_volumes?.length > 0 ? currentFocusTake.storage_volumes.join(', ') : 'Awaiting DIT Offload'}</span></div>
+                          <div>Camera Cards: <span className="text-blue-300 font-bold">{currentFocusTake.camera_cards?.join(', ') || 'Awaiting ZoeLog'}</span></div>
+                          <div>Sound Rolls: <span className={currentFocusTake.is_mos ? "text-indigo-400 font-bold" : "text-emerald-400 font-bold"}>{currentFocusTake.is_mos ? "None (MOS / Silent Take)" : (currentFocusTake.sound_cards?.join(', ') || 'Awaiting Sound ALE')}</span></div>
+                          <div>Recorded Date: <span className="text-slate-200">{currentFocusTake.recording_date || '28/07/2026'}</span></div>
                         </div>
                       </div>
                     </div>
