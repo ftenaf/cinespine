@@ -800,6 +800,14 @@ def parse_silverstack_volume_text(text: str) -> List[ParsedSilverstackClip]:
                             take_info = normalize_take(raw_take)
                             take_id = take_info.take_id or raw_take
 
+            norm_slate = normalize_slate(f"{scene}/{shot}" if shot else scene) if scene else None
+            if norm_slate:
+                if "/" in norm_slate:
+                    scene = norm_slate.split("/")[0]
+                    shot = norm_slate.split("/")[1]
+                else:
+                    scene = norm_slate
+
             roll: Optional[str] = None
             if not is_wav:
                 roll_m = re.match(r"^([A-Z]\d{3})", current_file)
@@ -820,7 +828,7 @@ def parse_silverstack_volume_text(text: str) -> List[ParsedSilverstackClip]:
                     codec="Linear PCM (24bit, 48kHz)" if is_wav else None,
                     card_type="sound" if is_wav else "camera",
                     is_pickup=is_pk,
-                    is_wild_track=is_wt,
+                    is_wild_track=is_wt or "WT" in (norm_slate or "").upper(),
                     raw_payload={
                         "volume": vol_name,
                         "checksum": current_checksum,
@@ -954,6 +962,14 @@ def parse_silverstack_clips_text(text: str, thumbnails_map: Optional[Dict[str, s
                         take_info = normalize_take(raw_take)
                         take_id = take_info.take_id or raw_take
 
+            norm_slate = normalize_slate(f"{scene}/{shot}" if shot else scene) if scene else None
+            if norm_slate:
+                if "/" in norm_slate:
+                    scene = norm_slate.split("/")[0]
+                    shot = norm_slate.split("/")[1]
+                else:
+                    scene = norm_slate
+
             clips.append(
                 ParsedSilverstackClip(
                     file_name=fname,
@@ -968,7 +984,7 @@ def parse_silverstack_clips_text(text: str, thumbnails_map: Optional[Dict[str, s
                     codec="Linear PCM (24bit, 48kHz)",
                     card_type="sound",
                     is_pickup=is_pk,
-                    is_wild_track=is_wt,
+                    is_wild_track=is_wt or "WT" in (norm_slate or "").upper(),
                     raw_payload={"recorder": recorder_info, "duration": dur_str, "card_type": "sound"},
                 )
             )
@@ -1181,6 +1197,16 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
         if take_info.is_vfx:
             is_vfx = True
 
+        norm_slate = normalize_slate(f"{scene}/{shot}" if shot else scene) if scene else None
+        if norm_slate:
+            if "/" in norm_slate:
+                scene = norm_slate.split("/")[0]
+                shot = norm_slate.split("/")[1]
+            else:
+                scene = norm_slate
+
+        is_wt = "WT" in (scene or "").upper() or "WT" in (shot or "").upper() or "WT" in (raw_name or "").upper() or "WT" in (norm_slate or "").upper() or take_info.is_wild_track
+
         # Multi-tier thumbnail image resolution
         thumb_uri = None
         if thumbnails_map:
@@ -1216,6 +1242,7 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
                 iso=iso,
                 tstop=tstop,
                 is_vfx=is_vfx,
+                is_wild_track=is_wt,
                 card_type=card_type,
                 thumbnail_b64=thumb_uri,
                 raw_payload={

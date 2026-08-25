@@ -507,9 +507,10 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
     for evt in events:
         if evt.get("department") == "sound" and evt.get("entity_type") == "take":
             p = evt.get("payload", {})
-            slate = p.get("slate")
+            raw_slate = p.get("slate")
             raw_take = p.get("take_id")
-            if slate and raw_take:
+            if raw_slate and raw_take:
+                slate = normalize_slate(raw_slate) or raw_slate
                 tk_res = normalize_take(raw_take)
                 tk = tk_res.take_id or raw_take
                 s_key = f"{slate}_{tk}"
@@ -531,14 +532,15 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
     for evt in events:
         if evt.get("entity_type") == "take":
             p = evt.get("payload", {})
-            slate = p.get("slate")
+            raw_slate = p.get("slate")
             raw_take = p.get("take_id")
-            if slate and raw_take:
-                # Canonicalize take identifier so T1, T01, 1, FC, FALSE merge seamlessly
+            if raw_slate and raw_take:
+                # Canonicalize slate and take identifier so T1, T01, 1, 49WT, 49/WT merge seamlessly
+                slate = normalize_slate(raw_slate) or raw_slate
                 take_res = normalize_take(raw_take)
                 take_id = take_res.take_id or raw_take
                 key = f"{slate}_{take_id}"
-                scene = p.get("scene") or (slate.split("/")[0] if "/" in slate else slate)
+                scene = slate.split("/")[0] if "/" in slate else (p.get("scene") or slate)
 
                 if key not in takes_map:
                     takes_map[key] = {

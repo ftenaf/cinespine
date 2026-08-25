@@ -19,6 +19,8 @@ from backend.app.parsers.pdf_parsers import (
     parse_silverstack_pdf_text,
 )
 from backend.app.parsers.base import ParserFailureError
+from backend.app.normalizers.slates import normalize_slate
+from backend.app.normalizers.takes import normalize_take
 
 
 class IngestionDispatcher:
@@ -221,7 +223,9 @@ class IngestionDispatcher:
 
                 # If the Silverstack report contains Scene/Take (e.g. Thumbnail or Volume report), emit take existence record
                 if clip.scene and clip.take_id:
-                    slate_val = f"{clip.scene}/{clip.shot}" if clip.shot else clip.scene
+                    raw_slate = f"{clip.scene}/{clip.shot}" if clip.shot else clip.scene
+                    norm_slate = normalize_slate(raw_slate) or raw_slate
+                    scene_val = norm_slate.split("/")[0] if "/" in norm_slate else clip.scene
                     take_event: Dict[str, Any] = {
                         "event_id": envelope.event_id,
                         "production_id": envelope.production_id,
@@ -231,8 +235,8 @@ class IngestionDispatcher:
                         "doc_type": envelope.doc_type.value,
                         "entity_type": "take",
                         "payload": {
-                            "scene": clip.scene,
-                            "slate": slate_val,
+                            "scene": scene_val,
+                            "slate": norm_slate,
                             "take_id": clip.take_id,
                             "camera_roll": clip.camera_roll,
                             "sound_roll": clip.reel_tape if clip.card_type == "sound" else None,
