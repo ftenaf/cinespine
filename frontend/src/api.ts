@@ -124,4 +124,128 @@ export async function unresolveDiscrepancy(discrepancyId: string): Promise<any> 
   return res.json();
 }
 
+// ==========================================
+// Collaborative Users, Requirements & Alerts
+// ==========================================
+export async function fetchTeamUsers(): Promise<import('./types').UserProfile[]> {
+  const res = await fetch(`${API_BASE}/users`);
+  if (!res.ok) throw new Error('Failed to fetch team users');
+  return res.json();
+}
+
+export async function loginUser(handleOrEmail: string): Promise<{ user: import('./types').UserProfile; token: string }> {
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ handle_or_email: handleOrEmail }),
+  });
+  if (!res.ok) throw new Error('Failed to authenticate');
+  return res.json();
+}
+
+export async function fetchCurrentUser(handle?: string): Promise<import('./types').UserProfile> {
+  const url = handle ? `${API_BASE}/auth/me?handle=${encodeURIComponent(handle)}` : `${API_BASE}/auth/me`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Failed to fetch current user');
+  return res.json();
+}
+
+export async function fetchRequirements(params: {
+  production_id?: string;
+  shoot_day?: string;
+  target_type?: string;
+  target_id?: string;
+  assigned_to?: string;
+  created_by?: string;
+  status?: string;
+}): Promise<import('./types').Requirement[]> {
+  const q = new URLSearchParams();
+  if (params.production_id) q.set('production_id', params.production_id);
+  if (params.shoot_day) q.set('shoot_day', params.shoot_day);
+  if (params.target_type) q.set('target_type', params.target_type);
+  if (params.target_id) q.set('target_id', params.target_id);
+  if (params.assigned_to) q.set('assigned_to', params.assigned_to);
+  if (params.created_by) q.set('created_by', params.created_by);
+  if (params.status) q.set('status', params.status);
+
+  const res = await fetch(`${API_BASE}/requirements?${q.toString()}`);
+  if (!res.ok) throw new Error('Failed to fetch requirements');
+  return res.json();
+}
+
+export async function createRequirement(payload: {
+  production_id?: string;
+  shoot_day?: string;
+  target_type: string;
+  target_id: string;
+  target_label?: string;
+  title: string;
+  description?: string;
+  priority?: string;
+  category?: string;
+  created_by?: string;
+  assigned_to: string;
+}): Promise<import('./types').Requirement> {
+  const res = await fetch(`${API_BASE}/requirements`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to create requirement');
+  return res.json();
+}
+
+export async function updateRequirement(requirementId: string, updates: Partial<import('./types').Requirement>): Promise<import('./types').Requirement> {
+  const res = await fetch(`${API_BASE}/requirements/${requirementId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error('Failed to update requirement');
+  return res.json();
+}
+
+export async function resolveRequirement(requirementId: string, resolutionNote: string, resolvedBy: string): Promise<import('./types').Requirement> {
+  const res = await fetch(`${API_BASE}/requirements/${requirementId}/resolve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resolution_note: resolutionNote, resolved_by: resolvedBy }),
+  });
+  if (!res.ok) throw new Error('Failed to resolve requirement');
+  return res.json();
+}
+
+export async function deleteRequirement(requirementId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/requirements/${requirementId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete requirement');
+  return res.json();
+}
+
+export async function fetchNotifications(userHandle: string, unreadOnly?: boolean): Promise<import('./types').NotificationResponse> {
+  const q = new URLSearchParams({ user_handle: userHandle });
+  if (unreadOnly) q.set('unread_only', 'true');
+  const res = await fetch(`${API_BASE}/notifications?${q.toString()}`);
+  if (!res.ok) throw new Error('Failed to fetch notifications');
+  return res.json();
+}
+
+export async function markNotificationRead(notificationId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/notifications/${notificationId}/read`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to mark notification read');
+  return res.json();
+}
+
+export async function markAllNotificationsRead(userHandle: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/notifications/read-all?user_handle=${encodeURIComponent(userHandle)}`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to mark all notifications read');
+  return res.json();
+}
+
+
 

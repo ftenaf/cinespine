@@ -143,6 +143,9 @@ export interface TakeRecord {
   is_wild_track?: boolean;
   is_vfx?: boolean;
   is_mos?: boolean;
+  requirements?: Requirement[];
+  open_requirements_count?: number;
+  resolved_requirements_count?: number;
 }
 
 export interface DocumentRef {
@@ -176,5 +179,65 @@ export interface SequenceRecord {
   circled_takes?: string[];
   circled_takes_count?: number;
   takes: string[];
+  requirements?: Requirement[];
+  open_requirements_count?: number;
+  resolved_requirements_count?: number;
 }
+
+export interface UserProfile {
+  handle: string;
+  name: string;
+  email: string;
+  role: string;
+  avatar_color: string;
+}
+
+export type RequirementPriority = 'low' | 'medium' | 'high' | 'critical';
+export type RequirementCategory = 'sound' | 'vfx' | 'edit' | 'color' | 'reshoot' | 'legal' | 'general';
+export type RequirementStatus = 'open' | 'in_progress' | 'resolved' | 'blocked';
+export type RequirementTargetType = 'scene' | 'shot' | 'take';
+
+export interface Requirement {
+  requirement_id: string;
+  production_id: string;
+  shoot_day: string;
+  target_type: RequirementTargetType;
+  target_id: string;
+  target_label: string;
+  title: string;
+  description: string;
+  priority: RequirementPriority;
+  category: RequirementCategory;
+  created_by: string;
+  assigned_to: string;
+  status: RequirementStatus;
+  resolution_note?: string | null;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotificationItem {
+  notification_id: string;
+  production_id: string;
+  recipient_handle: string;
+  actor_handle: string;
+  notification_type: 'ASSIGNED' | 'RESOLVED' | 'STATUS_CHANGED' | 'COMMENT';
+  requirement_id: string;
+  title: string;
+  message: string;
+  target_type: RequirementTargetType;
+  target_id: string;
+  target_label: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface NotificationResponse {
+  recipient_handle: string;
+  unread_count: number;
+  notifications: NotificationItem[];
+}
+
 

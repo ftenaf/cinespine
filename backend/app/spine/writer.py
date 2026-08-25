@@ -7,6 +7,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
+from backend.app.streaming.models import DEFAULT_TEAM_USERS
+
 logger = logging.getLogger(__name__)
 
 # Registered productions registry
@@ -42,6 +44,9 @@ class SpineWriter:
         self._productions: Dict[str, Dict[str, Any]] = dict(DEFAULT_PRODUCTIONS)
         self._documents: Dict[str, Dict[str, Any]] = {}
         self._discrepancy_resolutions: Dict[str, Dict[str, Any]] = {}
+        self._team_users: Dict[str, Dict[str, Any]] = {k: dict(v) for k, v in DEFAULT_TEAM_USERS.items()}
+        self._requirements: Dict[str, Dict[str, Any]] = {}
+        self._notifications: Dict[str, Dict[str, Any]] = {}
 
     def store_document(
         self,
@@ -286,4 +291,261 @@ class SpineWriter:
             k: v for k, v in self._discrepancy_resolutions.items()
             if v.get("production_id") == production_id and v.get("shoot_day") == shoot_day
         }
+
+    # ==========================================
+    # Team Users / Passwordless Profiles
+    # ==========================================
+    def list_users(self) -> List[Dict[str, Any]]:
+        """
+        Returns all registered production team users.
+        """
+        return list(self._team_users.values())
+
+    def get_user(self, handle_or_email: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a user profile by @handle or email (case-insensitive).
+        """
+        cleaned = handle_or_email.strip().lower()
+        if not cleaned.startswith("@") and "@" not in cleaned:
+            cleaned = f"@{cleaned}"
+
+        # 1. Match handle
+        for handle, u in self._team_users.items():
+            if handle.lower() == cleaned or handle.lower() == f"@{cleaned.lstrip('@')}":
+                return u
+            if u.get("email", "").lower() == cleaned:
+                return u
+        return None
+
+    def register_user(
+        self,
+        handle: str,
+        name: str,
+        email: str,
+        role: str,
+        avatar_color: str = "#8b5cf6",
+    ) -> Dict[str, Any]:
+        """
+        Registers or updates a team user profile.
+        """
+        norm_handle = handle.strip()
+        if not norm_handle.startswith("@"):
+            norm_handle = f"@{norm_handle}"
+
+        user = {
+            "handle": norm_handle,
+            "name": name.strip(),
+            "email": email.strip().lower(),
+            "role": role.strip(),
+            "avatar_color": avatar_color,
+        }
+        self._team_users[norm_handle] = user
+        return user
+
+    # ==========================================
+    # Collaborative Requirements System
+    # ==========================================
+    def create_requirement(self, requirement: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Creates and stores a requirement attached to a Scene, Shot, or Take.
+        """
+        req_id = requirement.get("requirement_id") or f"req_{uuid.uuid4().hex[:10]}"
+        now_ts = datetime.now(timezone.utc).isoformat()
+        assigned = requirement.get("assigned_to", "").strip()
+        if assigned and not assigned.startswith("@"):
+            assigned = f"@{assigned}"
+        created_by = requirement.get("created_by", "@user").strip()
+        if created_by and not created_by.startswith("@"):
+            created_by = f"@{created_by}"
+
+        rec = {
+            "requirement_id": req_id,
+            "production_id": requirement.get("production_id", "DEMO_PRODUCTION"),
+            "shoot_day": str(requirement.get("shoot_day", "1")),
+            "target_type": requirement.get("target_type", "take"),
+            "target_id": str(requirement.get("target_id", "")),
+            "target_label": requirement.get("target_label") or f"{requirement.get('target_type', 'target').capitalize()} {requirement.get('target_id', '')}",
+            "title": requirement.get("title", ""),
+            "description": requirement.get("description", ""),
+            "priority": requirement.get("priority", "medium"),
+            "category": requirement.get("category", "general"),
+            "created_by": created_by,
+            "assigned_to": assigned,
+            "status": requirement.get("status", "open"),
+            "resolution_note": requirement.get("resolution_note"),
+            "resolved_by": requirement.get("resolved_by"),
+            "resolved_at": requirement.get("resolved_at"),
+            "created_at": requirement.get("created_at") or now_ts,
+            "updated_at": now_ts,
+        }
+        self._requirements[req_id] = rec
+        return rec
+
+    def get_requirement(self, requirement_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a single requirement by ID.
+        """
+        return self._requirements.get(requirement_id)
+
+    def list_requirements(
+        self,
+        production_id: Optional[str] = None,
+        shoot_day: Optional[str] = None,
+        target_type: Optional[str] = None,
+        target_id: Optional[str] = None,
+        assigned_to: Optional[str] = None,
+        created_by: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Lists and filters requirements by production, shoot day, target, assignee, or status.
+        """
+        reqs = list(self._requirements.values())
+        if production_id:
+            reqs = [r for r in reqs if r.get("production_id") == production_id]
+        if shoot_day:
+            reqs = [r for r in reqs if str(r.get("shoot_day")) == str(shoot_day)]
+        if target_type:
+            reqs = [r for r in reqs if r.get("target_type") == target_type]
+        if target_id:
+            reqs = [r for r in reqs if str(r.get("target_id")) == str(target_id)]
+        if assigned_to:
+            norm_a = assigned_to if assigned_to.startswith("@") else f"@{assigned_to}"
+            reqs = [r for r in reqs if r.get("assigned_to", "").lower() == norm_a.lower()]
+        if created_by:
+            norm_c = created_by if created_by.startswith("@") else f"@{created_by}"
+            reqs = [r for r in reqs if r.get("created_by", "").lower() == norm_c.lower()]
+        if status:
+            reqs = [r for r in reqs if r.get("status") == status]
+
+        # Return sorted by created_at descending
+        return sorted(reqs, key=lambda x: x.get("created_at", ""), reverse=True)
+
+    def update_requirement(self, requirement_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Updates fields of an existing requirement.
+        """
+        if requirement_id not in self._requirements:
+            return None
+
+        req = self._requirements[requirement_id]
+        for k, v in updates.items():
+            if k in ["title", "description", "priority", "category", "status", "assigned_to", "target_label"]:
+                if k == "assigned_to" and v and not str(v).startswith("@"):
+                    v = f"@{v}"
+                req[k] = v
+
+        req["updated_at"] = datetime.now(timezone.utc).isoformat()
+        return req
+
+    def resolve_requirement(
+        self,
+        requirement_id: str,
+        resolution_note: str,
+        resolved_by: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Marks a requirement as resolved, records resolution note and resolver.
+        """
+        if requirement_id not in self._requirements:
+            return None
+
+        norm_r = resolved_by if resolved_by.startswith("@") else f"@{resolved_by}"
+        now_ts = datetime.now(timezone.utc).isoformat()
+        req = self._requirements[requirement_id]
+        req["status"] = "resolved"
+        req["resolution_note"] = resolution_note
+        req["resolved_by"] = norm_r
+        req["resolved_at"] = now_ts
+        req["updated_at"] = now_ts
+        return req
+
+    def delete_requirement(self, requirement_id: str) -> bool:
+        """
+        Deletes a requirement record.
+        """
+        if requirement_id in self._requirements:
+            del self._requirements[requirement_id]
+            return True
+        return False
+
+    # ==========================================
+    # Real-Time Alerts & Notification Center
+    # ==========================================
+    def create_notification(self, notification: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Creates and stores an alert notification for a user.
+        """
+        notif_id = notification.get("notification_id") or f"notif_{uuid.uuid4().hex[:10]}"
+        now_ts = datetime.now(timezone.utc).isoformat()
+        recipient = notification.get("recipient_handle", "").strip()
+        if recipient and not recipient.startswith("@"):
+            recipient = f"@{recipient}"
+        actor = notification.get("actor_handle", "").strip()
+        if actor and not actor.startswith("@"):
+            actor = f"@{actor}"
+
+        notif = {
+            "notification_id": notif_id,
+            "production_id": notification.get("production_id", "DEMO_PRODUCTION"),
+            "recipient_handle": recipient,
+            "actor_handle": actor,
+            "notification_type": notification.get("notification_type", "ASSIGNED"),
+            "requirement_id": notification.get("requirement_id", ""),
+            "title": notification.get("title", ""),
+            "message": notification.get("message", ""),
+            "target_type": notification.get("target_type", "take"),
+            "target_id": str(notification.get("target_id", "")),
+            "target_label": notification.get("target_label", ""),
+            "is_read": False,
+            "created_at": notification.get("created_at") or now_ts,
+        }
+        self._notifications[notif_id] = notif
+        return notif
+
+    def list_notifications(
+        self,
+        recipient_handle: str,
+        unread_only: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """
+        Lists notifications for a specific user handle, sorted newest first.
+        """
+        norm_r = recipient_handle.strip().lower()
+        if not norm_r.startswith("@"):
+            norm_r = f"@{norm_r}"
+
+        notifs = [
+            n for n in self._notifications.values()
+            if n.get("recipient_handle", "").lower() == norm_r
+        ]
+        if unread_only:
+            notifs = [n for n in notifs if not n.get("is_read")]
+
+        return sorted(notifs, key=lambda x: x.get("created_at", ""), reverse=True)
+
+    def mark_notification_read(self, notification_id: str) -> bool:
+        """
+        Marks a specific notification as read.
+        """
+        if notification_id in self._notifications:
+            self._notifications[notification_id]["is_read"] = True
+            return True
+        return False
+
+    def mark_all_notifications_read(self, recipient_handle: str) -> int:
+        """
+        Marks all unread notifications for a user as read. Returns count of updated alerts.
+        """
+        norm_r = recipient_handle.strip().lower()
+        if not norm_r.startswith("@"):
+            norm_r = f"@{norm_r}"
+
+        count = 0
+        for n in self._notifications.values():
+            if n.get("recipient_handle", "").lower() == norm_r and not n.get("is_read"):
+                n["is_read"] = True
+                count += 1
+        return count
+
 

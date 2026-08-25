@@ -5,13 +5,20 @@ import {
   FileText, Clapperboard, Calendar, Search,
   HardDrive, Eye, FileCode, Check, AlertCircle, Trash2,
   Image as ImageIcon, ChevronLeft, ChevronRight, LayoutGrid,
-  Maximize2, ExternalLink, Video, Mic, MapPin
+  Maximize2, ExternalLink, Video, Mic, MapPin,
+  Bell, CheckCheck, PlusCircle, ChevronDown, Send, ShieldAlert
 } from 'lucide-react';
-import { TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, SequenceRecord } from './types';
+import { 
+  TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, SequenceRecord,
+  UserProfile, Requirement, NotificationItem, RequirementPriority, RequirementCategory
+} from './types';
 import { 
   fetchTakes, fetchDiscrepancies, fetchProductions, fetchDocuments,
   fetchDocumentContent, uploadDocument, uploadFile, askAssistant, seedDemoDay,
-  fetchSequences, resolveDiscrepancy, unresolveDiscrepancy
+  fetchSequences, resolveDiscrepancy, unresolveDiscrepancy,
+  fetchTeamUsers, loginUser, createRequirement,
+  resolveRequirement, fetchNotifications,
+  markNotificationRead, markAllNotificationsRead
 } from './api';
 
 export default function App() {
@@ -23,6 +30,47 @@ export default function App() {
   const [documents, setDocuments] = useState<SourceDocumentSummary[]>([]);
   const [sequences, setSequences] = useState<SequenceRecord[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Collaborative User Identity & Passwordless State
+  const [teamUsers, setTeamUsers] = useState<UserProfile[]>([]);
+  const [currentUser, setCurrentUser] = useState<UserProfile>({
+    handle: '@director',
+    name: 'Director',
+    email: 'director@example.com',
+    role: 'Director',
+    avatar_color: '#8b5cf6',
+  });
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [customLoginHandle, setCustomLoginHandle] = useState('');
+
+  // Notifications & Real-Time Alerts State
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
+  const [isNotifDrawerOpen, setIsNotifDrawerOpen] = useState(false);
+
+  // Requirements Modal & Resolution State
+  const [isCreateReqOpen, setIsCreateReqOpen] = useState(false);
+  const [targetForReq, setTargetForReq] = useState<{
+    target_type: 'scene' | 'shot' | 'take';
+    target_id: string;
+    target_label: string;
+  } | null>(null);
+  const [newReqTitle, setNewReqTitle] = useState('');
+  const [newReqDesc, setNewReqDesc] = useState('');
+  const [newReqAssignee, setNewReqAssignee] = useState('@sound_supervisor');
+  const [newReqPriority, setNewReqPriority] = useState<RequirementPriority>('medium');
+  const [newReqCategory, setNewReqCategory] = useState<RequirementCategory>('general');
+  const [isSubmittingReq, setIsSubmittingReq] = useState(false);
+
+  const [viewingReqsList, setViewingReqsList] = useState<{
+    target_label: string;
+    target_type: 'scene' | 'shot' | 'take';
+    target_id: string;
+    requirements: Requirement[];
+  } | null>(null);
+  const [selectedReqForResolve, setSelectedReqForResolve] = useState<Requirement | null>(null);
+  const [reqResolutionNote, setReqResolutionNote] = useState('');
+  const [isResolvingReqSubmitting, setIsResolvingReqSubmitting] = useState(false);
 
   // Active View & Filters
   const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents'>('master');
@@ -96,13 +144,128 @@ export default function App() {
     }
   };
 
+  const loadUsersAndNotifications = async (userHandle: string = currentUser.handle) => {
+    try {
+      const [users, notifData] = await Promise.all([
+        fetchTeamUsers(),
+        fetchNotifications(userHandle),
+      ]);
+      setTeamUsers(users);
+      setNotifications(notifData.notifications || []);
+      setUnreadNotifCount(notifData.unread_count || 0);
+    } catch (e) {
+      console.error('Error loading team users/notifications:', e);
+    }
+  };
+
+  const handleSwitchUser = async (user: UserProfile) => {
+    setCurrentUser(user);
+    setIsUserMenuOpen(false);
+    await loadUsersAndNotifications(user.handle);
+  };
+
+  const handleCustomLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customLoginHandle.trim()) return;
+    try {
+      const { user } = await loginUser(customLoginHandle.trim());
+      setCurrentUser(user);
+      setCustomLoginHandle('');
+      setIsUserMenuOpen(false);
+      await loadUsersAndNotifications(user.handle);
+    } catch (err: any) {
+      alert(`Login failed: ${err.message}`);
+    }
+  };
+
+  const handleCreateRequirementSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetForReq || !newReqTitle.trim()) return;
+    setIsSubmittingReq(true);
+    try {
+      await createRequirement({
+        production_id: selectedProductionId,
+        shoot_day: selectedDay,
+        target_type: targetForReq.target_type,
+        target_id: targetForReq.target_id,
+        target_label: targetForReq.target_label,
+        title: newReqTitle.trim(),
+        description: newReqDesc.trim(),
+        priority: newReqPriority,
+        category: newReqCategory,
+        created_by: currentUser.handle,
+        assigned_to: newReqAssignee,
+      });
+      setIsCreateReqOpen(false);
+      setNewReqTitle('');
+      setNewReqDesc('');
+      await loadSpineData();
+      await loadUsersAndNotifications(currentUser.handle);
+    } catch (err: any) {
+      alert(`Failed to create requirement: ${err.message}`);
+    } finally {
+      setIsSubmittingReq(false);
+    }
+  };
+
+  const handleResolveRequirementSubmit = async (reqId: string) => {
+    if (!reqResolutionNote.trim()) {
+      alert('Please enter a resolution note detailing how this requirement was addressed.');
+      return;
+    }
+    setIsResolvingReqSubmitting(true);
+    try {
+      await resolveRequirement(reqId, reqResolutionNote.trim(), currentUser.handle);
+      setViewingReqsList(null);
+      setSelectedReqForResolve(null);
+      setReqResolutionNote('');
+      await loadSpineData();
+      await loadUsersAndNotifications(currentUser.handle);
+    } catch (err: any) {
+      alert(`Failed to resolve requirement: ${err.message}`);
+    } finally {
+      setIsResolvingReqSubmitting(false);
+    }
+  };
+
+  const handleNotificationClick = async (notif: NotificationItem) => {
+    // 1. Mark read
+    if (!notif.is_read) {
+      await markNotificationRead(notif.notification_id);
+      await loadUsersAndNotifications(currentUser.handle);
+    }
+    // 2. Jump to target
+    setIsNotifDrawerOpen(false);
+    if (notif.target_type === 'scene') {
+      setActiveTab('sequences');
+      setSearchQuery(notif.target_id);
+    } else if (notif.target_type === 'take') {
+      setActiveTab('master');
+      setSearchQuery(notif.target_id.replace('_', ' '));
+    } else {
+      setActiveTab('master');
+      setSearchQuery(notif.target_id);
+    }
+  };
+
+  const handleMarkAllNotifsRead = async () => {
+    try {
+      await markAllNotificationsRead(currentUser.handle);
+      await loadUsersAndNotifications(currentUser.handle);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     loadProductions();
+    loadUsersAndNotifications();
   }, []);
 
   useEffect(() => {
     loadSpineData();
-  }, [selectedProductionId, selectedDay]);
+    loadUsersAndNotifications(currentUser.handle);
+  }, [selectedProductionId, selectedDay, currentUser.handle]);
 
   const activeProduction: Production = productions.find(p => p.production_id === selectedProductionId) || {
     production_id: selectedProductionId,
@@ -406,10 +569,10 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <button 
             onClick={loadSpineData}
-            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition"
+            className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition"
             title="Refresh Spine"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -417,7 +580,7 @@ export default function App() {
 
           <button 
             onClick={() => handleSeedDemoDay(selectedDay)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-medium transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-medium transition"
           >
             <Sparkles className="w-3.5 h-3.5" />
             Seed Day {selectedDay}
@@ -425,11 +588,169 @@ export default function App() {
 
           <button 
             onClick={() => { setIsUploadOpen(true); setUploadFeedback(null); }}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/20 transition"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/20 transition"
           >
             <Upload className="w-3.5 h-3.5" />
-            Drop Paperwork (PDF/CSV)
+            Drop Paperwork
           </button>
+
+          {/* Notifications Bell */}
+          <div className="relative">
+            <button
+              onClick={() => setIsNotifDrawerOpen(!isNotifDrawerOpen)}
+              className="relative p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition flex items-center justify-center"
+              title="Alert Notifications"
+            >
+              <Bell className="w-4 h-4" />
+              {unreadNotifCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse shadow-md">
+                  {unreadNotifCount}
+                </span>
+              )}
+            </button>
+
+            {/* Notifications Dropdown Drawer */}
+            {isNotifDrawerOpen && (
+              <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-4 z-50 space-y-3 animate-in fade-in zoom-in-95">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <Bell className="w-4 h-4 text-purple-400" />
+                    <h3 className="text-xs font-bold text-white">
+                      Alerts for {currentUser.handle}
+                    </h3>
+                  </div>
+                  {unreadNotifCount > 0 && (
+                    <button
+                      onClick={handleMarkAllNotifsRead}
+                      className="text-[10px] text-blue-400 hover:underline flex items-center gap-1"
+                    >
+                      <CheckCheck className="w-3 h-3" />
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+
+                <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                  {notifications.length === 0 ? (
+                    <p className="text-xs text-slate-500 text-center py-6">
+                      No notifications or alerts.
+                    </p>
+                  ) : (
+                    notifications.map(n => (
+                      <div
+                        key={n.notification_id}
+                        onClick={() => handleNotificationClick(n)}
+                        className={`p-3 rounded-xl border text-xs cursor-pointer transition ${
+                          n.is_read
+                            ? 'bg-slate-950/40 border-slate-800 text-slate-400 hover:bg-slate-800/40'
+                            : 'bg-purple-950/30 border-purple-500/40 text-slate-200 hover:bg-purple-900/40'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1 mb-1">
+                          <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded font-mono ${
+                            n.notification_type === 'RESOLVED' 
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' 
+                              : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                          }`}>
+                            {n.notification_type}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <h4 className="font-bold text-white text-xs leading-snug">{n.title}</h4>
+                        <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">{n.message}</p>
+                        <div className="mt-2 flex items-center justify-between text-[10px] text-purple-400 font-medium">
+                          <span>Target: {n.target_label}</span>
+                          <span className="underline">Jump to target →</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Collaborative User Profile & Passwordless Switcher */}
+          <div className="relative">
+            <button
+              onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+              className="flex items-center gap-2 p-1.5 pr-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 transition text-left"
+            >
+              <div 
+                className="w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-bold shadow"
+                style={{ backgroundColor: currentUser.avatar_color || '#8b5cf6' }}
+              >
+                {currentUser.name.charAt(0)}
+              </div>
+              <div className="hidden sm:block">
+                <p className="text-xs font-bold text-white leading-none">{currentUser.name}</p>
+                <p className="text-[10px] text-purple-400 font-mono leading-tight">{currentUser.handle}</p>
+              </div>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+
+            {/* User Switcher Dropdown */}
+            {isUserMenuOpen && (
+              <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3.5 z-50 space-y-3 animate-in fade-in zoom-in-95">
+                <div>
+                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Switch Active User (Passwordless)
+                  </h4>
+                  <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
+                    {teamUsers.map(u => (
+                      <button
+                        key={u.handle}
+                        onClick={() => handleSwitchUser(u)}
+                        className={`w-full flex items-center gap-2.5 p-2 rounded-xl text-left transition ${
+                          currentUser.handle === u.handle
+                            ? 'bg-purple-600/30 border border-purple-500/50 text-white'
+                            : 'hover:bg-slate-800 text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        <div 
+                          className="w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-bold shrink-0"
+                          style={{ backgroundColor: u.avatar_color || '#8b5cf6' }}
+                        >
+                          {u.name.charAt(0)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold truncate leading-none">{u.name}</p>
+                          <p className="text-[10px] text-slate-400 font-mono truncate">{u.handle} • {u.role}</p>
+                        </div>
+                        {currentUser.handle === u.handle && (
+                          <Check className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom Handle / Passwordless Login Input */}
+                <form onSubmit={handleCustomLogin} className="pt-2 border-t border-slate-800 space-y-1.5">
+                  <label className="text-[10px] font-medium text-slate-400 block">
+                    Or Login with @handle / email:
+                  </label>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      placeholder="@editor_lead"
+                      value={customLoginHandle}
+                      onChange={e => setCustomLoginHandle(e.target.value)}
+                      className="flex-1 bg-slate-950 border border-slate-700 text-xs px-2.5 py-1 rounded-lg text-white font-mono focus:outline-none focus:border-purple-500"
+                    />
+                    <button
+                      type="submit"
+                      className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold rounded-lg transition"
+                    >
+                      Login
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -901,6 +1222,45 @@ export default function App() {
                           )}
                         </div>
 
+                        {/* Requirements Status Bar */}
+                        {t.requirements && t.requirements.length > 0 && (
+                          <div className="px-4 py-1.5 bg-slate-950/70 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-1.5">
+                            <div className="flex items-center gap-1.5">
+                              {t.open_requirements_count ? (
+                                <button
+                                  onClick={() => setViewingReqsList({
+                                    target_label: `Take ${t.slate} T${t.take_id}`,
+                                    target_type: 'take',
+                                    target_id: `${t.slate}_${t.take_id}`,
+                                    requirements: t.requirements || [],
+                                  })}
+                                  className="px-2 py-0.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[10px] font-bold flex items-center gap-1 transition"
+                                >
+                                  <AlertTriangle className="w-3 h-3" />
+                                  {t.open_requirements_count} Open Req
+                                </button>
+                              ) : null}
+                              {t.resolved_requirements_count ? (
+                                <button
+                                  onClick={() => setViewingReqsList({
+                                    target_label: `Take ${t.slate} T${t.take_id}`,
+                                    target_type: 'take',
+                                    target_id: `${t.slate}_${t.take_id}`,
+                                    requirements: t.requirements || [],
+                                  })}
+                                  className="px-2 py-0.5 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[10px] font-semibold flex items-center gap-1 transition"
+                                >
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  {t.resolved_requirements_count} Resolved
+                                </button>
+                              ) : null}
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              Assignee: {t.requirements[0].assigned_to}
+                            </span>
+                          </div>
+                        )}
+
                         {/* Card Footer Actions */}
                         <div className="px-4 py-3 bg-slate-950/90 border-t border-slate-800 flex items-center justify-between gap-2">
                           <button
@@ -914,8 +1274,25 @@ export default function App() {
                             Slate View
                           </button>
                           <button
+                            onClick={() => {
+                              setTargetForReq({
+                                target_type: 'take',
+                                target_id: `${t.slate}_${t.take_id}`,
+                                target_label: `Take ${t.slate} T${t.take_id}`,
+                              });
+                              setNewReqTitle('');
+                              setNewReqDesc('');
+                              setIsCreateReqOpen(true);
+                            }}
+                            className="px-2.5 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 hover:text-white rounded-lg text-xs font-semibold border border-purple-500/30 transition flex items-center gap-1"
+                            title="Add Requirement on this Take"
+                          >
+                            <PlusCircle className="w-3.5 h-3.5" />
+                            + Req
+                          </button>
+                          <button
                             onClick={() => handleInspectTake(t)}
-                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-semibold border border-slate-700 transition"
+                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-semibold border border-slate-700 transition"
                           >
                             Inspect Diff
                           </button>
@@ -1233,6 +1610,96 @@ export default function App() {
                           </div>
                         </div>
                       )}
+
+                      {/* Collaborative Requirements & Notes Section */}
+                      <div className="bg-slate-950 p-4 rounded-xl border border-purple-500/20 space-y-3">
+                        <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                          <div className="flex items-center gap-2">
+                            <ShieldAlert className="w-4 h-4 text-purple-400" />
+                            <span className="text-xs font-bold text-purple-400 uppercase tracking-wider">
+                              Collaborative Requirements ({currentFocusTake.requirements?.length || 0})
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setTargetForReq({
+                                target_type: 'take',
+                                target_id: `${currentFocusTake.slate}_${currentFocusTake.take_id}`,
+                                target_label: `Take ${currentFocusTake.slate} T${currentFocusTake.take_id}`,
+                              });
+                              setNewReqTitle('');
+                              setNewReqDesc('');
+                              setIsCreateReqOpen(true);
+                            }}
+                            className="text-xs text-purple-300 hover:text-white bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition font-semibold"
+                          >
+                            <PlusCircle className="w-3.5 h-3.5" />
+                            + Add Requirement
+                          </button>
+                        </div>
+
+                        {(!currentFocusTake.requirements || currentFocusTake.requirements.length === 0) ? (
+                          <p className="text-xs text-slate-500 italic py-1">
+                            No requirements assigned to this take. Click "+ Add Requirement" to assign one to an editor, mixer, or VFX artist.
+                          </p>
+                        ) : (
+                          <div className="space-y-2">
+                            {currentFocusTake.requirements.map(req => (
+                              <div
+                                key={req.requirement_id}
+                                className={`p-3 rounded-lg border text-xs space-y-1.5 ${
+                                  req.status === 'resolved'
+                                    ? 'bg-emerald-950/20 border-emerald-500/30 text-slate-300'
+                                    : 'bg-slate-900 border-slate-800 text-slate-200'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono uppercase ${
+                                      req.status === 'resolved'
+                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                    }`}>
+                                      {req.status}
+                                    </span>
+                                    <span className="font-bold text-white text-xs">{req.title}</span>
+                                  </div>
+                                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-950/60 text-purple-300 border border-purple-500/30">
+                                    {req.priority.toUpperCase()}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-300 leading-relaxed">{req.description}</p>
+                                <div className="text-[10px] text-slate-400 font-mono flex items-center justify-between pt-1 border-t border-slate-800/60">
+                                  <span>Created by <strong className="text-purple-300">{req.created_by}</strong> → Assigned to <strong className="text-blue-300">{req.assigned_to}</strong></span>
+                                  {req.status !== 'resolved' && (
+                                    <button
+                                      onClick={() => {
+                                        setSelectedReqForResolve(req);
+                                        setReqResolutionNote('');
+                                        setViewingReqsList({
+                                          target_label: `Take ${currentFocusTake.slate} T${currentFocusTake.take_id}`,
+                                          target_type: 'take',
+                                          target_id: `${currentFocusTake.slate}_${currentFocusTake.take_id}`,
+                                          requirements: currentFocusTake.requirements || [],
+                                        });
+                                      }}
+                                      className="text-emerald-400 hover:text-emerald-300 font-bold underline flex items-center gap-1"
+                                    >
+                                      <Check className="w-3 h-3" />
+                                      Resolve Requirement
+                                    </button>
+                                  )}
+                                </div>
+                                {req.status === 'resolved' && (
+                                  <div className="mt-1.5 p-2 rounded bg-emerald-950/40 border border-emerald-500/30 text-[10px] text-emerald-200">
+                                    <strong>✓ Resolved by {req.resolved_by}:</strong> "{req.resolution_note}"
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1466,9 +1933,9 @@ export default function App() {
                           )}
                         </td>
 
-                        {/* 13. STATUS & FLAGS (Discrepancy, WT, VFX) */}
+                        {/* 13. STATUS & FLAGS (Discrepancy, WT, VFX, Requirements) */}
                         <td className="px-3.5 py-3 align-top whitespace-nowrap">
-                          <div className="flex flex-col gap-1">
+                          <div className="flex flex-col gap-1.5">
                             {seq.has_discrepancy ? (
                               <button
                                 onClick={() => {
@@ -1491,6 +1958,56 @@ export default function App() {
                                 Reconciled
                               </span>
                             )}
+
+                            {/* Requirements Badges for Sequence */}
+                            <div className="flex flex-wrap items-center gap-1">
+                              {seq.open_requirements_count ? (
+                                <button
+                                  onClick={() => setViewingReqsList({
+                                    target_label: `Scene ${seq.sequence}`,
+                                    target_type: 'scene',
+                                    target_id: seq.sequence,
+                                    requirements: seq.requirements || [],
+                                  })}
+                                  className="px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[9px] font-bold flex items-center gap-1"
+                                >
+                                  <AlertTriangle className="w-2.5 h-2.5" />
+                                  {seq.open_requirements_count} Req
+                                </button>
+                              ) : null}
+                              {seq.resolved_requirements_count ? (
+                                <button
+                                  onClick={() => setViewingReqsList({
+                                    target_label: `Scene ${seq.sequence}`,
+                                    target_type: 'scene',
+                                    target_id: seq.sequence,
+                                    requirements: seq.requirements || [],
+                                  })}
+                                  className="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[9px] font-semibold flex items-center gap-1"
+                                >
+                                  <CheckCircle2 className="w-2.5 h-2.5" />
+                                  {seq.resolved_requirements_count}
+                                </button>
+                              ) : null}
+                              <button
+                                onClick={() => {
+                                  setTargetForReq({
+                                    target_type: 'scene',
+                                    target_id: seq.sequence,
+                                    target_label: `Scene ${seq.sequence}`,
+                                  });
+                                  setNewReqTitle('');
+                                  setNewReqDesc('');
+                                  setIsCreateReqOpen(true);
+                                }}
+                                className="px-1.5 py-0.5 rounded bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 text-purple-300 text-[9px] font-semibold flex items-center gap-0.5 transition"
+                                title="Add Requirement for Scene"
+                              >
+                                <PlusCircle className="w-2.5 h-2.5" />
+                                + Req
+                              </button>
+                            </div>
+
                             <div className="flex items-center gap-1">
                               {seq.is_wild_track && (
                                 <span className="bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 px-1.5 py-0.5 rounded text-[10px] font-bold font-mono">
@@ -2495,6 +3012,302 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* 1. CREATE REQUIREMENT MODAL */}
+      {isCreateReqOpen && targetForReq && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
+                  <PlusCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Add Requirement</h3>
+                  <p className="text-xs text-purple-300 font-mono">Attaching to: {targetForReq.target_label}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCreateReqOpen(false)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateRequirementSubmit} className="space-y-3.5 text-xs">
+              {/* Title */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-300 block">Requirement Title:</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Denoise clapper bleed, VFX cleanup on boom shadow, Re-sync audio..."
+                  value={newReqTitle}
+                  onChange={e => setNewReqTitle(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                  autoFocus
+                />
+              </div>
+
+              {/* Responsible Assignee (with @ symbol) */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-300 flex items-center gap-1">
+                  <span>Responsible Assignee:</span>
+                  <span className="text-purple-400 font-mono">(receives instant alert)</span>
+                </label>
+                <select
+                  value={newReqAssignee}
+                  onChange={e => setNewReqAssignee(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 font-mono"
+                >
+                  {teamUsers.map(u => (
+                    <option key={u.handle} value={u.handle} className="bg-slate-900 text-white">
+                      {u.handle} — {u.name} ({u.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Priority & Category Grid */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-300 block">Priority Level:</label>
+                  <select
+                    value={newReqPriority}
+                    onChange={e => setNewReqPriority(e.target.value as RequirementPriority)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="low">Low (Editorial polish)</option>
+                    <option value="medium">Medium (Standard request)</option>
+                    <option value="high">High (Delivery critical)</option>
+                    <option value="critical">Critical (Showstopper / Block)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-300 block">Department Category:</label>
+                  <select
+                    value={newReqCategory}
+                    onChange={e => setNewReqCategory(e.target.value as RequirementCategory)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="sound">🎙️ Sound / Audio</option>
+                    <option value="vfx">✨ VFX / Cleanplate</option>
+                    <option value="edit">🎬 Editorial / Cut</option>
+                    <option value="color">🎨 Color / Grading</option>
+                    <option value="reshoot">🔄 Reshoot / Pickup</option>
+                    <option value="general">📝 General / Paperwork</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-300 block">Detailed Instructions / Description:</label>
+                <textarea
+                  rows={3}
+                  placeholder="Provide precise instructions for the responsible artist or editor..."
+                  value={newReqDesc}
+                  onChange={e => setNewReqDesc(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateReqOpen(false)}
+                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingReq || !newReqTitle.trim()}
+                  className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1.5 shadow"
+                >
+                  {isSubmittingReq ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  Assign Requirement & Dispatch Alert
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 2. VIEW & RESOLVE REQUIREMENTS LIST MODAL */}
+      {viewingReqsList && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Requirements Hub</h3>
+                  <p className="text-xs text-amber-300 font-mono">{viewingReqsList.target_label}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setViewingReqsList(null);
+                  setSelectedReqForResolve(null);
+                }}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* List Body */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {viewingReqsList.requirements.map(req => (
+                <div
+                  key={req.requirement_id}
+                  className={`p-4 rounded-xl border text-xs space-y-2.5 transition ${
+                    req.status === 'resolved'
+                      ? 'bg-emerald-950/20 border-emerald-500/30'
+                      : 'bg-slate-950 border-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono uppercase ${
+                        req.status === 'resolved'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                      }`}>
+                        {req.status}
+                      </span>
+                      <span className="font-bold text-white text-xs">{req.title}</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950/60 text-purple-300 border border-purple-500/30">
+                      {req.priority.toUpperCase()} • {req.category.toUpperCase()}
+                    </span>
+                  </div>
+
+                  {req.description && (
+                    <p className="text-slate-300 text-xs leading-relaxed bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80">
+                      {req.description}
+                    </p>
+                  )}
+
+                  <div className="text-[10px] text-slate-400 font-mono flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/80">
+                    <span>Created by <strong className="text-purple-300">{req.created_by}</strong></span>
+                    <span>Responsible: <strong className="text-blue-300">{req.assigned_to}</strong></span>
+                    <span>{new Date(req.created_at).toLocaleDateString()}</span>
+                  </div>
+
+                  {/* If Resolved: Show Resolution details */}
+                  {req.status === 'resolved' && (
+                    <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-500/30 space-y-1 text-xs">
+                      <div className="flex items-center gap-1.5 text-emerald-300 font-bold">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Resolved by {req.resolved_by} on {req.resolved_at ? new Date(req.resolved_at).toLocaleString() : 'recently'}</span>
+                      </div>
+                      <p className="text-emerald-100 italic text-[11px]">
+                        "{req.resolution_note || 'Resolved and verified'}"
+                      </p>
+                    </div>
+                  )}
+
+                  {/* If Open: Resolve Input Section */}
+                  {req.status !== 'resolved' && (
+                    <div className="pt-2 border-t border-slate-800 space-y-2">
+                      {selectedReqForResolve?.requirement_id === req.requirement_id ? (
+                        <div className="space-y-2 bg-slate-900 p-3 rounded-xl border border-purple-500/40">
+                          <label className="text-[11px] font-bold text-emerald-300 block">
+                            Resolution Justification / Note:
+                          </label>
+                          <textarea
+                            rows={2}
+                            placeholder="e.g. Applied EQ filter to isolate lavalier, audio verified clean for edit..."
+                            value={reqResolutionNote}
+                            onChange={e => setReqResolutionNote(e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                            autoFocus
+                          />
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedReqForResolve(null)}
+                              className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isResolvingReqSubmitting || !reqResolutionNote.trim()}
+                              onClick={() => handleResolveRequirementSubmit(req.requirement_id)}
+                              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg flex items-center gap-1 transition"
+                            >
+                              {isResolvingReqSubmitting ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                              Mark Resolved & Notify Caller ({req.created_by})
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-slate-500 italic">
+                            Action required by {req.assigned_to}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedReqForResolve(req);
+                              setReqResolutionNote('');
+                            }}
+                            className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 hover:text-white rounded-lg text-xs font-bold transition flex items-center gap-1"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            Resolve Requirement...
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setTargetForReq({
+                    target_type: viewingReqsList.target_type,
+                    target_id: viewingReqsList.target_id,
+                    target_label: viewingReqsList.target_label,
+                  });
+                  setNewReqTitle('');
+                  setNewReqDesc('');
+                  setViewingReqsList(null);
+                  setIsCreateReqOpen(true);
+                }}
+                className="px-3.5 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                + Add Another Requirement
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewingReqsList(null);
+                  setSelectedReqForResolve(null);
+                }}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

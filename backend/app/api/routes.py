@@ -71,6 +71,39 @@ class ResolveDiscrepancyRequest(BaseModel):
     resolved_by: Optional[str] = "Assistant Editor"
 
 
+class LoginRequest(BaseModel):
+    handle_or_email: str
+
+
+class CreateRequirementRequest(BaseModel):
+    production_id: str = "DEMO_PRODUCTION"
+    shoot_day: str = "31"
+    target_type: str = "take"  # "scene", "shot", "take"
+    target_id: str
+    target_label: Optional[str] = None
+    title: str
+    description: Optional[str] = ""
+    priority: Optional[str] = "medium"
+    category: Optional[str] = "general"
+    created_by: Optional[str] = "@director"
+    assigned_to: str
+
+
+class UpdateRequirementRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    priority: Optional[str] = None
+    category: Optional[str] = None
+    assigned_to: Optional[str] = None
+    status: Optional[str] = None
+    target_label: Optional[str] = None
+
+
+class ResolveRequirementRequest(BaseModel):
+    resolution_note: str
+    resolved_by: str = "@user"
+
+
 
 @router.get("/health")
 def health_check():
@@ -727,6 +760,19 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                         t["sound_cards"].add(rc if rc.startswith("Sound") else f"Sound {rc}")
                 t["resolution"] = res
 
+        # 5. Attach contextual requirements
+        all_reqs = spine_writer.list_requirements(production_id=production_id, shoot_day=shoot_day)
+        take_k = f"{t['slate']}_{t['take_id']}"
+        take_reqs = [
+            r for r in all_reqs
+            if (r.get("target_type") == "take" and r.get("target_id") == take_k)
+            or (r.get("target_type") == "shot" and r.get("target_id") == t["slate"])
+            or (r.get("target_type") == "scene" and r.get("target_id") == t.get("scene"))
+        ]
+        t["requirements"] = take_reqs
+        t["open_requirements_count"] = sum(1 for r in take_reqs if r.get("status") in ["open", "in_progress", "blocked"])
+        t["resolved_requirements_count"] = sum(1 for r in take_reqs if r.get("status") == "resolved")
+
         t["camera_angles"].sort(key=lambda x: x["camera"])
         t["video_files"].sort(key=lambda x: x["camera"])
         t["camera_cards"] = sorted(list(t["camera_cards"]))
@@ -935,9 +981,226 @@ def get_sequences(production_id: str = "DEMO_PRODUCTION", shoot_day: str = "31")
             "circled_takes_count": len([t for t in s_takes if t.get("is_starred")]),
             "takes": [f"{t.get('slate')} T{t.get('take_id')}{' ⭐' if t.get('is_starred') else ''}" for t in s_takes[:8]],
         }
+
+        # Attach sequence / scene level requirements
+        all_reqs = spine_writer.list_requirements(production_id=production_id, shoot_day=shoot_day)
+        seq_reqs = [
+            r for r in all_reqs
+            if (r.get("target_type") == "scene" and r.get("target_id") == seq)
+            or any(r.get("target_id") == t.get("slate") or r.get("target_id") == f"{t.get('slate')}_{t.get('take_id')}" for t in s_takes)
+        ]
+        rec["requirements"] = seq_reqs
+        rec["open_requirements_count"] = sum(1 for r in seq_reqs if r.get("status") in ["open", "in_progress", "blocked"])
+        rec["resolved_requirements_count"] = sum(1 for r in seq_reqs if r.get("status") == "resolved")
+
         sequence_records.append(rec)
 
     return sequence_records
+
+
+# ==========================================
+# User Identity & Passwordless Auth Routes
+# ==========================================
+@router.get("/users")
+def get_team_users():
+    return spine_writer.list_users()
+
+
+@router.post("/auth/login")
+def login(req: LoginRequest):
+    val = req.handle_or_email.strip()
+    user = spine_writer.get_user(val)
+    if not user:
+        # Auto-create profile for new team member
+        handle = val if val.startswith("@") else f"@{val}"
+        name = handle.lstrip("@").replace(".", " ").replace("_", " ").title()
+        user = spine_writer.register_user(
+            handle=handle,
+            name=name,
+            email=f"{handle.lstrip('@')}@production.film" if "@" not in val else val,
+            role="Editor / Contributor",
+            avatar_color="#8b5cf6",
+        )
+    return {
+        "status": "AUTHENTICATED",
+        "user": user,
+        "token": f"token_{user['handle']}",
+    }
+
+
+@router.get("/auth/me")
+def get_current_user(handle: Optional[str] = None):
+    if handle:
+        user = spine_writer.get_user(handle)
+        if user:
+            return user
+    # Fallback to default user
+    users = spine_writer.list_users()
+    return users[0] if users else {"handle": "@director", "name": "Director", "role": "Director"}
+
+
+# ==========================================
+# Requirements Management Routes
+# ==========================================
+@router.post("/requirements")
+def create_requirement(req: CreateRequirementRequest):
+    req_dict = req.model_dump()
+    created = spine_writer.create_requirement(req_dict)
+
+    # 1. Publish requirement creation event to spine
+    spine_writer.append_event({
+        "event_id": str(uuid.uuid4()),
+        "production_id": created["production_id"],
+        "shoot_day": created["shoot_day"],
+        "axis": "intent",
+        "department": "editorial",
+        "doc_type": "requirement_event",
+        "entity_type": "requirement",
+        "payload": created,
+        "metadata": {
+            "requirement_id": created["requirement_id"],
+            "action": "created",
+            "assigned_to": created["assigned_to"],
+            "created_by": created["created_by"],
+        },
+        "timestamp": created["created_at"],
+    })
+
+    # 2. Dispatch alert notification to the responsible assignee
+    if created["assigned_to"]:
+        spine_writer.create_notification({
+            "production_id": created["production_id"],
+            "recipient_handle": created["assigned_to"],
+            "actor_handle": created["created_by"],
+            "notification_type": "ASSIGNED",
+            "requirement_id": created["requirement_id"],
+            "title": f"New Requirement on {created['target_label']}",
+            "message": f"{created['created_by']} assigned you ({created['priority'].upper()}): {created['title']}",
+            "target_type": created["target_type"],
+            "target_id": created["target_id"],
+            "target_label": created["target_label"],
+        })
+
+    return created
+
+
+@router.get("/requirements")
+def list_requirements(
+    production_id: Optional[str] = None,
+    shoot_day: Optional[str] = None,
+    target_type: Optional[str] = None,
+    target_id: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    created_by: Optional[str] = None,
+    status: Optional[str] = None,
+):
+    return spine_writer.list_requirements(
+        production_id=production_id,
+        shoot_day=shoot_day,
+        target_type=target_type,
+        target_id=target_id,
+        assigned_to=assigned_to,
+        created_by=created_by,
+        status=status,
+    )
+
+
+@router.get("/requirements/{requirement_id}")
+def get_requirement(requirement_id: str):
+    req = spine_writer.get_requirement(requirement_id)
+    if not req:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+    return req
+
+
+@router.patch("/requirements/{requirement_id}")
+def update_requirement(requirement_id: str, updates: UpdateRequirementRequest):
+    update_data = {k: v for k, v in updates.model_dump().items() if v is not None}
+    updated = spine_writer.update_requirement(requirement_id, update_data)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+    return updated
+
+
+@router.post("/requirements/{requirement_id}/resolve")
+def resolve_requirement(requirement_id: str, body: ResolveRequirementRequest):
+    resolved = spine_writer.resolve_requirement(
+        requirement_id=requirement_id,
+        resolution_note=body.resolution_note,
+        resolved_by=body.resolved_by,
+    )
+    if not resolved:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+
+    # 1. Publish resolution event to spine
+    spine_writer.append_event({
+        "event_id": str(uuid.uuid4()),
+        "production_id": resolved["production_id"],
+        "shoot_day": resolved["shoot_day"],
+        "axis": "belief",
+        "department": "editorial",
+        "doc_type": "requirement_event",
+        "entity_type": "requirement",
+        "payload": resolved,
+        "metadata": {
+            "requirement_id": resolved["requirement_id"],
+            "action": "resolved",
+            "resolved_by": resolved["resolved_by"],
+        },
+        "timestamp": resolved["resolved_at"],
+    })
+
+    # 2. Dispatch alert notification back to the original caller/creator
+    creator = resolved.get("created_by")
+    if creator and creator.lower() != resolved["resolved_by"].lower():
+        spine_writer.create_notification({
+            "production_id": resolved["production_id"],
+            "recipient_handle": creator,
+            "actor_handle": resolved["resolved_by"],
+            "notification_type": "RESOLVED",
+            "requirement_id": resolved["requirement_id"],
+            "title": f"Requirement Resolved on {resolved['target_label']}",
+            "message": f"{resolved['resolved_by']} marked resolved: '{resolved['title']}' — \"{body.resolution_note}\"",
+            "target_type": resolved["target_type"],
+            "target_id": resolved["target_id"],
+            "target_label": resolved["target_label"],
+        })
+
+    return resolved
+
+
+@router.delete("/requirements/{requirement_id}")
+def delete_requirement(requirement_id: str):
+    success = spine_writer.delete_requirement(requirement_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+    return {"status": "DELETED", "requirement_id": requirement_id}
+
+
+# ==========================================
+# Real-Time Alerts & Notification Routes
+# ==========================================
+@router.get("/notifications")
+def get_notifications(user_handle: str, unread_only: bool = False):
+    notifs = spine_writer.list_notifications(recipient_handle=user_handle, unread_only=unread_only)
+    unread_all = spine_writer.list_notifications(recipient_handle=user_handle, unread_only=True)
+    return {
+        "recipient_handle": user_handle,
+        "unread_count": len(unread_all),
+        "notifications": notifs,
+    }
+
+
+@router.post("/notifications/{notification_id}/read")
+def mark_notification_read(notification_id: str):
+    success = spine_writer.mark_notification_read(notification_id)
+    return {"status": "READ", "notification_id": notification_id, "success": success}
+
+
+@router.post("/notifications/read-all")
+def mark_all_notifications_read(user_handle: str):
+    count = spine_writer.mark_all_notifications_read(user_handle)
+    return {"status": "ALL_READ", "user_handle": user_handle, "updated_count": count}
 
 
 @router.post("/assistant/explain")
