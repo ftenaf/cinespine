@@ -16,22 +16,40 @@ class TestReconciliationEngine:
         self.engine = ReconciliationEngine()
 
     def test_detect_starred_take_conflict(self):
-        # Script marked starred=True, Camera marked starred=False
-        script_witness = {"author": "script", "slate": "27/7", "take_id": "3", "is_starred": True}
-        camera_witness = {"author": "camera", "slate": "27/7", "take_id": "3", "is_starred": False}
+        # Two script documents conflict on starred status (e.g. Editor's Log starred=True, TC Log starred=False)
+        script_doc1 = {"author": "script", "source_document": "DEMO_DetailedEditor'sLog.pdf", "slate": "27/7", "take_id": "3", "is_starred": True}
+        script_doc2 = {"author": "script", "source_document": "DEMO_TCLog.pdf", "slate": "27/7", "take_id": "3", "is_starred": False}
+        sound_witness = {"author": "sound", "source_document": "SoundReport.csv", "slate": "27/7", "take_id": "3", "is_starred": False}
 
         discrepancies = self.engine.reconcile_take_witnesses(
             production_id="PROD_01",
             shoot_day="31",
             slate="27/7",
             take_id="3",
-            witnesses=[script_witness, camera_witness],
+            witnesses=[script_doc1, script_doc2, sound_witness],
         )
 
         assert len(discrepancies) == 1
         d = discrepancies[0]
         assert d.discrepancy_type == DiscrepancyType.CIRCLED_TAKE_MISMATCH
         assert d.severity == Severity.CRITICAL
+
+    def test_sound_or_camera_unstarred_does_not_conflict_with_script(self):
+        # Script is sole authority for circled takes; sound default is_starred=False is ignored
+        script_witness = {"author": "script", "source_document": "DEMO_TCLog.pdf", "slate": "27/7", "take_id": "3", "is_starred": True}
+        sound_witness = {"author": "sound", "source_document": "SoundReport.csv", "slate": "27/7", "take_id": "3", "is_starred": False}
+        camera_witness = {"author": "camera", "source_document": "ZoeLog.csv", "slate": "27/7", "take_id": "3", "is_starred": False}
+
+        discrepancies = self.engine.reconcile_take_witnesses(
+            production_id="PROD_01",
+            shoot_day="31",
+            slate="27/7",
+            take_id="3",
+            witnesses=[script_witness, sound_witness, camera_witness],
+        )
+
+        # No circled take mismatch should be generated
+        assert not any(d.discrepancy_type == DiscrepancyType.CIRCLED_TAKE_MISMATCH for d in discrepancies)
 
     def test_detect_timecode_drift(self):
         # 10:14:22:00 vs 10:14:22:05 (5 frame difference @ 24fps)

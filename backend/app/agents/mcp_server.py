@@ -49,6 +49,7 @@ class ClickHouseMCPServer:
 
                     witness["author"] = author_name
                     witness["department"] = dept
+                    witness["doc_type"] = evt.get("doc_type")
                     witness["source_document"] = fname
                     witness["axis"] = evt.get("axis", "belief")
                     takes_map[key].append(witness)

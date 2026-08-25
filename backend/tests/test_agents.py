@@ -72,8 +72,8 @@ class TestClickHouseMCPServerAndAssistant:
             "production_id": "PROD_01",
             "shoot_day": "31",
             "axis": "belief",
-            "department": "camera",
-            "doc_type": "camera_csv",
+            "department": "script",
+            "doc_type": "script_editor_log",
             "entity_type": "take",
             "payload": {"slate": "27/7", "take_id": "3", "is_starred": False},
         })

@@ -24,22 +24,27 @@ class ReconciliationEngine:
         entity_id = f"{slate} Take {take_id}"
 
         # 1. Check Circled / Starred Take Mismatches
-        starred_by_author: Dict[str, tuple[str, bool]] = {}
-        for w in witnesses:
-            if "is_starred" in w and w.get("is_starred") is not None:
-                author = w.get("author", "Unknown Department")
-                val = bool(w.get("is_starred"))
-                doc = w.get("source_document")
-                author_key = author
-                label = f"{author} ({doc})" if doc else author
-                if author_key not in starred_by_author:
-                    starred_by_author[author_key] = (label, val)
+        # In film production, only the Script Supervisor (Editorial/Continuity) marks takes as circled (⭐) / chosen for the director.
+        # Sound reports (ALE/CSV) and Camera logs do not track director's editorial circle choices (or default to unstarred).
+        # Therefore, a circled take mismatch only exists if multiple Script Supervisor documents conflict on whether a take is circled.
+        starred_by_script_doc: Dict[str, tuple[str, bool]] = {}
+        for idx, w in enumerate(witnesses):
+            dept = (w.get("department") or w.get("author") or "").lower()
+            dtype = str(w.get("doc_type", "")).lower()
+            is_script_witness = "script" in dept or "scripte" in dept or "script" in dtype or "scripte" in dtype
 
-        unique_starred_values = set(val for _, val in starred_by_author.values())
+            if is_script_witness and "is_starred" in w and w.get("is_starred") is not None:
+                doc = w.get("source_document") or w.get("doc_type") or f"Script Doc #{idx+1}"
+                val = bool(w.get("is_starred"))
+                doc_key = doc
+                label = f"Script Supervisor ({doc})" if doc else "Script Supervisor"
+                starred_by_script_doc[doc_key] = (label, val)
+
+        unique_starred_values = set(val for _, val in starred_by_script_doc.values())
         if True in unique_starred_values and False in unique_starred_values:
             claims_formatted = [
                 f"{label} says {'Circled (⭐)' if val else 'Not Circled'}"
-                for label, val in starred_by_author.values()
+                for label, val in starred_by_script_doc.values()
             ]
             desc = (
                 f"Conflicting circled/starred status on {entity_id}: "
@@ -54,7 +59,7 @@ class ReconciliationEngine:
                     discrepancy_type=DiscrepancyType.CIRCLED_TAKE_MISMATCH,
                     severity=Severity.CRITICAL,
                     description=desc,
-                    witnesses=witnesses,
+                    witnesses=[w for w in witnesses if ("script" in (w.get("department") or w.get("author") or "").lower() or "script" in str(w.get("doc_type", "")).lower())],
                 )
             )
 
