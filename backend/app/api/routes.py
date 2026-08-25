@@ -503,66 +503,178 @@ class SeedRequest(BaseModel):
     shoot_day: str = "31"
 
 
+FALLBACK_SEED_FILES: Dict[str, str] = {
+    "DemoProduction-2026-7-28_CAM_A.csv": """Slate,Take,CameraRoll,ClipName,FPS,ISO,Lens,Scene,Description
+27/7,1,A120,A120_C001_260728,24.0,800,50mm,27,ORGAN - LEAD plays -> He sees SUPPORT
+27/7,2,A120,A120_C002_260728,24.0,800,50mm,27,ORGAN - LEAD plays -> He sees SUPPORT
+49/WT,1,A121,A121_C001_260728,24.0,800,50mm,49,Wild track footsteps
+49/9,1,A121,A121_C002_260728,24.0,800,50mm,49,LEAD messes up
+""",
+    "DemoProduction-2026-7-28_CAM_B.csv": """Slate,Take,CameraRoll,ClipName,FPS,ISO,Lens,Scene,Description
+27/7,1,B039,B039_C001_260728,24.0,800,35mm,27,ORGAN - LEAD plays -> He sees SUPPORT
+27/7,2,B039,B039_C002_260728,24.0,800,35mm,27,ORGAN - LEAD plays -> He sees SUPPORT
+49/9,1,B041,B041_C001_260728,24.0,800,35mm,49,LEAD messes up
+""",
+    "DemoProduction-2026-7-28_CAM_C.csv": """Slate,Take,CameraRoll,ClipName,FPS,ISO,Lens,Scene,Description
+27/7,1,C005,C005_C001_260728,24.0,800,85mm,27,ORGAN - LEAD plays -> He sees SUPPORT
+27/7,2,C005,C005_C002_260728,24.0,800,85mm,27,ORGAN - LEAD plays -> He sees SUPPORT
+""",
+    "260728_Report.csv": """Heading
+FIELD_DELIM	TABS
+VIDEO_FORMAT	1080
+FILM_FORMAT	35mm
+FPS	24
+
+Column
+Name	Tracks	Start	End	Tape	Scene	Take	Notes	Sound Roll
+
+Data
+27-7T01.WAV	MixL,MixR,Boom,Lav1	09:25:40:00	09:28:40:00	26Y07M27	27/7	1	Good sound	26Y07M27
+27-7T02.WAV	MixL,MixR,Boom,Lav1	09:35:40:00	09:38:40:00	26Y07M27	27/7	2	Director directing take	26Y07M27
+49-WTT01.WAV	MixL,MixR,Boom	10:15:00:00	10:16:00:00	26Y07M27	49/WT	1	Wild Track footsteps	26Y07M27
+49-9T01.WAV	MixL,MixR,Boom,Lav1	13:51:40:00	13:53:19:00	26Y07M27	49/9	1	LEAD dialog	26Y07M27
+""",
+    "DEMO_TCLog_D031_280726.txt": """DAILY TIMECODE LOG 28/07/2026
+LAC
+Day: Day 31 - Main Unit
+Date: 28/07/2026
+Slate Take # Timecode In Actual Time In Timecode Out Actual Time Out Description CR SR Time SU
+27/7 1 09:26:12:04 09:25:48 09:28:58:12 09:28:34 Scene(s): 27 ORGAN - LEAD plays -> He sees SUPPORT A120 280726 2:46 1
+27/7 1 09:26:12:04 09:25:48 09:28:58:12 09:28:34 Scene(s): 27 ORGAN - LEAD plays -> He sees SUPPORT B039 280726 2:46 2
+27/7 1 09:26:12:04 09:25:48 09:28:58:12 09:28:34 Scene(s): 27 ORGAN - LEAD plays -> He sees SUPPORT C005 280726 2:46 3
+27/7 2 09:36:11:14 09:35:47 09:39:05:05 09:38:40 Scene(s): 27 ORGAN - LEAD plays -> He sees SUPPORT A120 280726 2:53 1
+49/WT 1 10:15:10:00 10:15:00 10:16:10:00 10:16:00 Scene(s): 49 Wild Track: 49/WT pasos de LEAD n/a 280726 1:00 1
+49/9 1 13:52:08:10 13:51:40 13:53:19:13 13:52:51 Scene(s): 49 LEAD messes up -> exits B041 280726 1:11 1
+""",
+    "DEMO_DetailedEditor’sLog_D031_280726.txt": """DETAILED EDITOR'S LOG 28/07/2026
+LAC - V31
+Day: Day 31 - Main Unit
+Date: 28/07/2026
+Slate Take Description CR SR Time Camera Info Comments
+49/WT 1 Scene(s): 49 Wild Track: 49/WT n/a 280726 0:29 pasos de LEAD
+27/7 1 Scene(s): 27 ORGAN - Sticks - xwide. Frontal VWS A120 280726 2:46 1
+27/7 1 Dolly - wide B039 280726 2:46 2
+27/7 1 Slider - wide C005 280726 2:46 3
+""",
+    "Volume-664_SD-20260728-1927.xml": """<?xml version="1.0" encoding="UTF-8"?>
+<SilverstackReport type="volume">
+  <volume name="664 SD">
+    <clip fileName="A120_C001_260728.MOV" reel="A120" duration="00:02:46:00" checksum="1b742d797173f0d4" />
+    <clip fileName="B039_C001_260728.MOV" reel="B039" duration="00:02:46:00" checksum="3c893d797173f0d5" />
+    <clip fileName="C005_C001_260728.MOV" reel="C005" duration="00:02:46:00" checksum="5e102d797173f0d6" />
+    <clip fileName="27-7T01.WAV" reel="26Y07M27" duration="00:03:00:00" checksum="a0b1c2d3e4f50617" />
+  </volume>
+</SilverstackReport>
+""",
+    "Clips-260728_SD31-20260728-1927_Thumbnail.txt": """SILVERSTACK THUMBNAIL REPORT
+Production: DEMO PRODUCTION
+Shoot Day: Day 31
+Scene: 27 Slate: 27/7 Take: 1 File: A120_C001_260728.MOV Thumbnail: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+Scene: 27 Slate: 27/7 Take: 1 File: B039_C001_260728.MOV Thumbnail: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+Scene: 27 Slate: 27/7 Take: 1 File: C005_C001_260728.MOV Thumbnail: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+"""
+}
+
+
 @router.post("/seed")
 def seed_real_day_data(req: SeedRequest):
     """
-    Seeds the real day production documents (ZoeLog Camera A/B/C, Sound Reports, Silverstack Thumbnail & Volume)
-    from the domain examples directory into the spine.
+    Seeds production documents (ZoeLog Camera A/B/C, Sound Reports, Silverstack & Script Logs)
+    from local examples directory or embedded fallback demo dataset into the spine.
     """
-    examples_dir = "data/examples"
-    if not os.path.exists(examples_dir):
-        raise HTTPException(status_code=404, detail="Examples directory not found")
-
+    examples_dir = os.environ.get("CINESPINE_EXAMPLES_DIR", "data/examples")
     ingested_files = []
-    files = sorted(os.listdir(examples_dir))
-    for fn in files:
-        fp = os.path.join(examples_dir, fn)
-        with open(fp, "rb") as f:
-            content_bytes = f.read()
 
-        checksum = hashlib.sha256(content_bytes).hexdigest()
-        t_map = {}
-        if fn.lower().endswith(".pdf"):
-            try:
-                txt = extract_text_from_pdf(content_bytes)
-            except Exception:
+    if os.path.exists(examples_dir):
+        files = sorted(os.listdir(examples_dir))
+        for fn in files:
+            fp = os.path.join(examples_dir, fn)
+            with open(fp, "rb") as f:
+                content_bytes = f.read()
+
+            checksum = hashlib.sha256(content_bytes).hexdigest()
+            t_map = {}
+            if fn.lower().endswith(".pdf"):
+                try:
+                    txt = extract_text_from_pdf(content_bytes)
+                except Exception:
+                    txt = content_bytes.decode("utf-8", errors="ignore")
+
+                if any(k in fn.lower() or (txt and k in txt.lower()) for k in ["thumbnail", "clips", "thumbnail report", "clips report"]):
+                    try:
+                        t_map = extract_thumbnails_from_pdf(content_bytes)
+                    except Exception:
+                        t_map = {}
+            else:
                 txt = content_bytes.decode("utf-8", errors="ignore")
 
-            if any(k in fn.lower() or (txt and k in txt.lower()) for k in ["thumbnail", "clips", "thumbnail report", "clips report"]):
-                try:
-                    t_map = extract_thumbnails_from_pdf(content_bytes)
-                except Exception:
-                    t_map = {}
-        else:
-            txt = content_bytes.decode("utf-8", errors="ignore")
+            classification = classify_document(filename=fn, content=txt)
 
-        classification = classify_document(filename=fn, content=txt)
+            doc_id = spine_writer.store_document(
+                production_id=req.production_id,
+                shoot_day=req.shoot_day,
+                filename=fn,
+                doc_type=classification.doc_type.value,
+                department=classification.department.value,
+                content=txt,
+                checksum=checksum,
+                raw_bytes=content_bytes,
+                metadata={"file_size": len(content_bytes)},
+            )
 
-        doc_id = spine_writer.store_document(
-            production_id=req.production_id,
-            shoot_day=req.shoot_day,
-            filename=fn,
-            doc_type=classification.doc_type.value,
-            department=classification.department.value,
-            content=txt,
-            checksum=checksum,
-            raw_bytes=content_bytes,
-            metadata={"file_size": len(content_bytes)},
-        )
+            envelope = EventEnvelope(
+                production_id=req.production_id,
+                shoot_day=req.shoot_day,
+                axis=classification.axis,
+                department=classification.department,
+                doc_type=classification.doc_type,
+                raw_content=txt,
+                filename=fn,
+                metadata={"doc_id": doc_id, "checksum": checksum, "thumbnails": t_map},
+            )
+            topic = f"production.raw.{classification.department.value}"
+            event_bus.publish(topic, envelope)
+            ingested_files.append(fn)
+    else:
+        # Graceful fallback: seed from built-in sample paperwork documents
+        for fn, txt in FALLBACK_SEED_FILES.items():
+            content_bytes = txt.encode("utf-8")
+            checksum = hashlib.sha256(content_bytes).hexdigest()
+            classification = classify_document(filename=fn, content=txt)
+            t_map = {}
+            if "Thumbnail" in fn:
+                # Add default placeholder thumbnails for scene 27
+                t_map = {
+                    "27_27/7_1_A120": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                    "27_27/7_1_B039": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                    "27_27/7_1_C005": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                }
 
-        envelope = EventEnvelope(
-            production_id=req.production_id,
-            shoot_day=req.shoot_day,
-            axis=classification.axis,
-            department=classification.department,
-            doc_type=classification.doc_type,
-            raw_content=txt,
-            filename=fn,
-            metadata={"doc_id": doc_id, "checksum": checksum, "thumbnails": t_map},
-        )
-        topic = f"production.raw.{classification.department.value}"
-        event_bus.publish(topic, envelope)
-        ingested_files.append(fn)
+            doc_id = spine_writer.store_document(
+                production_id=req.production_id,
+                shoot_day=req.shoot_day,
+                filename=fn,
+                doc_type=classification.doc_type.value,
+                department=classification.department.value,
+                content=txt,
+                checksum=checksum,
+                raw_bytes=content_bytes,
+                metadata={"file_size": len(content_bytes)},
+            )
+
+            envelope = EventEnvelope(
+                production_id=req.production_id,
+                shoot_day=req.shoot_day,
+                axis=classification.axis,
+                department=classification.department,
+                doc_type=classification.doc_type,
+                raw_content=txt,
+                filename=fn,
+                metadata={"doc_id": doc_id, "checksum": checksum, "thumbnails": t_map},
+            )
+            topic = f"production.raw.{classification.department.value}"
+            event_bus.publish(topic, envelope)
+            ingested_files.append(fn)
 
     event_broker.publish_sync(SpineLiveEvent(
         event_type="DOCUMENT_INGESTED",
@@ -577,6 +689,7 @@ def seed_real_day_data(req: SeedRequest):
     ))
 
     return {"status": "SEEDED", "ingested_count": len(ingested_files), "files": ingested_files}
+
 
 
 @router.get("/takes")
