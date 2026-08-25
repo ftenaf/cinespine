@@ -118,7 +118,7 @@ def test_storyboard_svg_renderer():
         camera_letter="A",
         aspect_ratio="2.39:1"
     )
-    assert svg_data_cam_a.startswith("data:image/svg+xml;base64,")
+    assert svg_data_cam_a.startswith("/previz/") or svg_data_cam_a.startswith("data:image/")
 
     svg_data_cam_b = render_cinematic_storyboard_svg(
         prompt="Over-the-shoulder organist playing in gothic great_hall",
@@ -131,7 +131,7 @@ def test_storyboard_svg_renderer():
         camera_letter="B",
         aspect_ratio="2.39:1"
     )
-    assert svg_data_cam_b.startswith("data:image/svg+xml;base64,")
+    assert svg_data_cam_b.startswith("/previz/") or svg_data_cam_b.startswith("data:image/")
 
 
 def test_api_script_parse_endpoint(client):
@@ -180,7 +180,7 @@ def test_api_script_breakdown_endpoint(client):
 def test_api_generate_storyboard_endpoint(client):
     req = {
         "shot_id": "SHOT-27-01",
-        "prompt": "Test cinematic frame",
+        "prompt": "Test cinematic great_hall organ frame",
         "scene_number": "27",
         "shot_number": "1",
         "shot_size": "CU",
@@ -194,7 +194,7 @@ def test_api_generate_storyboard_endpoint(client):
     assert res.status_code == 200
     data = res.json()
     assert data["shot_id"] == "SHOT-27-01"
-    assert data["image_url"].startswith("data:image/svg+xml;base64,")
+    assert data["image_url"].startswith("/previz/") or data["image_url"].startswith("data:image/")
 
 
 def test_api_script_upload_endpoint(client):

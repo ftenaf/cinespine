@@ -20,7 +20,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+import os
+from fastapi.staticfiles import StaticFiles
+
 app.include_router(router)
+
+# Mount static previz directory
+static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    previz_dir = os.path.join(static_dir, "previz")
+    if os.path.exists(previz_dir):
+        app.mount("/previz", StaticFiles(directory=previz_dir), name="previz")
 
 
 if __name__ == "__main__":
