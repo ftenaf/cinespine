@@ -1526,6 +1526,11 @@ export default function App() {
                                   ✨ VFX
                                 </span>
                               )}
+                              {t.is_mos && (
+                                <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 px-1.5 py-0.2 rounded font-sans">
+                                  🔇 MOS
+                                </span>
+                              )}
                               {t.is_pickup && (
                                 <span className="text-[10px] bg-pink-500/20 text-pink-300 border border-pink-500/40 px-1.5 py-0.2 rounded font-sans">
                                   Pickup
@@ -1551,7 +1556,11 @@ export default function App() {
 
                           {/* Sound Roll */}
                           <td className="px-4 py-3.5 font-mono">
-                            {t.belief.sound ? (
+                            {t.is_mos ? (
+                              <span className="text-indigo-300/80 font-mono text-[11px] flex items-center gap-1">
+                                <span>🔇</span> MOS (Silent Take)
+                              </span>
+                            ) : t.belief.sound ? (
                               <div>
                                 <span className="text-emerald-400 font-semibold">
                                   🎙️ {t.belief.sound.sound_roll || 'SR'}

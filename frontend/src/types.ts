@@ -142,6 +142,7 @@ export interface TakeRecord {
   is_pickup: boolean;
   is_wild_track?: boolean;
   is_vfx?: boolean;
+  is_mos?: boolean;
 }
 
 export interface DocumentRef {
@@ -170,6 +171,7 @@ export interface SequenceRecord {
   has_discrepancy: boolean;
   is_wild_track: boolean;
   is_vfx: boolean;
+  is_mos?: boolean;
   takes_count: number;
   circled_takes?: string[];
   circled_takes_count?: number;

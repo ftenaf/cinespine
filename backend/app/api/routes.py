@@ -551,6 +551,7 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                         "is_pickup": False,
                         "is_wild_track": False,
                         "is_vfx": False,
+                        "is_mos": False,
                         "codec": None,
                         "recording_date": None,
                         "thumbnail_url": None,
@@ -602,6 +603,8 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
                     takes_map[key]["is_wild_track"] = True
                 if p.get("is_vfx") or "VFX" in slate.upper():
                     takes_map[key]["is_vfx"] = True
+                if p.get("is_mos") or "MOS" in slate.upper():
+                    takes_map[key]["is_mos"] = True
 
                 # Match with DIT Media Files (both video and audio WAV clips)
                 clip_name = p.get("clip_name")
@@ -915,6 +918,7 @@ def get_sequences(production_id: str = "DEMO_PRODUCTION", shoot_day: str = "31")
             "has_discrepancy": has_disc,
             "is_wild_track": is_wt,
             "is_vfx": is_vfx,
+            "is_mos": any(t.get("is_mos") for t in s_takes),
             "takes_count": len(s_takes),
             "circled_takes": [f"{t.get('slate')} T{t.get('take_id')}" for t in s_takes if t.get("is_starred")],
             "circled_takes_count": len([t for t in s_takes if t.get("is_starred")]),

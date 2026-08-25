@@ -19,6 +19,7 @@ class TakeResult:
     is_false_start: bool = False
     is_wild_track: bool = False
     is_vfx: bool = False
+    is_mos: bool = False
     note: Optional[str] = None
 
 
@@ -31,6 +32,7 @@ def normalize_take(raw_take: Optional[str]) -> TakeResult:
     - '3*' -> take_id='3', is_starred=True
     - '3 VFX' -> take_id='3', is_vfx=True, note='VFX'
     - '2PK' -> take_id='2PK', is_pickup=True
+    - '1 MOS' -> take_id='1', is_mos=True
     - 'FALSE' -> is_valid_take=False, is_false_start=True
     - 'WT 01' -> is_valid_take=False, is_wild_track=True
     """
@@ -51,12 +53,17 @@ def normalize_take(raw_take: Optional[str]) -> TakeResult:
 
     # 3. Check for Star / Circled / Chosen / Print take indicator
     is_starred = "*" in cleaned or "CIRCLED" in cleaned or "CHOSEN" in cleaned or "PRINT" in cleaned or "STAR" in cleaned
+    is_mos = "MOS" in cleaned or "M.O.S" in cleaned or "MUTE" in cleaned or "SILENT" in cleaned
     cleaned = (
         cleaned.replace("*", " ")
         .replace("CIRCLED", " ")
         .replace("CHOSEN", " ")
         .replace("PRINT", " ")
         .replace("STAR", " ")
+        .replace("MOS", " ")
+        .replace("M.O.S", " ")
+        .replace("MUTE", " ")
+        .replace("SILENT", " ")
         .strip()
     )
 
@@ -85,5 +92,6 @@ def normalize_take(raw_take: Optional[str]) -> TakeResult:
         is_starred=is_starred,
         is_pickup=is_pickup,
         is_vfx=is_vfx,
+        is_mos=is_mos,
         note=remaining_note,
     )

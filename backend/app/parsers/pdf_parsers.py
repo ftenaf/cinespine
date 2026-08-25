@@ -318,6 +318,7 @@ def parse_zoelog_camera_text(text: str) -> List[ParsedCameraRecord]:
                     is_pickup=take_info.is_pickup,
                     is_false_start=take_info.is_false_start or raw_take in ["FC", "FALSE"],
                     is_vfx=take_is_vfx,
+                    is_mos=take_info.is_mos or bool(current_notes and ("MOS" in current_notes.upper() or "M.O.S" in current_notes.upper())),
                     note=current_notes or take_info.note,
                     raw_payload={"magazine": current_mag, "camera": current_camera, "stop": current_stop},
                 )
@@ -381,6 +382,7 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedSoundRecord]:
                     is_false_start=take_info.is_false_start,
                     is_wild_track="WT" in current_slate.upper() if current_slate else take_info.is_wild_track,
                     is_vfx="VFX" in cleaned.upper() or take_info.is_vfx,
+                    is_mos="MOS" in cleaned.upper() or take_info.is_mos,
                     note=take_info.note,
                     raw_payload={"camera_roll": cr, "timecode_in": tc_in, "timecode_out": tc_out},
                 )
@@ -428,6 +430,7 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedSoundRecord]:
                     is_false_start=take_info.is_false_start,
                     is_wild_track="WT" in current_slate.upper() or take_info.is_wild_track,
                     is_vfx="VFX" in (notes_str or "").upper() or take_info.is_vfx,
+                    is_mos="MOS" in (notes_str or "").upper() or "MOS" in current_slate.upper() or take_info.is_mos,
                     note=notes_str or take_info.note,
                     raw_payload={"camera_roll": cr, "timecode_in": current_tc_in, "timecode_out": current_tc_out},
                 )
@@ -536,6 +539,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedSoundRecord]
                         is_pickup=take_info.is_pickup,
                         is_wild_track="WT" in current_slate.upper() or take_info.is_wild_track,
                         is_vfx="VFX" in cleaned.upper() or take_info.is_vfx,
+                        is_mos="MOS" in cleaned.upper() or "MOS" in current_slate.upper() or take_info.is_mos,
                         note=rest or take_info.note,
                         raw_payload={"camera_roll": cr, "is_vfx": "VFX" in cleaned.upper()},
                     )
@@ -567,6 +571,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedSoundRecord]
                         is_pickup=take_info.is_pickup,
                         is_wild_track="WT" in current_slate.upper() or take_info.is_wild_track,
                         is_vfx="VFX" in cleaned.upper() or take_info.is_vfx,
+                        is_mos="MOS" in cleaned.upper() or "MOS" in current_slate.upper() or take_info.is_mos,
                         note=rest or take_info.note,
                         raw_payload={"camera_roll": cr, "is_vfx": "VFX" in cleaned.upper()},
                     )
@@ -595,6 +600,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedSoundRecord]
                     is_pickup=take_info.is_pickup,
                     is_wild_track="WT" in current_slate.upper() or take_info.is_wild_track,
                     is_vfx="VFX" in cleaned.upper() or "VFX" in notes_str.upper() or take_info.is_vfx,
+                    is_mos="MOS" in cleaned.upper() or "MOS" in notes_str.upper() or take_info.is_mos,
                     note=notes_str or take_info.note,
                     raw_payload={"camera_roll": cr, "is_vfx": "VFX" in cleaned.upper()},
                 )
@@ -650,6 +656,7 @@ def parse_editors_log_text(text: str) -> List[ParsedSoundRecord]:
                     is_starred=take_info.is_starred,
                     is_pickup=take_info.is_pickup,
                     is_vfx=take_info.is_vfx or "VFX" in cleaned.upper(),
+                    is_mos=take_info.is_mos or "MOS" in cleaned.upper() or "MOS" in (desc or "").upper() or "MOS" in (comments or "").upper(),
                     note=comments or desc,
                     raw_payload={"camera_roll": cr, "description": desc},
                 )

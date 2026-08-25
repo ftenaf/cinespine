@@ -33,6 +33,7 @@ class ParsedSoundRecord:
     is_false_start: bool = False
     is_wild_track: bool = False
     is_vfx: bool = False
+    is_mos: bool = False
     note: Optional[str] = None
     raw_payload: Dict[str, Any] = field(default_factory=dict)
 
@@ -54,6 +55,7 @@ class ParsedCameraRecord:
     is_pickup: bool = False
     is_false_start: bool = False
     is_vfx: bool = False
+    is_mos: bool = False
     note: Optional[str] = None
     raw_payload: Dict[str, Any] = field(default_factory=dict)
 
