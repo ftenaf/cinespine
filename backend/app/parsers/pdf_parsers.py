@@ -331,6 +331,38 @@ def parse_zoelog_camera_text(text: str) -> List[ParsedCameraRecord]:
     return records
 
 
+def extract_script_camera_roll_and_date(text: str) -> tuple[Optional[str], Optional[str]]:
+    """
+    Extracts camera roll and date from script supervisor logs, properly handling
+    unpadded card numbers concatenated with dates (e.g. 'B41280726' -> roll 'B041', date '280726')
+    as well as standard padded cards ('A120280726' -> 'A120', 'B039' -> 'B039').
+    """
+    if not text:
+        return None, None
+
+    # 1. Match card when immediately followed by a 6-digit shoot date (DDMMYY or YYMMDD)
+    # e.g., 'B41280726' -> roll 'B41' (normalized to 'B041'), date '280726'
+    date_pat = r'(280726|260728|\d{2}0[1-9]\d{2}|\d{2}1[0-2]\d{2})'
+    m = re.search(r'\b([A-Z]0*\d{1,3})' + date_pat, text)
+    if m:
+        raw_roll = m.group(1)
+        raw_date = m.group(2)
+        norm_roll = normalize_camera_roll(raw_roll)
+        return norm_roll, raw_date
+
+    # 2. Match standard 3-digit card (e.g. 'A120', 'B039', 'C005', 'B041')
+    m = re.search(r'\b([A-Z]\d{3})\b', text)
+    if m:
+        return normalize_camera_roll(m.group(1)), None
+
+    # 3. Match 1 to 3 digit card standalone (e.g. 'B41', 'C5', 'A12')
+    m = re.search(r'\b([A-Z]0*\d{1,3})\b', text)
+    if m:
+        return normalize_camera_roll(m.group(1)), None
+
+    return None, None
+
+
 def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
     """
     Parses Scripte Daily Timecode Log text (e.g. DEMO_TCLog_D031_280726.pdf) using state machine.
@@ -354,7 +386,7 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
 
         # 1. Check for single-line format: 27/7 1 09:26:12:04 ... A120 280726 2:46
         single_m = re.search(
-            r"^(\d+[A-Z]?/\d+|\d+WT)\s+(\d+[A-Z*]?|FALSE)\s+(\d{2}:\d{2}:\d{2}:\d{2})\s*(?:\d{2}:\d{2}:\d{2})?\s*(\d{2}:\d{2}:\d{2}:\d{2})?.*?\b([A-Z]\d{3})\s*(\d{6})?",
+            r"^(\d+[A-Z]?/\d+|\d+WT)\s+(\d+[A-Z*]?|FALSE)\s+(\d{2}:\d{2}:\d{2}:\d{2})\s*(?:\d{2}:\d{2}:\d{2})?\s*(\d{2}:\d{2}:\d{2}:\d{2})?(.*)",
             cleaned,
         )
         if single_m:
@@ -362,32 +394,34 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
             raw_take = single_m.group(2)
             tc_in = single_m.group(3)
             tc_out = single_m.group(4)
-            cr = normalize_camera_roll(single_m.group(5))
+            rest_line = single_m.group(5) or ""
 
-            norm_slate = normalize_slate(raw_slate)
-            take_info = normalize_take(raw_take)
-            scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
+            cr, raw_date = extract_script_camera_roll_and_date(rest_line)
+            if cr:
+                norm_slate = normalize_slate(raw_slate)
+                take_info = normalize_take(raw_take)
+                scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
 
-            records.append(
-                ParsedScriptRecord(
-                    scene=scene,
-                    slate=norm_slate,
-                    take_id=take_info.take_id,
-                    camera_roll=cr,
-                    timecode_in=tc_in,
-                    timecode_out=tc_out,
-                    recording_date="28/07/2026",
-                    is_starred=take_info.is_starred,
-                    is_pickup=take_info.is_pickup,
-                    is_false_start=take_info.is_false_start,
-                    is_wild_track="WT" in current_slate.upper() if current_slate else take_info.is_wild_track,
-                    is_vfx="VFX" in cleaned.upper() or take_info.is_vfx,
-                    is_mos="MOS" in cleaned.upper() or take_info.is_mos,
-                    note=take_info.note,
-                    raw_payload={"camera_roll": cr, "timecode_in": tc_in, "timecode_out": tc_out},
+                records.append(
+                    ParsedScriptRecord(
+                        scene=scene,
+                        slate=norm_slate,
+                        take_id=take_info.take_id,
+                        camera_roll=cr,
+                        timecode_in=tc_in,
+                        timecode_out=tc_out,
+                        recording_date="28/07/2026",
+                        is_starred=take_info.is_starred,
+                        is_pickup=take_info.is_pickup,
+                        is_false_start=take_info.is_false_start,
+                        is_wild_track="WT" in (current_slate or "").upper() or take_info.is_wild_track,
+                        is_vfx="VFX" in cleaned.upper() or take_info.is_vfx,
+                        is_mos="MOS" in cleaned.upper() or take_info.is_mos,
+                        note=take_info.note,
+                        raw_payload={"camera_roll": cr, "timecode_in": tc_in, "timecode_out": tc_out},
+                    )
                 )
-            )
-            continue
+                continue
 
         # 2. Multi-line Header line matching Slate, Take, and TC In: 27/7 109:26:12:04 or 27/7 1 09:26:12:04
         header_m = re.search(r"^(\d+[A-Z]?/\d+|\d+WT)\s+(\d+[A-Z*]?|FALSE)(?:(?=\d{2}:\d{2}:\d{2})|\s+)(\d{2}:\d{2}:\d{2}:\d{2})?", cleaned)
@@ -405,11 +439,9 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
             current_tc_out = tc_m.group(1)
             continue
 
-        # 4. Camera Roll & Sound Roll line: A1202807262:461 or B0392807262:462 or A120 280726 2:46 1
-        roll_m = re.search(r"\b([A-Z]\d{3})\s*(\d{6})?(?:\s*\d+:\d+)?", cleaned)
-        if roll_m and current_slate and current_take:
-            cr = normalize_camera_roll(roll_m.group(1))
-
+        # 4. Camera Roll & Sound Roll line: A1202807262:461 or B0392807262:462 or B412807261:1125
+        cr, raw_date = extract_script_camera_roll_and_date(cleaned)
+        if cr and current_slate and current_take:
             norm_slate = normalize_slate(current_slate)
             take_info = normalize_take(current_take)
             scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
@@ -517,10 +549,9 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             rest = new_slate_m.group(3)
             current_notes = [rest] if rest else []
 
-            # Check if camera roll is on this same line: A1202807262:46
-            roll_m = re.search(r"\b([A-Z]\d{3})\s*(\d{6})?", rest)
-            if roll_m:
-                cr = normalize_camera_roll(roll_m.group(1))
+            # Check if camera roll is on this same line: A1202807262:46 or B412807261:1125
+            cr, raw_date = extract_script_camera_roll_and_date(rest)
+            if cr:
                 norm_slate = normalize_slate(current_slate)
                 take_info = normalize_take(current_take)
                 scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
@@ -550,9 +581,8 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
         if sub_m and current_slate:
             current_take = sub_m.group(1).replace(" ", "")
             rest = sub_m.group(2)
-            roll_m = re.search(r"\b([A-Z]\d{3})\s*(\d{6})?", rest)
-            if roll_m:
-                cr = normalize_camera_roll(roll_m.group(1))
+            cr, raw_date = extract_script_camera_roll_and_date(rest)
+            if cr:
                 norm_slate = normalize_slate(current_slate)
                 take_info = normalize_take(current_take)
                 scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
@@ -577,10 +607,9 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
                 )
             continue
 
-        # 4. Standalone roll line for current setup (e.g. 'A1202807262:46' after a multi-line description)
-        roll_standalone = re.search(r"\b([A-Z]\d{3})\s*(\d{6})?", cleaned)
-        if roll_standalone and current_slate and current_take:
-            cr = normalize_camera_roll(roll_standalone.group(1))
+        # 4. Standalone roll line for current setup (e.g. 'A1202807262:46' or 'B412807261:1125')
+        cr, raw_date = extract_script_camera_roll_and_date(cleaned)
+        if cr and current_slate and current_take:
             norm_slate = normalize_slate(current_slate)
             take_info = normalize_take(current_take)
             scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
@@ -630,36 +659,36 @@ def parse_editors_log_text(text: str) -> List[ParsedScriptRecord]:
         if not cleaned or "DAILY EDITOR'S LOG" in cleaned or "Slate Take #" in cleaned:
             continue
 
-        m = re.search(r"^(\d+[A-Z]?/\d+)\s+(\d+[A-Z*]?)\s*(.*?)\s*([A-Z]\d{3})\s*(\d{4,8})?\s*(\d+:\d+)?\s*(.*)$", cleaned)
+        m = re.search(r"^(\d+[A-Z]?/\d+)\s+(\d+[A-Z*]?)\s*(.*)$", cleaned)
         if m:
             raw_slate = m.group(1)
             raw_take = m.group(2)
-            desc = m.group(3).strip() if m.group(3) else None
-            cr = normalize_camera_roll(m.group(4))
-            comments = m.group(7).strip() if m.group(7) else None
+            rest = m.group(3)
+            cr, raw_date = extract_script_camera_roll_and_date(rest)
+            if cr:
+                norm_slate = normalize_slate(raw_slate)
+                take_info = normalize_take(raw_take)
+                scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
 
-            norm_slate = normalize_slate(raw_slate)
-            take_info = normalize_take(raw_take)
-            scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
-
-            records.append(
-                ParsedScriptRecord(
-                    scene=scene,
-                    slate=norm_slate,
-                    take_id=take_info.take_id,
-                    camera_roll=cr,
-                    timecode_in=None,
-                    timecode_out=None,
-                    recording_date="28/07/2026",
-                    is_starred=take_info.is_starred,
-                    is_pickup=take_info.is_pickup,
-                    is_false_start=take_info.is_false_start,
-                    is_vfx=take_info.is_vfx or "VFX" in cleaned.upper(),
-                    is_mos=take_info.is_mos or "MOS" in cleaned.upper() or "MOS" in (desc or "").upper() or "MOS" in (comments or "").upper(),
-                    note=comments or desc,
-                    raw_payload={"camera_roll": cr, "description": desc},
+                records.append(
+                    ParsedScriptRecord(
+                        scene=scene,
+                        slate=norm_slate,
+                        take_id=take_info.take_id,
+                        camera_roll=cr,
+                        timecode_in=None,
+                        timecode_out=None,
+                        recording_date="28/07/2026",
+                        is_starred=take_info.is_starred,
+                        is_pickup=take_info.is_pickup,
+                        is_false_start=take_info.is_false_start,
+                        is_wild_track=take_info.is_wild_track,
+                        is_vfx=take_info.is_vfx,
+                        is_mos=take_info.is_mos,
+                        note=rest or take_info.note,
+                        raw_payload={"camera_roll": cr},
+                    )
                 )
-            )
 
     if not records:
         raise ParserFailureError("Editor's Log parser yielded zero valid records")

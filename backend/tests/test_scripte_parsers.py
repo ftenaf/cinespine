@@ -91,3 +91,28 @@ class TestScripteParsers:
             t27_7_2 = [r for r in t27_7 if r.take_id == "2"]
             for r in t27_7_2:
                 assert r.is_starred is False
+
+    def test_parse_unpadded_card_concatenated_with_date_scene_49_9(self):
+        # In scene 49 shot 9 take 1, the card was written as B41 and concatenated with date 280726 -> B412807261:1125
+        # It must be parsed as canonical card B041, NOT B412
+        sample_tclog_49_9 = """
+DAILY TIMECODE LOG 28/07/2026
+49/9 1* 13:52:08:10
+13:51:40
+13:53:19:13
+13:52:51
+Scene(s): 49
+LEAD messes up -> Julian looks at him -> 
+LEAD stops playing and exits the stage 
+B412807261:1125
+Lens: LH: D: Fltr: T:
+"""
+        recs = parse_scripte_tclog_text(sample_tclog_49_9)
+        assert len(recs) == 1
+        rec = recs[0]
+        assert rec.slate == "49/9"
+        assert rec.take_id == "1"
+        assert rec.camera_roll == "B041"
+        assert rec.is_starred is True
+        assert rec.timecode_in == "13:52:08:10"
+        assert rec.timecode_out == "13:53:19:13"
