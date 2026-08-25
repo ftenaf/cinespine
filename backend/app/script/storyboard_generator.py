@@ -1,8 +1,8 @@
 """
 Generative Storyboard & Multi-Camera Previz Visual Renderer for CineSpine.
-Produces prompt-accurate cinematic concept frames rendered specifically
-for Camera A, Camera B, and Camera C perspectives with scene-specific artwork,
-atmospheric lighting, volumetric beam optics, and camera HUD overlays.
+Produces prompt-accurate cinematic concept frames dynamically rendered
+from the editable prompt for Camera A, B, and C with semantic keyword extraction,
+volumetric lighting, anamorphic streaks, and camera HUD overlays.
 """
 import base64
 import html
@@ -23,7 +23,8 @@ def render_cinematic_storyboard_svg(
 ) -> str:
     """
     Renders a prompt-driven cinematic concept art SVG frame customized
-    for Camera A, B, or C angle perspectives with scene-accurate visual elements.
+    for Camera A, B, or C angle perspectives with scene-accurate visual elements
+    and dynamic reactivity to user-edited prompt keywords.
     """
     # Aspect Ratio Canvas Calculations
     if aspect_ratio == "2.39:1":
@@ -37,8 +38,14 @@ def render_cinematic_storyboard_svg(
 
     prompt_lower = prompt.lower()
 
-    # Determine aesthetic color palette based on DoP preset
-    if "Fincher" in dop_preset:
+    # Determine aesthetic color palette based on DoP preset & prompt keywords
+    if any(k in prompt_lower for k in ["neon", "cyberpunk", "cyan", "magenta"]):
+        bg_dark, bg_mid, accent, beam_color = "#030014", "#0D0A26", "#06B6D4", "#EC4899"
+        atmosphere_tone = "Cyberpunk Neo-Noir • Cyan & Magenta"
+    elif any(k in prompt_lower for k in ["fire", "flames", "sunset", "warm", "amber", "golden hour"]):
+        bg_dark, bg_mid, accent, beam_color = "#140500", "#2D0D00", "#F97316", "#FBBF24"
+        atmosphere_tone = "Volumetric Warmth • Golden Hour Flare"
+    elif "Fincher" in dop_preset:
         bg_dark, bg_mid, accent, beam_color = "#020708", "#081C1D", "#14B8A6", "#2DD4BF"
         atmosphere_tone = "Low-Key Neo-Noir • Teal & Amber"
     elif "Fraser" in dop_preset:
@@ -58,13 +65,18 @@ def render_cinematic_storyboard_svg(
         atmosphere_tone = "Motivated Daylight • Spherical Clarity"
 
     # Contextual Artwork Elements Based on Prompt & Camera Perspective
-    is_great_hall_organ = any(k in prompt_lower for k in ["organ", "great_hall", "nave", "church", "gothic", "stained"])
-    is_rain_square = any(k in prompt_lower for k in ["rain", "square", "police", "vehicle", "street", "siren", "spotlight"])
-    
+    is_great_hall_organ = any(k in prompt_lower for k in ["organ", "great_hall", "nave", "church", "gothic", "stained", "sanctuary"])
+    is_rain_square = any(k in prompt_lower for k in ["rain", "square", "police", "vehicle", "street", "siren", "spotlight", "car"])
+    is_eyes_face = any(k in prompt_lower for k in ["eye", "eyes", "face", "expression", "portrait", "stare", "tears", "trembling"])
+    is_hands_detail = any(k in prompt_lower for k in ["hand", "hands", "finger", "fingers", "macro", "keys", "dossier", "stop", "knob"])
+    is_anamorphic = any(k in prompt_lower for k in ["anamorphic", "streak", "horizontal flare", "oval bokeh"])
+    is_haze = any(k in prompt_lower for k in ["haze", "fog", "smoke", "volumetric", "dust", "motes"])
+    is_dutch = any(k in prompt_lower for k in ["dutch", "tilted", "off-kilter", "kinetic"])
+
     scene_artwork_svg = ""
 
     if is_great_hall_organ:
-        if camera_letter == "A":
+        if camera_letter == "A" or "wide" in prompt_lower or "panoramic" in prompt_lower:
             # CAMERA A: Wide Master Great Hall Architecture & Soaring Pipes
             scene_artwork_svg = f"""
             <!-- Vaulted Great Hall Arches -->
@@ -97,10 +109,10 @@ def render_cinematic_storyboard_svg(
             </g>
 
             <!-- Volumetric Light Beam Shafts -->
-            <polygon points="{width//2},110 {width//2 + 40},110 {width//2 + 180},{height} {width//2 - 60},{height}" fill="{beam_color}" fill-opacity="0.12" />
-            <polygon points="{width//2},110 {width//2 - 30},110 {width//4},{height} {width//6},{height}" fill="{beam_color}" fill-opacity="0.08" />
+            <polygon points="{width//2},110 {width//2 + 40},110 {width//2 + 180},{height} {width//2 - 60},{height}" fill="{beam_color}" fill-opacity="0.15" />
+            <polygon points="{width//2},110 {width//2 - 30},110 {width//4},{height} {width//6},{height}" fill="{beam_color}" fill-opacity="0.10" />
             """
-        elif camera_letter == "B":
+        elif camera_letter == "B" or "ots" in prompt_lower or "shoulder" in prompt_lower:
             # CAMERA B: Medium Over-The-Shoulder (OTS) onto Organ Console & Music
             scene_artwork_svg = f"""
             <!-- Vault background blur -->
@@ -125,7 +137,7 @@ def render_cinematic_storyboard_svg(
             </g>
 
             <!-- Warm Key Light Beam across face -->
-            <polygon points="{width},0 {width - 120},0 {width//2 - 40},{height//2 + 50} {width//2 + 80},{height}" fill="{beam_color}" fill-opacity="0.15" />
+            <polygon points="{width},0 {width - 120},0 {width//2 - 40},{height//2 + 50} {width//2 + 80},{height}" fill="{beam_color}" fill-opacity="0.18" />
             """
         else:
             # CAMERA C: Tight Macro / Profile Detail on Organ Stops & Hands
@@ -168,17 +180,17 @@ def render_cinematic_storyboard_svg(
             </g>
 
             <!-- Razor Shallow Depth of Field Highlight -->
-            <ellipse cx="{width//2}" cy="{height//2 + 30}" rx="140" ry="30" fill="{beam_color}" fill-opacity="0.12" filter="url(#glow)" />
+            <ellipse cx="{width//2}" cy="{height//2 + 30}" rx="140" ry="30" fill="{beam_color}" fill-opacity="0.15" filter="url(#glow)" />
             """
     elif is_rain_square:
-        if camera_letter == "A":
+        if camera_letter == "A" or "wide" in prompt_lower:
             # CAMERA A: Wide Master of Rainy Square & Vehicle Sirens
             scene_artwork_svg = f"""
             <!-- Wet Reflective Cobblestone Horizon -->
             <line x1="0" y1="{2*height//3}" x2="{width}" y2="{2*height//3}" stroke="{accent}" stroke-width="2" stroke-opacity="0.4" />
             
             <!-- Rain Streaks Angle -->
-            <g stroke="{beam_color}" stroke-width="1" stroke-opacity="0.3" stroke-dasharray="2,12">
+            <g stroke="{beam_color}" stroke-width="1" stroke-opacity="0.35" stroke-dasharray="2,12">
               <line x1="100" y1="0" x2="60" y2="{height}" />
               <line x1="250" y1="0" x2="210" y2="{height}" />
               <line x1="400" y1="0" x2="360" y2="{height}" />
@@ -205,7 +217,7 @@ def render_cinematic_storyboard_svg(
               <polygon points="0,25 -200,80 -200,220 0,35" fill="#FFFFFF" fill-opacity="0.2" />
             </g>
             """
-        elif camera_letter == "B":
+        elif camera_letter == "B" or "vance" in prompt_lower or "commander" in prompt_lower:
             # CAMERA B: Low-Angle Medium on Commander Vance
             scene_artwork_svg = f"""
             <!-- Wet Asphalt Reflection Ground -->
@@ -222,8 +234,8 @@ def render_cinematic_storyboard_svg(
             </g>
 
             <!-- Blinding Searchlight Beam Aimed at Facade -->
-            <polygon points="{width//2 + 78},{height//4 + 38} {width},0 {width},{height//2} {width//2 + 85},{height//4 + 45}" fill="#FFFFFF" fill-opacity="0.3" />
-            <polygon points="{width//2 + 78},{height//4 + 38} 0,0 0,{height//3} {width//2 + 70},{height//4 + 42}" fill="#38BDF8" fill-opacity="0.15" />
+            <polygon points="{width//2 + 78},{height//4 + 38} {width},0 {width},{height//2} {width//2 + 85},{height//4 + 45}" fill="#FFFFFF" fill-opacity="0.35" />
+            <polygon points="{width//2 + 78},{height//4 + 38} 0,0 0,{height//3} {width//2 + 70},{height//4 + 42}" fill="#38BDF8" fill-opacity="0.20" />
             """
         else:
             # CAMERA C: Dutch Angle Kinetic Macro of Sirens & Splashing Rain
@@ -248,24 +260,48 @@ def render_cinematic_storyboard_svg(
               <circle cx="{3*width//4}" cy="{height - 70}" r="3" />
             </g>
             """
+    elif is_eyes_face:
+        # Prompt explicitly mentions eyes or emotional facial close-up
+        scene_artwork_svg = f"""
+        <!-- Intense Psychological Eye Level Portrait Silhouette -->
+        <g transform="translate({width//2 - 140}, {height//4})" fill="#020617" stroke="{beam_color}" stroke-width="2">
+          <!-- Left Eye -->
+          <ellipse cx="70" cy="60" rx="42" ry="24" fill="#0A111E" />
+          <circle cx="70" cy="60" r="16" fill="{accent}" />
+          <circle cx="70" cy="60" r="7" fill="#000000" />
+          <circle cx="65" cy="55" r="4" fill="#FFFFFF" filter="url(#glow)" />
+
+          <!-- Right Eye -->
+          <ellipse cx="210" cy="60" rx="42" ry="24" fill="#0A111E" />
+          <circle cx="210" cy="60" r="16" fill="{accent}" />
+          <circle cx="210" cy="60" r="7" fill="#000000" />
+          <circle cx="205" cy="55" r="4" fill="#FFFFFF" filter="url(#glow)" />
+
+          <!-- Eyebrows / Furrowed Expression -->
+          <path d="M 30 35 Q 70 20 110 38" fill="none" stroke="{beam_color}" stroke-width="4" stroke-linecap="round" />
+          <path d="M 170 38 Q 210 20 250 35" fill="none" stroke="{beam_color}" stroke-width="4" stroke-linecap="round" />
+        </g>
+        <!-- Razor-thin Eye-light slit -->
+        <line x1="0" y1="{height//2 - 20}" x2="{width}" y2="{height//2 - 20}" stroke="{beam_color}" stroke-width="3" stroke-opacity="0.4" filter="url(#glow)" />
+        """
     else:
-        # Generic Cinematic Composition Matching Shot Size
-        if shot_size in ["WS", "EWS"]:
+        # Generic Composition
+        if shot_size in ["WS", "EWS"] or "wide" in prompt_lower:
             scene_artwork_svg = f"""
             <line x1="0" y1="{2*height//3}" x2="{width}" y2="{2*height//3}" stroke="{accent}" stroke-width="1.5" stroke-opacity="0.4" />
-            <polygon points="{width//4},0 {3*width//4},0 {width},{height} {width//6},{height}" fill="{beam_color}" fill-opacity="0.08" />
+            <polygon points="{width//4},0 {3*width//4},0 {width},{height} {width//6},{height}" fill="{beam_color}" fill-opacity="0.10" />
             <g transform="translate({width//2 - 20}, {2*height//3 - 35})" fill="#030712">
               <circle cx="20" cy="12" r="8" />
               <path d="M 5 35 Q 20 20 35 35 Z" />
             </g>
             """
-        elif shot_size in ["CU", "ECU"]:
+        elif shot_size in ["CU", "ECU"] or "close-up" in prompt_lower:
             scene_artwork_svg = f"""
             <g transform="translate({width//2 - 70}, {height//2 - 60})" fill="#030712" stroke="{beam_color}" stroke-width="1.5">
               <circle cx="70" cy="45" r="38" fill="#0A111E" filter="url(#glow)" />
               <path d="M 30 110 Q 70 80 110 110 Z" fill="#030712" />
             </g>
-            <polygon points="{width},0 {width//2 + 50},{height//2} {width//2 + 50},{height} {width},{height}" fill="{beam_color}" fill-opacity="0.12" />
+            <polygon points="{width},0 {width//2 + 50},{height//2} {width//2 + 50},{height} {width},{height}" fill="{beam_color}" fill-opacity="0.15" />
             """
         else:
             scene_artwork_svg = f"""
@@ -273,10 +309,30 @@ def render_cinematic_storyboard_svg(
               <circle cx="40" cy="25" r="18" fill="#0A111E" filter="url(#glow)" />
               <path d="M 10 70 Q 40 45 70 70 Z" fill="#030712" />
             </g>
-            <polygon points="{width//4},0 {3*width//4},0 {width},{height} {width//6},{height}" fill="{beam_color}" fill-opacity="0.08" />
+            <polygon points="{width//4},0 {3*width//4},0 {width},{height} {width//6},{height}" fill="{beam_color}" fill-opacity="0.10" />
             """
 
-    clean_prompt = html.escape(prompt[:115] + ("..." if len(prompt) > 115 else ""))
+    # Add Anamorphic Horizontal Streak if requested in prompt or preset
+    anamorphic_streak_svg = ""
+    if is_anamorphic or "Fraser" in dop_preset:
+        anamorphic_streak_svg = f"""
+        <line x1="0" y1="{height//2}" x2="{width}" y2="{height//2}" stroke="{beam_color}" stroke-width="3" stroke-opacity="0.65" filter="url(#glow)" />
+        <line x1="{width//4}" y1="{height//2}" x2="{3*width//4}" y2="{height//2}" stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.85" />
+        """
+
+    # Add Atmospheric Fog / Dust Particles if requested
+    haze_particles_svg = ""
+    if is_haze:
+        haze_particles_svg = f"""
+        <g fill="{beam_color}" fill-opacity="0.3" filter="url(#glow)">
+          <circle cx="{width//5}" cy="{height//3}" r="18" />
+          <circle cx="{2*width//5}" cy="{2*height//3}" r="26" />
+          <circle cx="{3*width//5}" cy="{height//4}" r="22" />
+          <circle cx="{4*width//5}" cy="{height//2}" r="30" />
+        </g>
+        """
+
+    clean_prompt = html.escape(prompt[:120] + ("..." if len(prompt) > 120 else ""))
 
     svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="100%" height="100%">
   <defs>
@@ -312,6 +368,12 @@ def render_cinematic_storyboard_svg(
 
   <!-- Prompt-Driven Scene Artwork -->
   {scene_artwork_svg}
+
+  <!-- Atmospheric Haze & Particles -->
+  {haze_particles_svg}
+
+  <!-- Anamorphic Streak -->
+  {anamorphic_streak_svg}
 
   <!-- Atmospheric Vignette -->
   <rect width="{width}" height="{height}" fill="url(#vignette)" />

@@ -294,6 +294,43 @@ export const ScriptStudio: React.FC = () => {
     }
   };
 
+  // Update Active Camera Prompt in State
+  const handleUpdateActivePrompt = (newPrompt: string) => {
+    const currentScene = parsedScenes[selectedSceneIndex];
+    if (!currentScene || !selectedShot) return;
+
+    const updatedShots = (shotsMap[currentScene.scene_number] || []).map(s => {
+      if (s.id === selectedShot.id) {
+        const updatedCameras = (s.cameras || []).map(c => {
+          if (c.camera_letter === activeCamLetter) {
+            return { ...c, prompt: newPrompt };
+          }
+          return c;
+        });
+
+        return {
+          ...s,
+          cameras: updatedCameras,
+          storyboard: s.active_camera === activeCamLetter ? { ...s.storyboard, prompt: newPrompt } : s.storyboard
+        };
+      }
+      return s;
+    });
+
+    setShotsMap(prev => ({
+      ...prev,
+      [currentScene.scene_number]: updatedShots
+    }));
+  };
+
+  // Append Quick Prompt Modifier Keyword
+  const handleAppendPromptModifier = (modifier: string) => {
+    if (!selectedCam) return;
+    const current = selectedCam.prompt.trim();
+    const updated = current ? `${current}, ${modifier}` : modifier;
+    handleUpdateActivePrompt(updated);
+  };
+
   const currentScene = parsedScenes[selectedSceneIndex];
   const currentShots = currentScene ? shotsMap[currentScene.scene_number] || [] : [];
   const selectedShot = currentShots.find(s => s.id === selectedShotId) || currentShots[0];
@@ -1025,13 +1062,55 @@ export const ScriptStudio: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="p-2.5 bg-slate-950/80 rounded border border-slate-800 mb-3">
-                      <span className="text-[9px] font-bold uppercase text-slate-500 block mb-1">
-                        Active Camera {selectedCam?.camera_letter} Synthesized Prompt
-                      </span>
-                      <p className="text-xs text-slate-300 font-mono leading-relaxed line-clamp-3">
-                        {selectedCam?.prompt}
-                      </p>
+                    {/* Editable Active Camera Prompt Console */}
+                    <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 mb-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold uppercase text-purple-300 flex items-center gap-1.5 tracking-wider">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                          Active Camera {selectedCam?.camera_letter} Prompt (Editable)
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {selectedCam?.prompt.length || 0} chars • Ctrl+Enter to render
+                        </span>
+                      </div>
+
+                      <textarea
+                        value={selectedCam?.prompt || ''}
+                        onChange={e => handleUpdateActivePrompt(e.target.value)}
+                        onKeyDown={e => {
+                          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                            e.preventDefault();
+                            if (selectedCam) handleRegenerateCameraFrame(selectedShot, selectedCam);
+                          }
+                        }}
+                        rows={3}
+                        placeholder="Describe exact camera angle, subject emotion, action, lighting, and environment..."
+                        className="w-full bg-slate-900/90 border border-slate-700/80 rounded-lg p-2.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 resize-none leading-relaxed shadow-inner"
+                      />
+
+                      {/* Quick-Add Prompt Modifier Chips */}
+                      <div className="flex flex-wrap gap-1 pt-0.5">
+                        {[
+                          'Volumetric Haze',
+                          'Chiaroscuro Rim Light',
+                          'Anamorphic Streak Flare',
+                          'Extreme Close-Up Eyes',
+                          'Rain Reflections',
+                          'Low-Key Noir Shadows',
+                          'Warm Amber Glow',
+                          'Neon Cyan Rim Light',
+                          '35mm Authentic Grain'
+                        ].map(tag => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => handleAppendPromptModifier(tag)}
+                            className="px-2 py-0.5 text-[9px] font-semibold bg-slate-800/80 hover:bg-purple-900/40 text-slate-300 hover:text-purple-200 rounded border border-slate-700 hover:border-purple-500/50 transition"
+                          >
+                            + {tag}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
@@ -1039,10 +1118,12 @@ export const ScriptStudio: React.FC = () => {
                     <button
                       onClick={() => selectedCam && handleRegenerateCameraFrame(selectedShot, selectedCam)}
                       disabled={generatingCamMap[`${selectedShot.id}_${selectedCam?.camera_letter}`]}
-                      className="px-3.5 py-1.5 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md border border-slate-700 transition flex items-center gap-1.5"
+                      className="px-4 py-2 text-xs font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-lg shadow-lg shadow-purple-600/30 transition flex items-center gap-2 disabled:opacity-50"
                     >
-                      <RotateCw className={`w-3.5 h-3.5 text-purple-400 ${generatingCamMap[`${selectedShot.id}_${selectedCam?.camera_letter}`] ? 'animate-spin' : ''}`} />
-                      Regenerate Camera {selectedCam?.camera_letter} Concept
+                      <Sparkles className={`w-3.5 h-3.5 text-amber-300 ${generatingCamMap[`${selectedShot.id}_${selectedCam?.camera_letter}`] ? 'animate-spin' : ''}`} />
+                      {generatingCamMap[`${selectedShot.id}_${selectedCam?.camera_letter}`]
+                        ? `Generating Camera ${selectedCam?.camera_letter} Concept...`
+                        : `Execute & Render Camera ${selectedCam?.camera_letter} AI Concept`}
                     </button>
 
                     <button
