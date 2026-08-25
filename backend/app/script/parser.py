@@ -217,3 +217,60 @@ def parse_fountain_screenplay(script_text: str, title: str = "Screenplay") -> Sc
         scenes=scenes,
         raw_text=script_text
     )
+
+
+def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
+    """
+    Extracts text from PDF bytes using pdfplumber, pypdf, or PyPDF2 with fallback.
+    """
+    import io
+    extracted_text = []
+
+    # 1. Try pdfplumber
+    try:
+        import pdfplumber
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            for page in pdf.pages:
+                t = page.extract_text()
+                if t:
+                    extracted_text.append(t)
+        if extracted_text:
+            return "\n\n".join(extracted_text)
+    except Exception:
+        pass
+
+    # 2. Try pypdf / PyPDF2
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        for page in reader.pages:
+            t = page.extract_text()
+            if t:
+                extracted_text.append(t)
+        if extracted_text:
+            return "\n\n".join(extracted_text)
+    except Exception:
+        pass
+
+    # 3. Fallback: string decode with ignore
+    try:
+        return pdf_bytes.decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
+def parse_screenplay_file(file_bytes: bytes, filename: str) -> Screenplay:
+    """
+    Parses an uploaded screenplay file (.fountain, .txt, .pdf, .fdx).
+    """
+    clean_name = filename.rsplit(".", 1)[0].replace("_", " ").replace("-", " ").title()
+    if filename.lower().endswith(".pdf"):
+        text = extract_text_from_pdf_bytes(file_bytes)
+    else:
+        try:
+            text = file_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            text = file_bytes.decode("latin-1", errors="ignore")
+
+    return parse_fountain_screenplay(text, title=clean_name)
+

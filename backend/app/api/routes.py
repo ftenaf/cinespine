@@ -1519,7 +1519,7 @@ def get_prometheus_metrics():
 # Script Breakdown, DoP Cinematography & Previz Storyboard Endpoints
 # ---------------------------------------------------------------------------
 
-from backend.app.script.parser import parse_fountain_screenplay, Screenplay, ScreenplayScene
+from backend.app.script.parser import parse_fountain_screenplay, parse_screenplay_file, Screenplay, ScreenplayScene
 from backend.app.script.dop_presets import DOP_MASTER_PRESETS, resolve_dop_specification
 from backend.app.script.breakdown_engine import breakdown_scene_to_shots, ShotProposal
 from backend.app.script.storyboard_generator import render_cinematic_storyboard_svg
@@ -1557,6 +1557,15 @@ def parse_script(req: ScriptParseRequest):
     Parses raw Fountain / standard screenplay text into structured scenes.
     """
     return parse_fountain_screenplay(req.script_text, req.title)
+
+
+@router.post("/script/upload", response_model=Screenplay)
+async def upload_script_file(file: UploadFile = File(...)):
+    """
+    Uploads and parses a screenplay file (.fountain, .txt, .pdf, .fdx) into structured scenes.
+    """
+    file_bytes = await file.read()
+    return parse_screenplay_file(file_bytes=file_bytes, filename=file.filename or "Screenplay")
 
 
 @router.get("/script/presets")

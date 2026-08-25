@@ -187,6 +187,7 @@ def test_api_generate_storyboard_endpoint(client):
         "focal_length": 85,
         "aperture": "T1.4",
         "dop_preset": "Greig Fraser",
+        "camera_letter": "A",
         "aspect_ratio": "2.39:1"
     }
     res = client.post("/api/script/generate-storyboard", json=req)
@@ -194,3 +195,15 @@ def test_api_generate_storyboard_endpoint(client):
     data = res.json()
     assert data["shot_id"] == "SHOT-27-01"
     assert data["image_url"].startswith("data:image/svg+xml;base64,")
+
+
+def test_api_script_upload_endpoint(client):
+    # Upload Fountain script file
+    files = {"file": ("DemoProduction_Draft1.fountain", SAMPLE_FOUNTAIN_SCRIPT.encode("utf-8"), "text/plain")}
+    res = client.post("/api/script/upload", files=files)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["title"] == "La DemoProduction"
+    assert data["scenes_count"] == 2
+    assert len(data["scenes"]) == 2
+

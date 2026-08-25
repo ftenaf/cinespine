@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Film,
   Camera,
@@ -10,7 +10,9 @@ import {
   Maximize2,
   FileText,
   LayoutGrid,
-  Monitor
+  Monitor,
+  Upload,
+  CheckCircle2
 } from 'lucide-react';
 
 export interface DialogueLine {
@@ -297,8 +299,71 @@ export const ScriptStudio: React.FC = () => {
   const selectedShot = currentShots.find(s => s.id === selectedShotId) || currentShots[0];
   const selectedCam = selectedShot?.cameras?.find(c => c.camera_letter === activeCamLetter) || selectedShot?.cameras?.[0];
 
+  // Script Upload State
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+
+  // File Upload Handler (.fountain, .txt, .pdf, .fdx)
+  const handleFileUpload = async (file: File) => {
+    if (!file) return;
+    setIsUploading(true);
+    setUploadedFileName(file.name);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/script/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.raw_text) setScriptText(data.raw_text);
+        if (data.title) setScriptTitle(data.title);
+        setParsedScenes(data.scenes || []);
+        setSelectedSceneIndex(0);
+        setShotsMap({});
+        setSelectedShotId(null);
+      } else {
+        // Fallback: read text directly in browser
+        const text = await file.text();
+        setScriptText(text);
+        handleParseScript(text, file.name.replace(/\.[^/.]+$/, ''));
+      }
+    } catch (err) {
+      console.error('File upload failed:', err);
+      // Fallback local reader
+      try {
+        const text = await file.text();
+        setScriptText(text);
+        handleParseScript(text, file.name.replace(/\.[^/.]+$/, ''));
+      } catch (readErr) {
+        console.error('Local text read failed:', readErr);
+      }
+    } finally {
+      setIsUploading(false);
+      setIsDragging(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-[#090D16] text-slate-100 font-sans">
+      {/* Hidden File Input for Screenplay Upload */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept=".fountain,.txt,.pdf,.fdx"
+        onChange={e => {
+          const file = e.target.files?.[0];
+          if (file) handleFileUpload(file);
+        }}
+        className="hidden"
+      />
+
       {/* Studio Header Toolbar */}
       <div className="flex items-center justify-between px-6 py-3.5 bg-[#0F172A]/90 border-b border-slate-800 backdrop-blur shrink-0">
         <div className="flex items-center gap-3">
@@ -311,6 +376,12 @@ export const ScriptStudio: React.FC = () => {
               <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-full">
                 Multi-Camera (A, B, C) Previz
               </span>
+              {uploadedFileName && (
+                <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-md">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  {uploadedFileName}
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-400">
               Fountain Screenplay Ingestion • AI Scene-to-Shot Multi-Cam Breakdown • Tri-Modal DoP Cinematography • Prompt-Driven Visual Previz
@@ -320,8 +391,19 @@ export const ScriptStudio: React.FC = () => {
 
         {/* Action Controls Top Bar */}
         <div className="flex items-center gap-2.5">
+          {/* Upload Script File Button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="px-3 py-1.5 text-xs font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-200 rounded-md border border-purple-500/40 transition flex items-center gap-1.5 shadow-sm"
+          >
+            <Upload className={`w-3.5 h-3.5 text-purple-400 ${isUploading ? 'animate-bounce' : ''}`} />
+            {isUploading ? 'Uploading & Parsing...' : 'Upload Script (.fountain/.pdf)'}
+          </button>
+
           <button
             onClick={() => {
+              setUploadedFileName(null);
               setScriptText(DEMO_FOUNTAIN_SCRIPT);
               handleParseScript(DEMO_FOUNTAIN_SCRIPT);
             }}
@@ -427,17 +509,56 @@ export const ScriptStudio: React.FC = () => {
             })}
           </div>
 
-          {/* Raw Fountain / Screenplay Text Editor */}
-          <div className="flex-1 flex flex-col overflow-hidden p-3">
-            <label className="text-[11px] font-semibold text-slate-400 mb-1.5 flex items-center justify-between">
-              <span>Fountain Editor</span>
-              <span className="text-[10px] text-slate-500">Live Auto-format</span>
-            </label>
+          {/* Raw Fountain / Screenplay Text Editor & Drag-Drop Zone */}
+          <div
+            onDragOver={e => {
+              e.preventDefault();
+              setIsDragging(true);
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={e => {
+              e.preventDefault();
+              setIsDragging(false);
+              const file = e.dataTransfer.files?.[0];
+              if (file) handleFileUpload(file);
+            }}
+            className="flex-1 flex flex-col overflow-hidden p-3 relative"
+          >
+            {/* Drag & Drop Active Overlay */}
+            {isDragging && (
+              <div className="absolute inset-3 z-30 bg-purple-950/95 border-2 border-dashed border-purple-400 rounded-lg flex flex-col items-center justify-center backdrop-blur-sm pointer-events-none p-4 text-center">
+                <Upload className="w-9 h-9 text-purple-300 animate-bounce mb-2" />
+                <span className="text-xs font-bold text-white">Drop Screenplay File to Parse</span>
+                <span className="text-[10px] text-purple-300 mt-0.5">Supports .fountain, .txt, .pdf, .fdx</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between mb-1.5 shrink-0">
+              <label className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
+                <span>Fountain Editor</span>
+                {uploadedFileName && (
+                  <span className="text-[9px] font-mono text-emerald-400 truncate max-w-[120px]">
+                    ({uploadedFileName})
+                  </span>
+                )}
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-[10px] text-purple-400 hover:text-purple-300 flex items-center gap-1 font-semibold"
+                >
+                  <Upload className="w-2.5 h-2.5" />
+                  Import file
+                </button>
+                <span className="text-[10px] text-slate-500">• Auto-format</span>
+              </div>
+            </div>
+
             <textarea
               value={scriptText}
               onChange={e => setScriptText(e.target.value)}
               className="flex-1 w-full bg-slate-950/80 border border-slate-800 rounded-md p-3 text-xs font-mono text-slate-300 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 resize-none leading-relaxed"
-              placeholder="Type or paste screenplay in standard Fountain syntax..."
+              placeholder="Type, paste, or drop a screenplay file (.fountain, .pdf, .txt)..."
             />
           </div>
         </div>
