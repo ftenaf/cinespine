@@ -4,10 +4,12 @@ import uuid
 import hashlib
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Response, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from backend.app.streaming.models import EventEnvelope, AxisType, DepartmentType, DocumentType
 from backend.app.streaming.bus import EventBus
 from backend.app.streaming.dispatcher import IngestionDispatcher
+from backend.app.streaming.broker import event_broker, SpineLiveEvent
 from backend.app.spine.writer import SpineWriter
 from backend.app.reconciliation.engine import ReconciliationEngine
 from backend.app.agents.mcp_server import ClickHouseMCPServer, GeminiDiscrepancyAssistant
@@ -110,6 +112,33 @@ def health_check():
     return {"status": "ok", "version": "0.1.0", "service": "cinespine"}
 
 
+@router.get("/events/subscribe")
+async def subscribe_events(
+    production_id: Optional[str] = "ALL",
+    shoot_day: Optional[str] = "ALL",
+    user_handle: Optional[str] = None,
+):
+    """
+    Server-Sent Events (SSE) stream endpoint for real-time collaboration.
+    Clients receive instant broadcasts when paperwork is ingested, requirements are updated,
+    or discrepancies are resolved.
+    """
+    return StreamingResponse(
+        event_broker.stream_events(
+            production_id=production_id if production_id != "ALL" else None,
+            shoot_day=shoot_day if shoot_day != "ALL" else None,
+            user_handle=user_handle,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+
 @router.get("/productions")
 def get_productions():
     return spine_writer.list_productions()
@@ -205,9 +234,24 @@ def delete_document(doc_id: str):
     """
     Deletes an uploaded document and removes its ingested events from the spine.
     """
+    doc = spine_writer.get_document(doc_id)
     deleted = spine_writer.delete_document(doc_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    prod = doc.get("production_id", "DEMO_PRODUCTION") if doc else "DEMO_PRODUCTION"
+    s_day = doc.get("shoot_day", "31") if doc else "31"
+    fn = doc.get("filename", doc_id) if doc else doc_id
+    event_broker.publish_sync(SpineLiveEvent(
+        event_type="DOCUMENT_DELETED",
+        production_id=prod,
+        shoot_day=s_day,
+        actor_handle="@user",
+        target_type="document",
+        target_id=doc_id,
+        target_label=fn,
+        summary=f"Deleted document '{fn}'",
+    ))
     return {"status": "DELETED", "doc_id": doc_id}
 
 
@@ -267,6 +311,18 @@ def upload_document(req: UploadRequest):
     topic = f"production.raw.{department.value}"
     event_bus.publish(topic, envelope)
 
+    event_broker.publish_sync(SpineLiveEvent(
+        event_type="DOCUMENT_INGESTED",
+        production_id=envelope.production_id,
+        shoot_day=envelope.shoot_day,
+        actor_handle=req.metadata.get("actor_handle", "@user"),
+        target_type="document",
+        target_id=doc_id,
+        target_label=filename,
+        summary=f"Ingested {filename} [{department.value.upper()}]",
+        data={"filename": filename, "department": department.value, "doc_type": doc_type.value},
+    ))
+
     return {
         "status": "INGESTED",
         "doc_id": doc_id,
@@ -278,6 +334,7 @@ def upload_document(req: UploadRequest):
         "detected_department": department.value,
         "detected_axis": axis.value,
     }
+
 
 
 @router.post("/upload/file")
@@ -354,6 +411,18 @@ async def upload_document_file(
 
     topic = f"production.raw.{classification.department.value}"
     event_bus.publish(topic, envelope)
+
+    event_broker.publish_sync(SpineLiveEvent(
+        event_type="DOCUMENT_INGESTED",
+        production_id=final_prod,
+        shoot_day=final_day,
+        actor_handle="@user",
+        target_type="document",
+        target_id=doc_id,
+        target_label=filename,
+        summary=f"Ingested file {filename} [{classification.department.value.upper()}]",
+        data={"filename": filename, "department": classification.department.value, "doc_type": classification.doc_type.value},
+    ))
 
     return {
         "status": "INGESTED",
@@ -494,6 +563,18 @@ def seed_real_day_data(req: SeedRequest):
         topic = f"production.raw.{classification.department.value}"
         event_bus.publish(topic, envelope)
         ingested_files.append(fn)
+
+    event_broker.publish_sync(SpineLiveEvent(
+        event_type="DOCUMENT_INGESTED",
+        production_id=req.production_id,
+        shoot_day=req.shoot_day,
+        actor_handle="@system",
+        target_type="document",
+        target_id=f"seed_{req.shoot_day}",
+        target_label=f"Day {req.shoot_day} Demo Data",
+        summary=f"Seeded {len(ingested_files)} paperwork files for Day {req.shoot_day}",
+        data={"files": ingested_files},
+    ))
 
     return {"status": "SEEDED", "ingested_count": len(ingested_files), "files": ingested_files}
 
@@ -818,6 +899,19 @@ def resolve_discrepancy(discrepancy_id: str, req: ResolveDiscrepancyRequest):
         "metadata": {"discrepancy_id": discrepancy_id, "entity_id": req.entity_id},
         "timestamp": resolution["resolved_at"],
     })
+
+    event_broker.publish_sync(SpineLiveEvent(
+        event_type="DISCREPANCY_RESOLVED",
+        production_id=req.production_id,
+        shoot_day=req.shoot_day,
+        actor_handle=req.resolved_by or "@assistant_editor",
+        target_type="discrepancy",
+        target_id=discrepancy_id,
+        target_label=f"Discrepancy on {req.entity_id}",
+        summary=f"Resolved discrepancy on {req.entity_id}: Assigned to {req.resolved_card or 'manual'}",
+        data={"discrepancy_id": discrepancy_id, "entity_id": req.entity_id, "resolved_card": req.resolved_card},
+    ))
+
     return {
         "status": "RESOLVED",
         "discrepancy_id": discrepancy_id,
@@ -831,7 +925,18 @@ def unresolve_discrepancy(discrepancy_id: str):
     Re-opens an active discrepancy by clearing its resolution record.
     """
     deleted = spine_writer.delete_discrepancy_resolution(discrepancy_id)
+    event_broker.publish_sync(SpineLiveEvent(
+        event_type="DISCREPANCY_UNRESOLVED",
+        production_id="ALL",
+        shoot_day="ALL",
+        actor_handle="@assistant_editor",
+        target_type="discrepancy",
+        target_id=discrepancy_id,
+        target_label=f"Discrepancy {discrepancy_id}",
+        summary=f"Discrepancy re-opened ({discrepancy_id})",
+    ))
     return {"status": "UNRESOLVED", "discrepancy_id": discrepancy_id, "success": deleted}
+
 
 
 @router.get("/sequences")
@@ -1081,6 +1186,18 @@ def create_requirement(req: CreateRequirementRequest):
             "target_label": created["target_label"],
         })
 
+    event_broker.publish_sync(SpineLiveEvent(
+        event_type="REQUIREMENT_CREATED",
+        production_id=created["production_id"],
+        shoot_day=created["shoot_day"],
+        actor_handle=created["created_by"],
+        target_type=created["target_type"],
+        target_id=created["target_id"],
+        target_label=created["target_label"],
+        summary=f"New requirement '{created['title']}' assigned to {created['assigned_to']}",
+        data={"requirement_id": created["requirement_id"], "assigned_to": created["assigned_to"]},
+    ))
+
     return created
 
 
@@ -1166,6 +1283,18 @@ def resolve_requirement(requirement_id: str, body: ResolveRequirementRequest):
             "target_label": resolved["target_label"],
         })
 
+    event_broker.publish_sync(SpineLiveEvent(
+        event_type="REQUIREMENT_RESOLVED",
+        production_id=resolved["production_id"],
+        shoot_day=resolved["shoot_day"],
+        actor_handle=resolved["resolved_by"],
+        target_type=resolved["target_type"],
+        target_id=resolved["target_id"],
+        target_label=resolved["target_label"],
+        summary=f"Requirement '{resolved['title']}' marked resolved by {resolved['resolved_by']}",
+        data={"requirement_id": requirement_id, "created_by": resolved.get("created_by")},
+    ))
+
     return resolved
 
 
@@ -1174,7 +1303,18 @@ def delete_requirement(requirement_id: str):
     success = spine_writer.delete_requirement(requirement_id)
     if not success:
         raise HTTPException(status_code=404, detail="Requirement not found")
+    event_broker.publish_sync(SpineLiveEvent(
+        event_type="REQUIREMENT_DELETED",
+        production_id="ALL",
+        shoot_day="ALL",
+        actor_handle="@user",
+        target_type="requirement",
+        target_id=requirement_id,
+        target_label=requirement_id,
+        summary=f"Requirement deleted ({requirement_id})",
+    ))
     return {"status": "DELETED", "requirement_id": requirement_id}
+
 
 
 # ==========================================

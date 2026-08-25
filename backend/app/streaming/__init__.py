@@ -2,6 +2,7 @@
 from .models import EventEnvelope, AxisType, DepartmentType, DocumentType
 from .bus import EventBus
 from .dispatcher import IngestionDispatcher
+from .broker import event_broker, SpineLiveEvent, LiveEventBroker
 
 __all__ = [
     "EventEnvelope",
@@ -10,4 +11,8 @@ __all__ = [
     "DocumentType",
     "EventBus",
     "IngestionDispatcher",
+    "event_broker",
+    "SpineLiveEvent",
+    "LiveEventBroker",
 ]
+

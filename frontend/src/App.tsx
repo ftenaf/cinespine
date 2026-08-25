@@ -6,7 +6,8 @@ import {
   HardDrive, Eye, FileCode, Check, AlertCircle, Trash2,
   Image as ImageIcon, ChevronLeft, ChevronRight, LayoutGrid,
   Maximize2, ExternalLink, Video, Mic, MapPin,
-  Bell, CheckCheck, PlusCircle, ChevronDown, Send, ShieldAlert
+  Bell, CheckCheck, PlusCircle, ChevronDown, Send, ShieldAlert,
+  Radio
 } from 'lucide-react';
 import { 
   TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, SequenceRecord,
@@ -43,6 +44,10 @@ export default function App() {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [customLoginHandle, setCustomLoginHandle] = useState('');
 
+  // Real-Time Events & SSE Live Subscription State
+  const [liveSyncStatus, setLiveSyncStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
+  const [liveToast, setLiveToast] = useState<{ message: string; type?: string } | null>(null);
+
   // Notifications & Real-Time Alerts State
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
@@ -71,6 +76,7 @@ export default function App() {
   const [selectedReqForResolve, setSelectedReqForResolve] = useState<Requirement | null>(null);
   const [reqResolutionNote, setReqResolutionNote] = useState('');
   const [isResolvingReqSubmitting, setIsResolvingReqSubmitting] = useState(false);
+
 
   // Active View & Filters
   const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents'>('master');
@@ -266,6 +272,48 @@ export default function App() {
     loadSpineData();
     loadUsersAndNotifications(currentUser.handle);
   }, [selectedProductionId, selectedDay, currentUser.handle]);
+
+  // Real-time SSE Live Event Subscription
+  useEffect(() => {
+    setLiveSyncStatus('connecting');
+    const sseUrl = `/api/events/subscribe?production_id=${encodeURIComponent(selectedProductionId)}&shoot_day=${encodeURIComponent(selectedDay)}&user_handle=${encodeURIComponent(currentUser.handle)}`;
+    const eventSource = new EventSource(sseUrl);
+
+    eventSource.addEventListener('connected', () => {
+      setLiveSyncStatus('connected');
+    });
+
+    eventSource.addEventListener('message', (event) => {
+      try {
+        const liveEvent = JSON.parse(event.data);
+        if (liveEvent && liveEvent.event_type) {
+          // 1. Show floating real-time toast
+          setLiveToast({
+            message: liveEvent.summary || `Live sync: ${liveEvent.event_type}`,
+            type: liveEvent.event_type,
+          });
+          setTimeout(() => {
+            setLiveToast(null);
+          }, 4500);
+
+          // 2. Automatically refresh spine & notifications without page reload
+          loadSpineData();
+          loadUsersAndNotifications(currentUser.handle);
+        }
+      } catch (err) {
+        console.error('Error handling SSE live event:', err);
+      }
+    });
+
+    eventSource.onerror = () => {
+      setLiveSyncStatus('disconnected');
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [selectedProductionId, selectedDay, currentUser.handle]);
+
 
   const activeProduction: Production = productions.find(p => p.production_id === selectedProductionId) || {
     production_id: selectedProductionId,
@@ -570,6 +618,23 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2.5">
+          {/* Real-time Live Sync Indicator */}
+          <div 
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-mono select-none"
+            title={`Real-Time SSE Channel: ${liveSyncStatus}`}
+          >
+            <span className={`w-2 h-2 rounded-full ${
+              liveSyncStatus === 'connected'
+                ? 'bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400/80'
+                : liveSyncStatus === 'connecting'
+                ? 'bg-amber-400 animate-ping'
+                : 'bg-slate-600'
+            }`} />
+            <span className={liveSyncStatus === 'connected' ? 'text-emerald-400 font-semibold' : 'text-slate-400'}>
+              {liveSyncStatus === 'connected' ? 'Live Sync' : liveSyncStatus === 'connecting' ? 'Connecting...' : 'Offline'}
+            </span>
+          </div>
+
           <button 
             onClick={loadSpineData}
             className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition"
@@ -593,6 +658,7 @@ export default function App() {
             <Upload className="w-3.5 h-3.5" />
             Drop Paperwork
           </button>
+
 
           {/* Notifications Bell */}
           <div className="relative">
@@ -3305,6 +3371,29 @@ export default function App() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Floating Real-Time Live Sync Notification Toast */}
+      {liveToast && (
+
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 border border-purple-500/50 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5">
+          <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0">
+            <Radio className="w-4 h-4 animate-pulse" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider font-mono">Live Event</span>
+              <span className="text-[10px] text-slate-400 font-mono">• Auto-synced</span>
+            </div>
+            <p className="text-xs font-semibold text-slate-100">{liveToast.message}</p>
+          </div>
+          <button
+            onClick={() => setLiveToast(null)}
+            className="text-slate-400 hover:text-white p-1 ml-2 text-xs"
+          >
+            ✕
+          </button>
         </div>
       )}
     </div>
