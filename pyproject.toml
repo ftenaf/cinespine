@@ -39,6 +39,11 @@ testpaths = ["backend/tests"]
 pythonpath = ["."]
 python_files = ["test_*.py"]
 addopts = "-ra -q --strict-markers"
+markers = [
+    "asyncio: mark test as async",
+    "anyio: mark test as anyio",
+]
+
 
 [tool.ruff]
 line-length = 100

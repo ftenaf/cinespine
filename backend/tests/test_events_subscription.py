@@ -9,57 +9,53 @@ from backend.app.streaming.broker import LiveEventBroker, SpineLiveEvent, event_
 
 
 @pytest.fixture
-def anyio_backend():
-    return 'asyncio'
-
-
-@pytest.fixture
 def client():
     return TestClient(app)
 
 
-
-@pytest.mark.anyio
-async def test_live_event_broker_registration_and_filtering():
+def test_live_event_broker_registration_and_filtering():
     """Verify broker registers subscribers and correctly filters by production/day."""
-    broker = LiveEventBroker()
+    async def _run():
+        broker = LiveEventBroker()
+        
+        # Sub 1: Day 31 of DEMO_PRODUCTION
+        sub1 = await broker.register_subscriber(production_id="DEMO_PRODUCTION", shoot_day="31")
+        # Sub 2: Day 39 of DEMO_PRODUCTION
+        sub2 = await broker.register_subscriber(production_id="DEMO_PRODUCTION", shoot_day="39")
+        # Sub 3: ALL
+        sub3 = await broker.register_subscriber(production_id=None, shoot_day=None)
 
-    
-    # Sub 1: Day 31 of DEMO_PRODUCTION
-    sub1 = await broker.register_subscriber(production_id="DEMO_PRODUCTION", shoot_day="31")
-    # Sub 2: Day 39 of DEMO_PRODUCTION
-    sub2 = await broker.register_subscriber(production_id="DEMO_PRODUCTION", shoot_day="39")
-    # Sub 3: ALL
-    sub3 = await broker.register_subscriber(production_id=None, shoot_day=None)
+        # Event on Day 31
+        evt_d31 = SpineLiveEvent(
+            event_type="DOCUMENT_INGESTED",
+            production_id="DEMO_PRODUCTION",
+            shoot_day="31",
+            actor_handle="@director",
+            summary="Ingested ZoeLog Day 31",
+        )
+        await broker.publish(evt_d31)
 
-    # Event on Day 31
-    evt_d31 = SpineLiveEvent(
-        event_type="DOCUMENT_INGESTED",
-        production_id="DEMO_PRODUCTION",
-        shoot_day="31",
-        actor_handle="@director",
-        summary="Ingested ZoeLog Day 31",
-    )
-    await broker.publish(evt_d31)
+        # sub1 should have the event
+        assert not sub1.queue.empty()
+        e1 = sub1.queue.get_nowait()
+        assert e1.event_type == "DOCUMENT_INGESTED"
+        assert e1.shoot_day == "31"
 
-    # sub1 should have the event
-    assert not sub1.queue.empty()
-    e1 = sub1.queue.get_nowait()
-    assert e1.event_type == "DOCUMENT_INGESTED"
-    assert e1.shoot_day == "31"
+        # sub2 should NOT have the event
+        assert sub2.queue.empty()
 
-    # sub2 should NOT have the event
-    assert sub2.queue.empty()
+        # sub3 (all) should have the event
+        assert not sub3.queue.empty()
+        e3 = sub3.queue.get_nowait()
+        assert e3.event_type == "DOCUMENT_INGESTED"
 
-    # sub3 (all) should have the event
-    assert not sub3.queue.empty()
-    e3 = sub3.queue.get_nowait()
-    assert e3.event_type == "DOCUMENT_INGESTED"
+        # Cleanup
+        await broker.unregister_subscriber(sub1.subscriber_id)
+        await broker.unregister_subscriber(sub2.subscriber_id)
+        await broker.unregister_subscriber(sub3.subscriber_id)
 
-    # Cleanup
-    await broker.unregister_subscriber(sub1.subscriber_id)
-    await broker.unregister_subscriber(sub2.subscriber_id)
-    await broker.unregister_subscriber(sub3.subscriber_id)
+    asyncio.run(_run())
+
 
 
 def test_upload_and_requirement_publish_live_events(client):
