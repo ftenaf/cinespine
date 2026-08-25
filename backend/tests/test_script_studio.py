@@ -92,16 +92,22 @@ def test_scene_to_shots_breakdown():
     shots = breakdown_scene_to_shots(sc, dop_style_name="Roger Deakins", aspect_ratio="2.39:1")
     assert len(shots) >= 2
     
-    # Master setup
+    # Master setup with 3 simultaneous cameras (A, B, C)
     shot1 = shots[0]
     assert shot1.shot_size == "WS"
     assert shot1.scene_number == "27"
     assert "Deakins" in shot1.dop_spec.dop_preset
-    assert "2.39:1" in shot1.storyboard.prompt
+    assert len(shot1.cameras) == 3
+    assert shot1.cameras[0].camera_letter == "A"
+    assert shot1.cameras[1].camera_letter == "B"
+    assert shot1.cameras[2].camera_letter == "C"
+    assert "Camera A" in shot1.cameras[0].prompt
+    assert "Camera B" in shot1.cameras[1].prompt
+    assert "Camera C" in shot1.cameras[2].prompt
 
 
 def test_storyboard_svg_renderer():
-    svg_data = render_cinematic_storyboard_svg(
+    svg_data_cam_a = render_cinematic_storyboard_svg(
         prompt="Dramatic organist playing in gothic great_hall nave",
         scene_number="27",
         shot_number="1",
@@ -109,9 +115,23 @@ def test_storyboard_svg_renderer():
         focal_length=35,
         aperture="T2.8",
         dop_preset="Roger Deakins",
+        camera_letter="A",
         aspect_ratio="2.39:1"
     )
-    assert svg_data.startswith("data:image/svg+xml;base64,")
+    assert svg_data_cam_a.startswith("data:image/svg+xml;base64,")
+
+    svg_data_cam_b = render_cinematic_storyboard_svg(
+        prompt="Over-the-shoulder organist playing in gothic great_hall",
+        scene_number="27",
+        shot_number="1",
+        shot_size="OTS",
+        focal_length=50,
+        aperture="T2.0",
+        dop_preset="Roger Deakins",
+        camera_letter="B",
+        aspect_ratio="2.39:1"
+    )
+    assert svg_data_cam_b.startswith("data:image/svg+xml;base64,")
 
 
 def test_api_script_parse_endpoint(client):

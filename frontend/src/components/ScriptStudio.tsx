@@ -8,7 +8,9 @@ import {
   RotateCw,
   Download,
   Maximize2,
-  FileText
+  FileText,
+  LayoutGrid,
+  Monitor
 } from 'lucide-react';
 
 export interface DialogueLine {
@@ -44,6 +46,21 @@ export interface DoPSpecification {
   mood_notes: string;
 }
 
+export interface CameraAngleProposal {
+  id: string;
+  camera_letter: string; // "A", "B", "C"
+  camera_role: string;
+  shot_size: string;
+  focal_length: number;
+  aperture: string;
+  camera_angle: string;
+  camera_movement: string;
+  coverage_description: string;
+  prompt: string;
+  image_url?: string;
+  status: 'pending' | 'generating' | 'generated' | 'failed';
+}
+
 export interface StoryboardFrame {
   image_url?: string;
   prompt: string;
@@ -62,6 +79,8 @@ export interface ShotProposal {
   dramatic_beat: string;
   subject_description: string;
   dop_spec: DoPSpecification;
+  cameras: CameraAngleProposal[];
+  active_camera: string;
   storyboard: StoryboardFrame;
 }
 
@@ -105,10 +124,12 @@ export const ScriptStudio: React.FC = () => {
   const [selectedSceneIndex, setSelectedSceneIndex] = useState<number>(0);
   const [isParsingScript, setIsParsingScript] = useState<boolean>(false);
 
-  // Breakdown & Shots State
+  // Breakdown & Multi-Cam Shots State
   const [shotsMap, setShotsMap] = useState<Record<string, ShotProposal[]>>({});
   const [isBreakingDown, setIsBreakingDown] = useState<boolean>(false);
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
+  const [activeCamLetter, setActiveCamLetter] = useState<string>('A');
+  const [viewMode, setViewMode] = useState<'single' | 'multicam'>('single');
 
   // DoP Cinematography Controls
   const [dopMode, setDopMode] = useState<'preset' | 'matrix' | 'prompt'>('preset');
@@ -123,6 +144,7 @@ export const ScriptStudio: React.FC = () => {
   // Presets Dictionary
   const [presetsDict, setPresetsDict] = useState<Record<string, any>>({});
   const [enlargedImage, setEnlargedImage] = useState<{ url: string; prompt: string; title: string } | null>(null);
+  const [generatingCamMap, setGeneratingCamMap] = useState<Record<string, boolean>>({});
 
   // Fetch presets on mount and parse default demo
   useEffect(() => {
@@ -159,7 +181,7 @@ export const ScriptStudio: React.FC = () => {
     }
   };
 
-  // Run AI Breakdown on Current Scene
+  // Run AI Multi-Camera Breakdown on Current Scene
   const handleBreakdownCurrentScene = async () => {
     const currentScene = parsedScenes[selectedSceneIndex];
     if (!currentScene) return;
@@ -195,6 +217,7 @@ export const ScriptStudio: React.FC = () => {
         }));
         if (shots.length > 0) {
           setSelectedShotId(shots[0].id);
+          setActiveCamLetter('A');
         }
       }
     } catch (err) {
@@ -204,20 +227,24 @@ export const ScriptStudio: React.FC = () => {
     }
   };
 
-  // Regenerate Single Storyboard Frame
-  const handleRegenerateFrame = async (shot: ShotProposal) => {
+  // Regenerate Single Camera Frame
+  const handleRegenerateCameraFrame = async (shot: ShotProposal, cam: CameraAngleProposal) => {
+    const genKey = `${shot.id}_${cam.camera_letter}`;
+    setGeneratingCamMap(prev => ({ ...prev, [genKey]: true }));
+
     try {
       const res = await fetch('/api/script/generate-storyboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           shot_id: shot.id,
-          prompt: shot.storyboard.prompt,
+          camera_letter: cam.camera_letter,
+          prompt: cam.prompt,
           scene_number: shot.scene_number,
           shot_number: shot.shot_number,
-          shot_size: shot.shot_size,
-          focal_length: shot.dop_spec.focal_length,
-          aperture: shot.dop_spec.aperture,
+          shot_size: cam.shot_size,
+          focal_length: cam.focal_length,
+          aperture: cam.aperture,
           dop_preset: shot.dop_spec.dop_preset,
           aspect_ratio: aspectRatio
         })
@@ -229,17 +256,29 @@ export const ScriptStudio: React.FC = () => {
         if (currentScene && shotsMap[currentScene.scene_number]) {
           const updatedShots = shotsMap[currentScene.scene_number].map(s => {
             if (s.id === shot.id) {
+              const updatedCameras = (s.cameras || []).map(c => {
+                if (c.camera_letter === cam.camera_letter) {
+                  return { ...c, image_url: data.image_url, status: 'generated' as const };
+                }
+                return c;
+              });
+
+              const primaryCam = updatedCameras.find(c => c.camera_letter === activeCamLetter) || updatedCameras[0];
+
               return {
                 ...s,
+                cameras: updatedCameras,
                 storyboard: {
                   ...s.storyboard,
-                  image_url: data.image_url,
+                  image_url: primaryCam?.image_url || data.image_url,
+                  prompt: primaryCam?.prompt || cam.prompt,
                   status: 'generated' as const
                 }
               };
             }
             return s;
           });
+
           setShotsMap(prev => ({
             ...prev,
             [currentScene.scene_number]: updatedShots
@@ -247,13 +286,16 @@ export const ScriptStudio: React.FC = () => {
         }
       }
     } catch (err) {
-      console.error('Failed to regenerate storyboard frame:', err);
+      console.error('Failed to regenerate camera frame:', err);
+    } finally {
+      setGeneratingCamMap(prev => ({ ...prev, [genKey]: false }));
     }
   };
 
   const currentScene = parsedScenes[selectedSceneIndex];
   const currentShots = currentScene ? shotsMap[currentScene.scene_number] || [] : [];
   const selectedShot = currentShots.find(s => s.id === selectedShotId) || currentShots[0];
+  const selectedCam = selectedShot?.cameras?.find(c => c.camera_letter === activeCamLetter) || selectedShot?.cameras?.[0];
 
   return (
     <div className="flex flex-col h-full bg-[#090D16] text-slate-100 font-sans">
@@ -267,11 +309,11 @@ export const ScriptStudio: React.FC = () => {
             <div className="flex items-center gap-2">
               <h1 className="text-base font-bold text-white tracking-wide">Screenplay &amp; Visual Director Studio</h1>
               <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-full">
-                AI Breakdown &amp; Previz
+                Multi-Camera (A, B, C) Previz
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Fountain Screenplay Ingestion • AI Scene-to-Shot Breakdown • Tri-Modal DoP Cinematography • Generative Storyboard Previz
+              Fountain Screenplay Ingestion • AI Scene-to-Shot Multi-Cam Breakdown • Tri-Modal DoP Cinematography • Prompt-Driven Visual Previz
             </p>
           </div>
         </div>
@@ -315,12 +357,12 @@ export const ScriptStudio: React.FC = () => {
             {isBreakingDown ? (
               <>
                 <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                Analyzing Scene...
+                Analyzing Scene Multi-Cam...
               </>
             ) : (
               <>
                 <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                Propose Shot Breakdown
+                Propose Multi-Cam Breakdown
               </>
             )}
           </button>
@@ -376,7 +418,7 @@ export const ScriptStudio: React.FC = () => {
                     </span>
                     {hasShots && (
                       <span className="px-1.5 py-0.2 text-[9px] font-bold bg-emerald-500/20 text-emerald-300 rounded">
-                        {shotsMap[sc.scene_number].length} shots
+                        {shotsMap[sc.scene_number].length} setups (3-Cam)
                       </span>
                     )}
                   </div>
@@ -407,7 +449,7 @@ export const ScriptStudio: React.FC = () => {
           <div className="px-4 py-2.5 bg-slate-900/60 border-b border-slate-800 flex items-center justify-between shrink-0">
             <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
               <Camera className="w-3.5 h-3.5 text-indigo-400" />
-              2. Proposed Shot List ({currentShots.length} Setups)
+              2. Proposed Setups ({currentShots.length})
             </span>
             {currentScene && (
               <span className="text-[11px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
@@ -447,7 +489,7 @@ export const ScriptStudio: React.FC = () => {
                 </div>
                 <h4 className="text-xs font-bold text-slate-200 mb-1">No Shots Proposed Yet</h4>
                 <p className="text-xs text-slate-500 mb-4 max-w-[240px]">
-                  Click &quot;Propose Shot Breakdown&quot; to divide Scene {currentScene?.scene_number || '1'} into camera setups, dramatic beats, and technical specs.
+                  Click &quot;Propose Multi-Cam Breakdown&quot; to divide Scene {currentScene?.scene_number || '1'} into 3-camera coverage setups, dramatic beats, and technical specs.
                 </p>
                 <button
                   onClick={handleBreakdownCurrentScene}
@@ -455,7 +497,7 @@ export const ScriptStudio: React.FC = () => {
                   className="px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition shadow-md flex items-center gap-1.5"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  Generate Shot Breakdown
+                  Generate Multi-Cam Breakdown
                 </button>
               </div>
             ) : (
@@ -492,11 +534,41 @@ export const ScriptStudio: React.FC = () => {
                       {shot.dramatic_beat || shot.subject_description}
                     </p>
 
+                    {/* Multi-Camera Angle Pill Grid (A, B, C) */}
+                    <div className="grid grid-cols-3 gap-1.5 mb-2">
+                      {(shot.cameras || []).map(cam => {
+                        const isCamActive = isSelected && activeCamLetter === cam.camera_letter;
+                        return (
+                          <div
+                            key={cam.camera_letter}
+                            onClick={e => {
+                              e.stopPropagation();
+                              setSelectedShotId(shot.id);
+                              setActiveCamLetter(cam.camera_letter);
+                            }}
+                            className={`p-1.5 rounded text-left border transition ${
+                              isCamActive
+                                ? 'bg-indigo-600/30 border-indigo-400 text-white'
+                                : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between text-[10px] font-bold">
+                              <span className={isCamActive ? 'text-amber-300' : 'text-slate-300'}>Cam {cam.camera_letter}</span>
+                              <span className="font-mono text-[9px] text-purple-300">{cam.shot_size}</span>
+                            </div>
+                            <div className="text-[9px] font-mono truncate text-slate-400 mt-0.5">
+                              {cam.focal_length}mm • {cam.aperture}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
                     {/* Technical Lens & Preset Badge */}
                     <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 bg-slate-950/60 px-2.5 py-1.5 rounded border border-slate-800/60">
-                      <span className="text-purple-300">{shot.dop_spec.focal_length}mm • {shot.dop_spec.aperture}</span>
-                      <span className="text-slate-400">{shot.dop_spec.dop_preset}</span>
+                      <span className="text-purple-300">{shot.dop_spec.dop_preset}</span>
                       <span className="text-emerald-400 font-bold">{shot.dop_spec.lighting_ratio}</span>
+                      <span className="text-amber-400">{shot.dop_spec.color_temperature_k}K</span>
                     </div>
                   </div>
                 );
@@ -511,10 +583,36 @@ export const ScriptStudio: React.FC = () => {
         <div className="col-span-5 flex flex-col h-full bg-[#080C14] overflow-hidden">
           {/* DoP Configuration Header & Mode Switcher */}
           <div className="px-4 py-2.5 bg-slate-900/60 border-b border-slate-800 flex items-center justify-between shrink-0">
-            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Sliders className="w-3.5 h-3.5 text-pink-400" />
-              3. DoP Cinematography &amp; Storyboard Previz
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Sliders className="w-3.5 h-3.5 text-pink-400" />
+                3. DoP Cinematography &amp; Previz
+              </span>
+              
+              {/* Single Cam vs Multi-Cam Grid Toggle */}
+              {selectedShot && (
+                <div className="flex items-center bg-slate-950 border border-slate-800 rounded p-0.5 ml-2">
+                  <button
+                    onClick={() => setViewMode('single')}
+                    className={`p-1 rounded text-[10px] font-bold flex items-center gap-1 ${
+                      viewMode === 'single' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                    title="Single Camera Inspector"
+                  >
+                    <Monitor className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => setViewMode('multicam')}
+                    className={`p-1 rounded text-[10px] font-bold flex items-center gap-1 ${
+                      viewMode === 'multicam' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                    title="3-Camera Multi-View Grid"
+                  >
+                    <LayoutGrid className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Tri-Modal Switcher */}
             <div className="flex items-center bg-slate-950 border border-slate-800 rounded-md p-0.5">
@@ -668,38 +766,113 @@ export const ScriptStudio: React.FC = () => {
           <div className="flex-1 p-4 overflow-y-auto flex flex-col">
             {selectedShot ? (
               <div className="flex-1 flex flex-col bg-slate-950/80 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
-                {/* Concept Frame Render Display */}
-                <div className="relative w-full bg-black flex items-center justify-center p-3 group">
-                  {selectedShot.storyboard.image_url ? (
-                    <div className="relative w-full overflow-hidden rounded-lg border border-slate-800 shadow-inner">
-                      <img
-                        src={selectedShot.storyboard.image_url}
-                        alt={selectedShot.shot_name}
-                        className="w-full object-contain cursor-pointer transition transform group-hover:scale-[1.01]"
-                        onClick={() => setEnlargedImage({
-                          url: selectedShot.storyboard.image_url!,
-                          prompt: selectedShot.storyboard.prompt,
-                          title: `SC ${selectedShot.scene_number} / SHOT ${selectedShot.shot_number} - ${selectedShot.shot_name}`
-                        })}
-                      />
-                      <button
-                        onClick={() => setEnlargedImage({
-                          url: selectedShot.storyboard.image_url!,
-                          prompt: selectedShot.storyboard.prompt,
-                          title: `SC ${selectedShot.scene_number} / SHOT ${selectedShot.shot_number} - ${selectedShot.shot_name}`
-                        })}
-                        className="absolute bottom-3 right-3 p-1.5 bg-black/70 hover:bg-black text-white rounded-md border border-slate-700 opacity-0 group-hover:opacity-100 transition shadow"
-                      >
-                        <Maximize2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="w-full aspect-[2.39/1] bg-slate-900 flex flex-col items-center justify-center border border-dashed border-slate-800 rounded-lg">
-                      <Film className="w-8 h-8 text-slate-600 mb-2" />
-                      <span className="text-xs text-slate-500">No Previz Rendered</span>
-                    </div>
-                  )}
+                
+                {/* Multi-Camera Angle Selector Tabs */}
+                <div className="px-4 py-2 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-1.5">
+                    {(selectedShot.cameras || []).map(cam => {
+                      const isCamActive = activeCamLetter === cam.camera_letter;
+                      return (
+                        <button
+                          key={cam.camera_letter}
+                          onClick={() => {
+                            setActiveCamLetter(cam.camera_letter);
+                            setViewMode('single');
+                          }}
+                          className={`px-3 py-1 rounded-md text-xs font-bold transition flex items-center gap-1.5 ${
+                            isCamActive
+                              ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                              : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+                          }`}
+                        >
+                          <span>Camera {cam.camera_letter}</span>
+                          <span className="text-[10px] font-mono font-normal opacity-80">({cam.shot_size})</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <span className="text-[11px] font-semibold text-purple-300 truncate max-w-[200px]">
+                    {selectedCam?.camera_role}
+                  </span>
                 </div>
+
+                {/* VIEW MODE: 3-CAMERA MULTI-VIEW GRID */}
+                {viewMode === 'multicam' ? (
+                  <div className="p-3 grid grid-cols-3 gap-2 bg-black flex-1 overflow-y-auto">
+                    {(selectedShot.cameras || []).map(cam => {
+                      const genKey = `${selectedShot.id}_${cam.camera_letter}`;
+                      const isGen = generatingCamMap[genKey];
+                      return (
+                        <div key={cam.camera_letter} className="flex flex-col bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+                          <div className="px-2 py-1 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-[10px] font-bold">
+                            <span className="text-amber-400">Camera {cam.camera_letter}</span>
+                            <span className="text-purple-300">{cam.shot_size} • {cam.focal_length}mm</span>
+                          </div>
+                          <div className="relative flex-1 bg-black flex items-center justify-center p-1">
+                            {cam.image_url ? (
+                              <img
+                                src={cam.image_url}
+                                alt={`Camera ${cam.camera_letter}`}
+                                className="w-full h-auto object-contain rounded cursor-pointer"
+                                onClick={() => setEnlargedImage({
+                                  url: cam.image_url!,
+                                  prompt: cam.prompt,
+                                  title: `SC ${selectedShot.scene_number} / SH ${selectedShot.shot_number} • CAM ${cam.camera_letter} (${cam.camera_role})`
+                                })}
+                              />
+                            ) : (
+                              <div className="text-center p-4 text-xs text-slate-500">No Image</div>
+                            )}
+                          </div>
+                          <div className="p-2 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between">
+                            <span className="text-[9px] text-slate-400 truncate">{cam.camera_role}</span>
+                            <button
+                              onClick={() => handleRegenerateCameraFrame(selectedShot, cam)}
+                              disabled={isGen}
+                              className="p-1 bg-slate-800 hover:bg-slate-700 text-purple-300 rounded text-[10px]"
+                            >
+                              <RotateCw className={`w-3 h-3 ${isGen ? 'animate-spin' : ''}`} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* VIEW MODE: SINGLE CAMERA INSPECTOR */
+                  <div className="relative w-full bg-black flex items-center justify-center p-3 group">
+                    {selectedCam?.image_url ? (
+                      <div className="relative w-full overflow-hidden rounded-lg border border-slate-800 shadow-inner">
+                        <img
+                          src={selectedCam.image_url}
+                          alt={selectedShot.shot_name}
+                          className="w-full object-contain cursor-pointer transition transform group-hover:scale-[1.01]"
+                          onClick={() => setEnlargedImage({
+                            url: selectedCam.image_url!,
+                            prompt: selectedCam.prompt,
+                            title: `SC ${selectedShot.scene_number} / SH ${selectedShot.shot_number} • CAM ${selectedCam.camera_letter} - ${selectedCam.camera_role}`
+                          })}
+                        />
+                        <button
+                          onClick={() => setEnlargedImage({
+                            url: selectedCam.image_url!,
+                            prompt: selectedCam.prompt,
+                            title: `SC ${selectedShot.scene_number} / SH ${selectedShot.shot_number} • CAM ${selectedCam.camera_letter} - ${selectedCam.camera_role}`
+                          })}
+                          className="absolute bottom-3 right-3 p-1.5 bg-black/70 hover:bg-black text-white rounded-md border border-slate-700 opacity-0 group-hover:opacity-100 transition shadow"
+                        >
+                          <Maximize2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-full aspect-[2.39/1] bg-slate-900 flex flex-col items-center justify-center border border-dashed border-slate-800 rounded-lg">
+                        <Film className="w-8 h-8 text-slate-600 mb-2" />
+                        <span className="text-xs text-slate-500">No Previz Rendered</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Shot Metadata & Regenerate Controls */}
                 <div className="p-4 bg-slate-900/50 border-t border-slate-800 flex-1 flex flex-col justify-between">
@@ -707,7 +880,7 @@ export const ScriptStudio: React.FC = () => {
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                          SCENE {selectedShot.scene_number} • SHOT {selectedShot.shot_number}
+                          SCENE {selectedShot.scene_number} • SHOT {selectedShot.shot_number} • CAM {selectedCam?.camera_letter}
                         </span>
                         <span className="text-xs font-bold text-white">{selectedShot.shot_name}</span>
                       </div>
@@ -718,8 +891,8 @@ export const ScriptStudio: React.FC = () => {
 
                     <div className="grid grid-cols-3 gap-2 mb-3 text-[11px] font-mono">
                       <div className="p-2 bg-slate-950/60 rounded border border-slate-800">
-                        <span className="text-slate-500 block text-[9px] uppercase font-sans">Optics</span>
-                        <span className="text-slate-200 font-bold">{selectedShot.dop_spec.focal_length}mm {selectedShot.dop_spec.aperture}</span>
+                        <span className="text-slate-500 block text-[9px] uppercase font-sans">Camera &amp; Optics</span>
+                        <span className="text-slate-200 font-bold">{selectedCam?.focal_length}mm {selectedCam?.aperture} • Cam {selectedCam?.camera_letter}</span>
                       </div>
                       <div className="p-2 bg-slate-950/60 rounded border border-slate-800">
                         <span className="text-slate-500 block text-[9px] uppercase font-sans">Lighting &amp; Temp</span>
@@ -732,20 +905,23 @@ export const ScriptStudio: React.FC = () => {
                     </div>
 
                     <div className="p-2.5 bg-slate-950/80 rounded border border-slate-800 mb-3">
-                      <span className="text-[9px] font-bold uppercase text-slate-500 block mb-1">Synthesized Generative Image Prompt</span>
+                      <span className="text-[9px] font-bold uppercase text-slate-500 block mb-1">
+                        Active Camera {selectedCam?.camera_letter} Synthesized Prompt
+                      </span>
                       <p className="text-xs text-slate-300 font-mono leading-relaxed line-clamp-3">
-                        {selectedShot.storyboard.prompt}
+                        {selectedCam?.prompt}
                       </p>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
                     <button
-                      onClick={() => handleRegenerateFrame(selectedShot)}
+                      onClick={() => selectedCam && handleRegenerateCameraFrame(selectedShot, selectedCam)}
+                      disabled={generatingCamMap[`${selectedShot.id}_${selectedCam?.camera_letter}`]}
                       className="px-3.5 py-1.5 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md border border-slate-700 transition flex items-center gap-1.5"
                     >
-                      <RotateCw className="w-3.5 h-3.5 text-purple-400" />
-                      Regenerate Concept Frame
+                      <RotateCw className={`w-3.5 h-3.5 text-purple-400 ${generatingCamMap[`${selectedShot.id}_${selectedCam?.camera_letter}`] ? 'animate-spin' : ''}`} />
+                      Regenerate Camera {selectedCam?.camera_letter} Concept
                     </button>
 
                     <button
@@ -753,7 +929,7 @@ export const ScriptStudio: React.FC = () => {
                         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentShots, null, 2));
                         const downloadAnchor = document.createElement('a');
                         downloadAnchor.setAttribute("href", dataStr);
-                        downloadAnchor.setAttribute("download", `CineSpine_ShotList_Scene_${currentScene?.scene_number || '1'}.json`);
+                        downloadAnchor.setAttribute("download", `CineSpine_MultiCam_ShotList_Scene_${currentScene?.scene_number || '1'}.json`);
                         document.body.appendChild(downloadAnchor);
                         downloadAnchor.click();
                         downloadAnchor.remove();
@@ -761,7 +937,7 @@ export const ScriptStudio: React.FC = () => {
                       className="px-3.5 py-1.5 text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white rounded-md transition shadow-md flex items-center gap-1.5"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      Export Previz Shot Pack
+                      Export Multi-Cam Shot Pack
                     </button>
                   </div>
                 </div>
@@ -769,7 +945,7 @@ export const ScriptStudio: React.FC = () => {
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-center p-6 border border-dashed border-slate-800 rounded-xl">
                 <Film className="w-8 h-8 text-slate-600 mb-2" />
-                <span className="text-xs text-slate-400 font-semibold">Select a shot from Column 2 to view its DoP parameters &amp; concept art frame.</span>
+                <span className="text-xs text-slate-400 font-semibold">Select a shot setup from Column 2 to view its 3-camera coverage &amp; concept art frames.</span>
               </div>
             )}
           </div>

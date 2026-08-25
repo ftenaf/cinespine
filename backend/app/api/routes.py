@@ -1547,6 +1547,7 @@ class GenerateStoryboardRequest(BaseModel):
     focal_length: int = 35
     aperture: str = "T2.8"
     dop_preset: str = "Roger Deakins"
+    camera_letter: str = "A"
     aspect_ratio: str = "2.39:1"
 
 
@@ -1574,8 +1575,8 @@ def get_dop_presets():
 @router.post("/script/breakdown")
 def generate_shot_breakdown(req: ScriptBreakdownRequest):
     """
-    Generates a cinematic shot coverage list with technical DoP parameters
-    and synthesized generative image prompts.
+    Generates a cinematic multi-camera shot coverage list (Cameras A, B, C)
+    with technical DoP parameters and synthesized generative image prompts.
     """
     shots = breakdown_scene_to_shots(
         scene=req.scene,
@@ -1585,19 +1586,29 @@ def generate_shot_breakdown(req: ScriptBreakdownRequest):
         aspect_ratio=req.aspect_ratio,
     )
 
-    # Pre-render visual concept preview for each shot
+    # Pre-render prompt-accurate visual concept previews for each camera angle (A, B, C)
     for s in shots:
-        s.storyboard.image_url = render_cinematic_storyboard_svg(
-            prompt=s.storyboard.prompt,
-            scene_number=s.scene_number,
-            shot_number=s.shot_number,
-            shot_size=s.shot_size,
-            focal_length=s.dop_spec.focal_length,
-            aperture=s.dop_spec.aperture,
-            dop_preset=s.dop_spec.dop_preset,
-            aspect_ratio=req.aspect_ratio,
-        )
-        s.storyboard.status = "generated"
+        # Pre-render individual camera angles
+        for cam in s.cameras:
+            cam.image_url = render_cinematic_storyboard_svg(
+                prompt=cam.prompt,
+                scene_number=s.scene_number,
+                shot_number=s.shot_number,
+                shot_size=cam.shot_size,
+                focal_length=cam.focal_length,
+                aperture=cam.aperture,
+                dop_preset=s.dop_spec.dop_preset,
+                camera_letter=cam.camera_letter,
+                aspect_ratio=req.aspect_ratio,
+            )
+            cam.status = "generated"
+
+        # Primary Storyboard preview corresponds to Camera A
+        cam_a = next((c for c in s.cameras if c.camera_letter == "A"), s.cameras[0] if s.cameras else None)
+        if cam_a:
+            s.storyboard.image_url = cam_a.image_url
+            s.storyboard.prompt = cam_a.prompt
+            s.storyboard.status = "generated"
 
     return {
         "scene_number": req.scene.scene_number,
@@ -1610,7 +1621,7 @@ def generate_shot_breakdown(req: ScriptBreakdownRequest):
 def generate_storyboard_frame(req: GenerateStoryboardRequest):
     """
     Generates / re-renders a photorealistic cinematic concept art frame
-    matching DoP specifications and aspect ratio.
+    specifically for Camera A, B, or C matching DoP specifications and aspect ratio.
     """
     img_b64 = render_cinematic_storyboard_svg(
         prompt=req.prompt,
@@ -1620,10 +1631,12 @@ def generate_storyboard_frame(req: GenerateStoryboardRequest):
         focal_length=req.focal_length,
         aperture=req.aperture,
         dop_preset=req.dop_preset,
+        camera_letter=req.camera_letter,
         aspect_ratio=req.aspect_ratio,
     )
     return {
         "shot_id": req.shot_id,
+        "camera_letter": req.camera_letter,
         "status": "generated",
         "image_url": img_b64,
         "prompt": req.prompt,
