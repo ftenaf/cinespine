@@ -1,0 +1,313 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="100%" height="100%" style="background:#090D16; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <defs>
+    <!-- Background Gradients -->
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B0F19" />
+      <stop offset="100%" stop-color="#04070D" />
+    </linearGradient>
+
+    <linearGradient id="card-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#0F172A" stop-opacity="0.95" />
+    </linearGradient>
+
+    <linearGradient id="spine-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="50%" stop-color="#8B5CF6" />
+      <stop offset="100%" stop-color="#EC4899" />
+    </linearGradient>
+
+    <linearGradient id="sse-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="100%" stop-color="#06B6D4" />
+    </linearGradient>
+
+    <!-- Drop Shadows & Glow Filters -->
+    <filter id="glow-blue" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="glow-purple" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="drop-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="6" flood-color="#000000" flood-opacity="0.6" />
+    </filter>
+
+    <!-- Markers -->
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#38BDF8" />
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#A855F7" />
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#10B981" />
+    </marker>
+  </defs>
+
+  <!-- Canvas Background with Grid -->
+  <rect width="1200" height="800" fill="url(#bg-grad)" />
+
+  <g opacity="0.05">
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#FFFFFF" stroke-width="1" />
+    </pattern>
+    <rect width="1200" height="800" fill="url(#grid)" />
+  </g>
+
+  <!-- Title & Header -->
+  <g transform="translate(60, 50)">
+    <text x="0" y="0" font-size="24" font-weight="800" fill="#F8FAFC" letter-spacing="0.5">🎬 CineSpine Architecture</text>
+    <text x="0" y="24" font-size="13" font-weight="500" fill="#94A3B8">Append-Only Event Spine, 3-Axis Discrepancy Reconciler &amp; Real-Time SSE Collaboration</text>
+  </g>
+
+  <!-- Pipeline Track Stages Background Boundaries -->
+  <!-- Stage 1: Ingestion -->
+  <rect x="50" y="110" width="220" height="640" rx="12" fill="#0F172A" fill-opacity="0.4" stroke="#1E293B" stroke-width="1.5" />
+  <text x="70" y="140" font-size="12" font-weight="700" fill="#38BDF8" letter-spacing="1">1. ASYNCHRONOUS INGESTION</text>
+
+  <!-- Stage 2: Normalization & AI -->
+  <rect x="300" y="110" width="220" height="640" rx="12" fill="#0F172A" fill-opacity="0.4" stroke="#1E293B" stroke-width="1.5" />
+  <text x="320" y="140" font-size="12" font-weight="700" fill="#818CF8" letter-spacing="1">2. NORMALIZATION &amp; AI</text>
+
+  <!-- Stage 3: Event Spine & OLAP -->
+  <rect x="550" y="110" width="240" height="640" rx="12" fill="#0F172A" fill-opacity="0.4" stroke="#1E293B" stroke-width="1.5" />
+  <text x="570" y="140" font-size="12" font-weight="700" fill="#C084FC" letter-spacing="1">3. EVENT SPINE &amp; AUDIT</text>
+
+  <!-- Stage 4: Real-Time SSE Broker -->
+  <rect x="820" y="110" width="330" height="640" rx="12" fill="#0F172A" fill-opacity="0.4" stroke="#1E293B" stroke-width="1.5" />
+  <text x="840" y="140" font-size="12" font-weight="700" fill="#34D399" letter-spacing="1">4. REAL-TIME COLLABORATION</text>
+
+  <!-- ==================== STAGE 1: INGESTION CARDS ==================== -->
+  <!-- Camera Card -->
+  <g transform="translate(65, 170)" filter="url(#drop-shadow)">
+    <rect width="190" height="90" rx="8" fill="url(#card-grad)" stroke="#334155" stroke-width="1.2" />
+    <circle cx="25" cy="30" r="12" fill="#0284C7" fill-opacity="0.2" stroke="#38BDF8" stroke-width="1.5" />
+    <text x="21" y="35" font-size="12" fill="#38BDF8">🎥</text>
+    <text x="48" y="28" font-size="13" font-weight="700" fill="#F1F5F9">Camera Dept</text>
+    <text x="48" y="44" font-size="10" fill="#94A3B8">ZoeLog CSV Reports</text>
+    <text x="48" y="62" font-size="9" fill="#64748B">A120, B039, C005 Rolls</text>
+  </g>
+
+  <!-- Sound Card -->
+  <g transform="translate(65, 280)" filter="url(#drop-shadow)">
+    <rect width="190" height="90" rx="8" fill="url(#card-grad)" stroke="#334155" stroke-width="1.2" />
+    <circle cx="25" cy="30" r="12" fill="#0D9488" fill-opacity="0.2" stroke="#2DD4BF" stroke-width="1.5" />
+    <text x="21" y="35" font-size="12" fill="#2DD4BF">🎙️</text>
+    <text x="48" y="28" font-size="13" font-weight="700" fill="#F1F5F9">Sound Dept</text>
+    <text x="48" y="44" font-size="10" fill="#94A3B8">Sound ALE / CSV Logs</text>
+    <text x="48" y="62" font-size="9" fill="#64748B">BEXT Poly-WAVs, 26Y07M27</text>
+  </g>
+
+  <!-- Script Supervisor Card -->
+  <g transform="translate(65, 390)" filter="url(#drop-shadow)">
+    <rect width="190" height="90" rx="8" fill="url(#card-grad)" stroke="#334155" stroke-width="1.2" />
+    <circle cx="25" cy="30" r="12" fill="#E11D48" fill-opacity="0.2" stroke="#FB7185" stroke-width="1.5" />
+    <text x="21" y="35" font-size="12" fill="#FB7185">📝</text>
+    <text x="48" y="28" font-size="13" font-weight="700" fill="#F1F5F9">Script Supervisor</text>
+    <text x="48" y="44" font-size="10" fill="#94A3B8">TCLog &amp; Lined Pages</text>
+    <text x="48" y="62" font-size="9" fill="#64748B">Circled Takes 3*, Notes</text>
+  </g>
+
+  <!-- DIT Silverstack Card -->
+  <g transform="translate(65, 500)" filter="url(#drop-shadow)">
+    <rect width="190" height="90" rx="8" fill="url(#card-grad)" stroke="#334155" stroke-width="1.2" />
+    <circle cx="25" cy="30" r="12" fill="#D97706" fill-opacity="0.2" stroke="#FBBF24" stroke-width="1.5" />
+    <text x="21" y="35" font-size="12" fill="#FBBF24">💾</text>
+    <text x="48" y="28" font-size="13" font-weight="700" fill="#F1F5F9">DIT / Lab Offload</text>
+    <text x="48" y="44" font-size="10" fill="#94A3B8">Silverstack XML &amp; PDF</text>
+    <text x="48" y="62" font-size="9" fill="#64748B">Checksums &amp; Thumbs</text>
+  </g>
+
+  <!-- Fallback Seed Card -->
+  <g transform="translate(65, 610)" filter="url(#drop-shadow)">
+    <rect width="190" height="85" rx="8" fill="url(#card-grad)" stroke="#059669" stroke-width="1.2" stroke-dasharray="4,2" />
+    <circle cx="25" cy="28" r="12" fill="#059669" fill-opacity="0.2" stroke="#34D399" stroke-width="1.5" />
+    <text x="21" y="33" font-size="12" fill="#34D399">📦</text>
+    <text x="48" y="26" font-size="12" font-weight="700" fill="#34D399">Fallback Seed Data</text>
+    <text x="48" y="42" font-size="10" fill="#94A3B8">Self-Contained CI / Demo</text>
+    <text x="48" y="58" font-size="9" fill="#64748B">Zero-dependency execution</text>
+  </g>
+
+  <!-- ==================== STAGE 2: PARSING & AI ==================== -->
+  <!-- Deterministic Parsers Card -->
+  <g transform="translate(315, 200)" filter="url(#drop-shadow)">
+    <rect width="190" height="150" rx="8" fill="url(#card-grad)" stroke="#4F46E5" stroke-width="1.5" />
+    <text x="20" y="30" font-size="13" font-weight="700" fill="#818CF8">Deterministic Parsers</text>
+    <text x="20" y="50" font-size="10" fill="#94A3B8">• Sound ALE / CSV Parser</text>
+    <text x="20" y="68" font-size="10" fill="#94A3B8">• ZoeLog Camera Parser</text>
+    <text x="20" y="86" font-size="10" fill="#94A3B8">• Scripte TCLog Parser</text>
+    <text x="20" y="104" font-size="10" fill="#94A3B8">• Pomfort XML / PDF</text>
+    <rect x="20" y="118" width="150" height="20" rx="4" fill="#4338CA" fill-opacity="0.3" stroke="#6366F1" stroke-width="1" />
+    <text x="32" y="132" font-size="9" font-weight="600" fill="#A5B4FC">Strict Typings &amp; No LLM</text>
+  </g>
+
+  <!-- Gemini Multimodal Vision Card -->
+  <g transform="translate(315, 380)" filter="url(#drop-shadow)">
+    <rect width="190" height="130" rx="8" fill="url(#card-grad)" stroke="#9333EA" stroke-width="1.5" />
+    <text x="20" y="30" font-size="13" font-weight="700" fill="#C084FC">Gemini Multimodal</text>
+    <text x="20" y="50" font-size="10" fill="#94A3B8">• Handwritten Script Lining</text>
+    <text x="20" y="68" font-size="10" fill="#94A3B8">• Facing Page Marginalia</text>
+    <text x="20" y="86" font-size="10" fill="#94A3B8">• Visual Director Circle</text>
+    <rect x="20" y="98" width="150" height="20" rx="4" fill="#7E22CE" fill-opacity="0.3" stroke="#A855F7" stroke-width="1" />
+    <text x="36" y="112" font-size="9" font-weight="600" fill="#E9D5FF">ADK Vision Extraction</text>
+  </g>
+
+  <!-- Key Folding & Normalizer Card -->
+  <g transform="translate(315, 540)" filter="url(#drop-shadow)">
+    <rect width="190" height="120" rx="8" fill="url(#card-grad)" stroke="#6366F1" stroke-width="1.5" />
+    <text x="20" y="28" font-size="13" font-weight="700" fill="#A5B4FC">Key Folding Engine</text>
+    <text x="20" y="48" font-size="10" fill="#94A3B8">• Slate: 27-7 → 27/7</text>
+    <text x="20" y="66" font-size="10" fill="#94A3B8">• Take: 3* → 3 (starred)</text>
+    <text x="20" y="84" font-size="10" fill="#94A3B8">• Camera Roll: A_0120 → A120</text>
+    <text x="20" y="102" font-size="10" fill="#94A3B8">• Media: A120_C001 match</text>
+  </g>
+
+  <!-- ==================== STAGE 3: EVENT SPINE & RECONCILIATION ==================== -->
+  <!-- ClickHouse / SQLite Event Spine -->
+  <g transform="translate(565, 180)" filter="url(#drop-shadow)">
+    <rect width="210" height="220" rx="10" fill="url(#card-grad)" stroke="url(#spine-grad)" stroke-width="2" />
+    <rect x="15" y="15" width="180" height="32" rx="6" fill="#1E1B4B" stroke="#818CF8" stroke-width="1" />
+    <text x="32" y="36" font-size="13" font-weight="800" fill="#F8FAFC">⚡ CineSpine Store</text>
+
+    <!-- Animated Core Pulsing Dot -->
+    <circle cx="180" cy="31" r="5" fill="#EC4899">
+      <animate attributeName="r" values="3;6;3" dur="2s" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0.4;1;0.4" dur="2s" repeatCount="indefinite" />
+    </circle>
+
+    <text x="20" y="70" font-size="11" font-weight="700" fill="#E2E8F0">Append-Only Event Log</text>
+    <text x="20" y="90" font-size="10" fill="#94A3B8">• production_events table</text>
+    <text x="20" y="108" font-size="10" fill="#94A3B8">• Immutable raw facts</text>
+    <text x="20" y="126" font-size="10" fill="#94A3B8">• Multi-witness take state</text>
+    <text x="20" y="144" font-size="10" fill="#94A3B8">• Storage volume manifests</text>
+
+    <rect x="20" y="165" width="170" height="38" rx="6" fill="#312E81" fill-opacity="0.5" stroke="#4F46E5" stroke-width="1" />
+    <text x="30" y="180" font-size="9" font-weight="700" fill="#C7D2FE">INVARIANT: NEVER IN-PLACE</text>
+    <text x="30" y="194" font-size="8" fill="#94A3B8">Replay facts with zero data loss</text>
+  </g>
+
+  <!-- 3-Axis Reconciliation Engine -->
+  <g transform="translate(565, 430)" filter="url(#drop-shadow)">
+    <rect width="210" height="230" rx="10" fill="url(#card-grad)" stroke="#EC4899" stroke-width="1.5" />
+    <text x="20" y="30" font-size="13" font-weight="700" fill="#F472B6">3-Axis Reconciler</text>
+
+    <rect x="15" y="45" width="180" height="36" rx="4" fill="#831843" fill-opacity="0.3" stroke="#BE185D" stroke-width="1" />
+    <text x="25" y="60" font-size="10" font-weight="700" fill="#FDA4AF">Axis 1: Intent vs Belief</text>
+    <text x="25" y="73" font-size="8" fill="#F43F5E">Call sheet vs Set logs</text>
+
+    <rect x="15" y="90" width="180" height="36" rx="4" fill="#831843" fill-opacity="0.3" stroke="#BE185D" stroke-width="1" />
+    <text x="25" y="105" font-size="10" font-weight="700" fill="#FDA4AF">Axis 2: Belief vs Belief</text>
+    <text x="25" y="118" font-size="8" fill="#F43F5E">Circle take &amp; TC drift</text>
+
+    <rect x="15" y="135" width="180" height="36" rx="4" fill="#831843" fill-opacity="0.3" stroke="#BE185D" stroke-width="1" />
+    <text x="25" y="150" font-size="10" font-weight="700" fill="#FDA4AF">Axis 3: Belief vs Existence</text>
+    <text x="25" y="163" font-size="8" fill="#F43F5E">Gated offload media check</text>
+
+    <rect x="15" y="185" width="180" height="30" rx="4" fill="#047857" fill-opacity="0.3" stroke="#10B981" stroke-width="1" />
+    <text x="25" y="204" font-size="9" font-weight="700" fill="#6EE7B7">audit_discrepancies</text>
+  </g>
+
+  <!-- ==================== STAGE 4: REAL-TIME SSE & COLLABORATION ==================== -->
+  <!-- LiveEventBroker Card -->
+  <g transform="translate(835, 170)" filter="url(#drop-shadow)">
+    <rect width="300" height="130" rx="8" fill="url(#card-grad)" stroke="#10B981" stroke-width="1.8" />
+    <rect x="15" y="15" width="270" height="28" rx="4" fill="#064E3B" stroke="#059669" stroke-width="1" />
+    <text x="30" y="34" font-size="12" font-weight="800" fill="#A7F3D0">📡 LiveEventBroker (/api/events/subscribe)</text>
+
+    <!-- SSE Pulse Waves -->
+    <circle cx="265" cy="29" r="6" fill="#10B981">
+      <animate attributeName="r" values="4;10;4" dur="1.8s" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0.8;0.1;0.8" dur="1.8s" repeatCount="indefinite" />
+    </circle>
+
+    <text x="20" y="64" font-size="10" fill="#94A3B8">• Real-time push over Server-Sent Events (SSE)</text>
+    <text x="20" y="80" font-size="10" fill="#94A3B8">• Scoped by production_id, shoot_day, user_handle</text>
+    <text x="20" y="96" font-size="10" fill="#94A3B8">• Zero client-side polling or browser refresh</text>
+    <text x="20" y="112" font-size="10" font-weight="600" fill="#34D399">• Python 3.11 / 3.14 async event loop decoupled</text>
+  </g>
+
+  <!-- Requirements & Alerts Hub Card -->
+  <g transform="translate(835, 320)" filter="url(#drop-shadow)">
+    <rect width="300" height="150" rx="8" fill="url(#card-grad)" stroke="#38BDF8" stroke-width="1.5" />
+    <text x="20" y="28" font-size="13" font-weight="700" fill="#38BDF8">Requirements &amp; Alerts Hub</text>
+    <text x="20" y="48" font-size="10" fill="#94A3B8">• Passwordless crew identity (@director, @lead_editor)</text>
+    <text x="20" y="66" font-size="10" fill="#94A3B8">• 4-Grain Target: Production, Scene, Shot, Take</text>
+    <text x="20" y="84" font-size="10" fill="#94A3B8">• State machine: open → in_progress → blocked → resolved</text>
+    <text x="20" y="102" font-size="10" fill="#94A3B8">• Bidirectional notification routing to assignees</text>
+    <rect x="20" y="114" width="260" height="24" rx="4" fill="#0369A1" fill-opacity="0.3" stroke="#0EA5E9" stroke-width="1" />
+    <text x="32" y="130" font-size="9" font-weight="600" fill="#7DD3FC">Direct Deep-Linking (Zero Search Pollution)</text>
+  </g>
+
+  <!-- Slate Navigator & Surface Card -->
+  <g transform="translate(835, 490)" filter="url(#drop-shadow)">
+    <rect width="300" height="180" rx="8" fill="url(#card-grad)" stroke="#F59E0B" stroke-width="1.5" />
+    <text x="20" y="28" font-size="13" font-weight="700" fill="#FBBF24">Interactive Slate Navigator &amp; Diffs</text>
+    <text x="20" y="48" font-size="10" fill="#94A3B8">• Multi-Camera Angle Grid (A, B, C) with Thumbnails</text>
+    <text x="20" y="66" font-size="10" fill="#94A3B8">• Sound Devices WAV Playback &amp; Metadata Card</text>
+    <text x="20" y="84" font-size="10" fill="#94A3B8">• Side-by-side 3-Axis Witness Diff Cards</text>
+    <text x="20" y="102" font-size="10" fill="#94A3B8">• Visual In-Browser PDF Document Explorer</text>
+    <text x="20" y="120" font-size="10" fill="#94A3B8">• 1-Click Discrepancy Consensus Resolution</text>
+
+    <g transform="translate(20, 134)">
+      <rect width="60" height="32" rx="4" fill="#1E293B" stroke="#475569" stroke-width="1" />
+      <text x="12" y="20" font-size="9" fill="#CBD5E1">Cam A</text>
+      <rect x="70" y="0" width="60" height="32" rx="4" fill="#1E293B" stroke="#475569" stroke-width="1" />
+      <text x="82" y="20" font-size="9" fill="#CBD5E1">Cam B</text>
+      <rect x="140" y="0" width="60" height="32" rx="4" fill="#1E293B" stroke="#475569" stroke-width="1" />
+      <text x="152" y="20" font-size="9" fill="#CBD5E1">Cam C</text>
+      <rect x="210" y="0" width="50" height="32" rx="4" fill="#065F46" stroke="#10B981" stroke-width="1" />
+      <text x="220" y="20" font-size="9" fill="#6EE7B7">WAV</text>
+    </g>
+  </g>
+
+  <!-- ==================== ANIMATED SMIL DATA FLOW PATHS ==================== -->
+
+  <!-- Path 1: Ingestion to Parsers -->
+  <path id="flow-ingest" d="M 255 215 L 315 250 M 255 325 L 315 280 M 255 435 L 315 420 M 255 545 L 315 310 M 255 645 L 315 580" fill="none" stroke="#38BDF8" stroke-width="1.5" stroke-opacity="0.6" stroke-dasharray="6,4">
+    <animate attributeName="stroke-dashoffset" from="40" to="0" dur="2s" repeatCount="indefinite" />
+  </path>
+
+  <!-- Path 2: Parsers to Event Spine -->
+  <path id="flow-spine" d="M 505 270 L 565 250 M 505 440 L 565 300 M 505 600 L 565 330" fill="none" stroke="#818CF8" stroke-width="2" stroke-opacity="0.8" stroke-dasharray="8,4">
+    <animate attributeName="stroke-dashoffset" from="48" to="0" dur="1.8s" repeatCount="indefinite" />
+  </path>
+
+  <!-- Path 3: Spine to Reconciler -->
+  <path id="flow-recon" d="M 670 400 L 670 430" fill="none" stroke="#EC4899" stroke-width="2.5" stroke-dasharray="6,3">
+    <animate attributeName="stroke-dashoffset" from="36" to="0" dur="1.2s" repeatCount="indefinite" />
+  </path>
+
+  <!-- Path 4: Spine to SSE Live Broker -->
+  <path id="flow-sse" d="M 775 250 L 835 220" fill="none" stroke="#10B981" stroke-width="2.5" stroke-dasharray="8,4">
+    <animate attributeName="stroke-dashoffset" from="48" to="0" dur="1.5s" repeatCount="indefinite" />
+  </path>
+
+  <!-- Path 5: SSE Live Broker to UI Surfaces -->
+  <path id="flow-ui" d="M 985 300 L 985 320 M 985 470 L 985 490" fill="none" stroke="#34D399" stroke-width="2" stroke-dasharray="6,3">
+    <animate attributeName="stroke-dashoffset" from="36" to="0" dur="1.2s" repeatCount="indefinite" />
+  </path>
+
+  <!-- Moving Data Packets (SMIL animateMotion) -->
+  <circle r="4" fill="#38BDF8" filter="url(#glow-blue)">
+    <animateMotion path="M 255 215 L 315 250 L 505 270 L 565 250 L 775 250 L 835 220 L 985 300 L 985 470 L 985 530" dur="4s" repeatCount="indefinite" />
+  </circle>
+
+  <circle r="4" fill="#F472B6" filter="url(#glow-purple)">
+    <animateMotion path="M 255 435 L 315 420 L 505 440 L 565 300 L 670 400 L 670 430" dur="3.5s" repeatCount="indefinite" />
+  </circle>
+
+  <circle r="4" fill="#10B981" filter="url(#glow-blue)">
+    <animateMotion path="M 775 250 L 835 220 L 985 300 L 985 360" dur="2.2s" repeatCount="indefinite" />
+  </circle>
+
+  <!-- Footer Tag -->
+  <g transform="translate(60, 770)">
+    <circle cx="5" cy="5" r="4" fill="#10B981" />
+    <text x="18" y="9" font-size="11" font-weight="600" fill="#94A3B8">Live Ingestion &amp; Push Active • 86 Tests Passing (100% Verified) • Apache Kafka / ClickHouse / FastAPI / React 18</text>
+  </g>
+</svg>
