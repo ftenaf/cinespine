@@ -466,21 +466,29 @@ def is_take_media_match(media_info: Dict[str, Any], slate: str, take_id: str, ca
         m_sc_clean = m_scene.lstrip("+").upper()
 
         if (sc.upper() == m_scene.upper() or sc_clean == m_sc_clean) and tk_match:
+            if camera_roll and media_info.get("camera_roll") and camera_roll.upper() == media_info.get("camera_roll", "").upper():
+                return True
             if sh and m_shot:
-                if sh.upper() == m_shot.upper():
+                if (
+                    sh.upper() == m_shot.upper()
+                    or m_shot.upper().endswith(f"/{sh.upper()}")
+                    or m_shot.upper() == slate.upper()
+                    or m_shot.upper() == f"{sc.upper()}/{sh.upper()}"
+                    or m_shot.upper() == sc.upper()
+                ):
                     return True
             else:
                 return True
 
-    # 2. Camera Clip Name matching (e.g. ZoeLog 'A120_C001' vs Silverstack 'A_0120C001_260728_091309_h1EIC.mxf')
+    # 2. Camera Clip Name matching (e.g. ZoeLog 'A120_C001' vs Silverstack 'A_0120C001_260728_091309_h1EIC.mxf' or 'A120_C001_260728.MOV')
     if clip_name:
-        m_c = re.match(r"^([A-Z])(\d{3,4})_C(\d{3,4})", clip_name)
+        m_c = re.match(r"^([A-Z])_?(\d{3,4})_?C(\d{3,4})", clip_name)
         if m_c:
             cam_letter, roll_num, c_num = m_c.group(1), int(m_c.group(2)), int(m_c.group(3))
-            target_pattern = rf"{cam_letter}_0*{roll_num}C0*{c_num}(?:[^0-9]|$)"
+            target_pattern = rf"{cam_letter}_?0*{roll_num}_?C0*{c_num}(?:[^0-9]|$)"
             if re.search(target_pattern, fn):
                 return True
-        elif clip_name in fn:
+        if clip_name in fn or fn.startswith(clip_name):
             return True
 
     # 3. Audio WAV Name matching (e.g. '+99BDF-9T01.WAV', '27-7T01.WAV', '49WTT01.WAV')
@@ -551,27 +559,53 @@ LAC - V31
 Day: Day 31 - Main Unit
 Date: 28/07/2026
 Slate Take Description CR SR Time Camera Info Comments
-49/WT 1 Scene(s): 49 Wild Track: 49/WT n/a 280726 0:29 pasos de LEAD
-27/7 1 Scene(s): 27 ORGAN - Sticks - xwide. Frontal VWS A120 280726 2:46 1
+27/7 1 Scene(s): 27 ORGAN - Sticks - xwide. Frontal VWS - LEAD plays -> He sees SUPPORT A120 280726 2:46 1
 27/7 1 Dolly - wide B039 280726 2:46 2
 27/7 1 Slider - wide C005 280726 2:46 3
+49/WT 1 Scene(s): 49 Wild Track: 49/WT n/a 280726 0:29 pasos de LEAD
 """,
-    "Volume-664_SD-20260728-1927.xml": """<?xml version="1.0" encoding="UTF-8"?>
-<SilverstackReport type="volume">
-  <volume name="664 SD">
-    <clip fileName="A120_C001_260728.MOV" reel="A120" duration="00:02:46:00" checksum="1b742d797173f0d4" />
-    <clip fileName="B039_C001_260728.MOV" reel="B039" duration="00:02:46:00" checksum="3c893d797173f0d5" />
-    <clip fileName="C005_C001_260728.MOV" reel="C005" duration="00:02:46:00" checksum="5e102d797173f0d6" />
-    <clip fileName="27-7T01.WAV" reel="26Y07M27" duration="00:03:00:00" checksum="a0b1c2d3e4f50617" />
-  </volume>
-</SilverstackReport>
-""",
-    "Clips-260728_SD31-20260728-1927_Thumbnail.txt": """SILVERSTACK THUMBNAIL REPORT
+    "Thumbnail-260728_SD31-20260728-1927.pdf": """Pomfort Silverstack Thumbnail Report
 Production: DEMO PRODUCTION
-Shoot Day: Day 31
-Scene: 27 Slate: 27/7 Take: 1 File: A120_C001_260728.MOV Thumbnail: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
-Scene: 27 Slate: 27/7 Take: 1 File: B039_C001_260728.MOV Thumbnail: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
-Scene: 27 Slate: 27/7 Take: 1 File: C005_C001_260728.MOV Thumbnail: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+260728_SD31
+
+Name A120_C001_260728.MOV
+Reel/Tape A_0120_1EIC
+Scene 27
+Shot 27/7
+Take 1
+Duration 00:02:46:00
+Camera A
+Sensor FPS 24.0
+EI/ISO (clip) 800
+T-Stop 2.8
+Codec Apple ProRes 4444 XQ
+Recording Date 28/07/2026 09:25:48
+
+Name B039_C001_260728.MOV
+Reel/Tape B_0039_1EIC
+Scene 27
+Shot 27/7
+Take 1
+Duration 00:02:46:00
+Camera B
+Sensor FPS 24.0
+EI/ISO (clip) 800
+T-Stop 2.8
+Codec Apple ProRes 4444 XQ
+Recording Date 28/07/2026 09:25:48
+
+Name C005_C001_260728.MOV
+Reel/Tape C_0005_1EIC
+Scene 27
+Shot 27/7
+Take 1
+Duration 00:02:46:00
+Camera C
+Sensor FPS 24.0
+EI/ISO (clip) 800
+T-Stop 2.8
+Codec Apple ProRes 4444 XQ
+Recording Date 28/07/2026 09:25:48
 """
 }
 
@@ -644,10 +678,14 @@ def seed_real_day_data(req: SeedRequest):
             t_map = {}
             if "Thumbnail" in fn:
                 # Add default placeholder thumbnails for scene 27
+                b64_img = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
                 t_map = {
-                    "27_27/7_1_A120": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-                    "27_27/7_1_B039": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-                    "27_27/7_1_C005": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                    "A120_C001_260728.MOV": b64_img,
+                    "B039_C001_260728.MOV": b64_img,
+                    "C005_C001_260728.MOV": b64_img,
+                    "A120_C001_260728": b64_img,
+                    "27_27/7_1_A120": b64_img,
+                    "27/7_1": b64_img,
                 }
 
             doc_id = spine_writer.store_document(
@@ -927,8 +965,9 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
 
         # Fallback audio entry if sound report parsed without DIT matching
         if not t["audio_files"] and sr_info:
+            default_fn = f"{t['slate'].replace('/', '-')}T{int(t['take_id']):02d}.WAV" if t['take_id'].isdigit() else f"{t['slate'].replace('/', '-')}T{t['take_id']}.WAV"
             t["audio_files"].append({
-                "file_name": sr_info.get("file_name") or f"{t['slate'].replace('/', '-')}T{t['take_id']}.WAV",
+                "file_name": sr_info.get("file_name") or default_fn,
                 "sound_roll": sr_info.get("sound_roll") or "Sound Roll",
                 "codec": "Linear PCM (24bit, 48kHz)",
                 "timecode_in": sr_info.get("timecode_in"),
@@ -1128,19 +1167,20 @@ def get_sequences(production_id: str = "DEMO_PRODUCTION", shoot_day: str = "31")
         snd_cards = sorted(list({c for t in s_takes for c in t.get("sound_cards", [])}))
         all_cards = cam_cards + snd_cards
 
-        # Clean description from script notes
+        # Clean description from script notes and camera notes
         descriptions = []
         for t in s_takes:
-            sn = t.get("belief", {}).get("script", {}).get("note", "")
-            if sn:
-                cleaned = re.sub(r"LAC\s+Day:[^\n]+", "", sn)
-                cleaned = re.sub(r"\d{2}:\d{2}:\d{2}(?::\d{2})?", "", cleaned)
-                cleaned = re.sub(r"Scene\(s\):\s*\d+\s*", "", cleaned)
-                cleaned = re.sub(r"^\s*[-–>]+\s*", "", cleaned).strip()
-                if cleaned and len(cleaned) > 5 and cleaned not in descriptions:
-                    descriptions.append(cleaned)
-        # Prioritize primary action descriptions shot on the active day
-        descriptions.sort(key=lambda d: ("Shot on Day" in d, -len(d)))
+            for dept_key in ["script", "camera"]:
+                sn = t.get("belief", {}).get(dept_key, {}).get("note", "") or t.get("belief", {}).get(dept_key, {}).get("description", "")
+                if sn:
+                    cleaned = re.sub(r"LAC\s+Day:[^\n]+", "", sn)
+                    cleaned = re.sub(r"\d{2}:\d{2}:\d{2}(?::\d{2})?", "", cleaned)
+                    cleaned = re.sub(r"Scene\(s\):\s*\d+\s*", "", cleaned)
+                    cleaned = re.sub(r"^\s*[-–>]+\s*", "", cleaned).strip()
+                    if cleaned and len(cleaned) > 5 and cleaned not in descriptions:
+                        descriptions.append(cleaned)
+        # Prioritize primary action descriptions (e.g. LEAD plays / ORGAN)
+        descriptions.sort(key=lambda d: ("LEAD plays" in d or "ORGAN" in d, "Shot on Day" in d, len(d)), reverse=True)
         desc_str = " | ".join(descriptions[:2]) if descriptions else "Recorded sequence"
 
         # Infer sequence location

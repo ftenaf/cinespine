@@ -42,8 +42,8 @@ def parse_camera_csv(content: str) -> List[ParsedCameraRecord]:
 
         raw_slate = get_col("SLATE", "SCENE/SHOT", "SCENE")
         raw_take = get_col("TAKE")
-        raw_roll = get_col("ROLL", "CAMERA ROLL", "REEL")
-        clip_name = get_col("CLIP NAME", "CLIP", "FILE NAME", "FILENAME")
+        raw_roll = get_col("ROLL", "CAMERA ROLL", "CAMERAROLL", "REEL")
+        clip_name = get_col("CLIP NAME", "CLIPNAME", "CLIP", "FILE NAME", "FILENAME")
         tc_in = get_col("START TC", "START", "TC IN", "TIMECODE IN")
         tc_out = get_col("END TC", "END", "TC OUT", "TIMECODE OUT")
         lens = get_col("LENS", "FOCAL LENGTH")

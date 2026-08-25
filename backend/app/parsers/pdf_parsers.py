@@ -417,7 +417,7 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
                         is_wild_track="WT" in (current_slate or "").upper() or take_info.is_wild_track,
                         is_vfx="VFX" in cleaned.upper() or take_info.is_vfx,
                         is_mos="MOS" in cleaned.upper() or take_info.is_mos,
-                        note=take_info.note,
+                        note=take_info.note or rest_line.strip(),
                         raw_payload={"camera_roll": cr, "timecode_in": tc_in, "timecode_out": tc_out},
                     )
                 )
