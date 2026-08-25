@@ -248,6 +248,9 @@ export const ScriptStudio: React.FC = () => {
           focal_length: cam.focal_length,
           aperture: cam.aperture,
           dop_preset: shot.dop_spec.dop_preset,
+          lighting_ratio: shot.dop_spec.lighting_ratio,
+          color_temp_k: shot.dop_spec.color_temperature_k,
+          lut_emulation: shot.dop_spec.lut_emulation,
           aspect_ratio: aspectRatio
         })
       });
@@ -1042,9 +1045,15 @@ export const ScriptStudio: React.FC = () => {
                         </span>
                         <span className="text-xs font-bold text-white">{selectedShot.shot_name}</span>
                       </div>
-                      <span className="px-2 py-0.5 text-[10px] font-extrabold bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">
-                        {aspectRatio} Scope
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-2 py-0.5 text-[10px] font-extrabold bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-200 rounded border border-purple-500/40 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-amber-300" />
+                          Live AI Diffusion
+                        </span>
+                        <span className="px-2 py-0.5 text-[10px] font-extrabold bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">
+                          {aspectRatio} Scope
+                        </span>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-3 gap-2 mb-3 text-[11px] font-mono">

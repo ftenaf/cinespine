@@ -1548,6 +1548,9 @@ class GenerateStoryboardRequest(BaseModel):
     aperture: str = "T2.8"
     dop_preset: str = "Roger Deakins"
     camera_letter: str = "A"
+    lighting_ratio: str = "4:1"
+    color_temp_k: int = 5600
+    lut_emulation: str = "Kodak Vision3 500T 5219"
     aspect_ratio: str = "2.39:1"
 
 
@@ -1627,12 +1630,14 @@ def generate_shot_breakdown(req: ScriptBreakdownRequest):
 
 
 @router.post("/script/generate-storyboard")
-def generate_storyboard_frame(req: GenerateStoryboardRequest):
+async def generate_storyboard_frame(req: GenerateStoryboardRequest):
     """
-    Generates / re-renders a photorealistic cinematic concept art frame
-    specifically for Camera A, B, or C matching DoP specifications and aspect ratio.
+    Executes real-time AI image generation taking into account the editable prompt,
+    the active camera rig (Cam A/B/C), optics, and all DoP specifications.
     """
-    img_b64 = render_cinematic_storyboard_svg(
+    from backend.app.script.ai_image_service import generate_ai_cinematic_image
+
+    res = await generate_ai_cinematic_image(
         prompt=req.prompt,
         scene_number=req.scene_number,
         shot_number=req.shot_number,
@@ -1641,14 +1646,20 @@ def generate_storyboard_frame(req: GenerateStoryboardRequest):
         aperture=req.aperture,
         dop_preset=req.dop_preset,
         camera_letter=req.camera_letter,
+        lighting_ratio=req.lighting_ratio,
+        color_temp_k=req.color_temp_k,
+        lut_emulation=req.lut_emulation,
         aspect_ratio=req.aspect_ratio,
     )
+
     return {
         "shot_id": req.shot_id,
         "camera_letter": req.camera_letter,
         "status": "generated",
-        "image_url": img_b64,
+        "image_url": res["image_url"],
         "prompt": req.prompt,
+        "compiled_prompt": res["compiled_prompt"],
+        "provider": res.get("provider", "AI Generative Engine"),
         "aspect_ratio": req.aspect_ratio,
     }
 
