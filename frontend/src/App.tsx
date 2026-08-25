@@ -7,7 +7,7 @@ import {
   Image as ImageIcon, ChevronLeft, ChevronRight, LayoutGrid,
   Maximize2, ExternalLink, Video, Mic, MapPin,
   Bell, CheckCheck, PlusCircle, ChevronDown, Send, ShieldAlert,
-  Radio
+  Radio, ListTodo, ArrowRight
 } from 'lucide-react';
 import { 
   TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, SequenceRecord,
@@ -18,9 +18,11 @@ import {
   fetchDocumentContent, uploadDocument, uploadFile, askAssistant, seedDemoDay,
   fetchSequences, resolveDiscrepancy, unresolveDiscrepancy,
   fetchTeamUsers, loginUser, createRequirement,
-  resolveRequirement, fetchNotifications,
+  resolveRequirement, fetchNotifications, fetchRequirements,
+  updateRequirement, deleteRequirement,
   markNotificationRead, markAllNotificationsRead
 } from './api';
+
 
 export default function App() {
   const [productions, setProductions] = useState<Production[]>([]);
@@ -77,14 +79,22 @@ export default function App() {
   const [reqResolutionNote, setReqResolutionNote] = useState('');
   const [isResolvingReqSubmitting, setIsResolvingReqSubmitting] = useState(false);
 
+  // Requirements Hub State & Filters
+  const [allRequirements, setAllRequirements] = useState<Requirement[]>([]);
+  const [reqFilterStatus, setReqFilterStatus] = useState<string>('ALL');
+  const [reqFilterAssignee, setReqFilterAssignee] = useState<string>('ALL');
+  const [reqFilterPriority, setReqFilterPriority] = useState<string>('ALL');
+  const [reqFilterCategory, setReqFilterCategory] = useState<string>('ALL');
+  const [reqSearchQuery, setReqSearchQuery] = useState<string>('');
 
   // Active View & Filters
-  const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents'>('master');
+  const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents' | 'requirements'>('master');
   const [masterLayout, setMasterLayout] = useState<'grid' | 'slate'>('grid');
   const [focusTakeIndex, setFocusTakeIndex] = useState<number>(0);
   const [selectedSceneFilter, setSelectedSceneFilter] = useState<string>('ALL');
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [selectedCameraAngle, setSelectedCameraAngle] = useState<Record<string, string>>({});
+
 
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -133,22 +143,25 @@ export default function App() {
   const loadSpineData = async () => {
     setLoading(true);
     try {
-      const [t, d, docs, seqs] = await Promise.all([
+      const [t, d, docs, seqs, reqs] = await Promise.all([
         fetchTakes(selectedProductionId, selectedDay),
         fetchDiscrepancies(selectedProductionId, selectedDay),
         fetchDocuments(selectedProductionId, selectedDay),
         fetchSequences(selectedProductionId, selectedDay),
+        fetchRequirements({ production_id: selectedProductionId, shoot_day: selectedDay }),
       ]);
       setTakes(t);
       setDiscrepancies(d);
       setDocuments(docs);
       setSequences(seqs);
+      setAllRequirements(reqs);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
   };
+
 
   const loadUsersAndNotifications = async (userHandle: string = currentUser.handle) => {
     try {
@@ -186,17 +199,26 @@ export default function App() {
 
   const handleCreateRequirementSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!targetForReq || !newReqTitle.trim()) return;
+    const finalTarget = targetForReq || (takes.length > 0 ? {
+      target_type: 'take' as const,
+      target_id: `${takes[0].slate}_${takes[0].take_id}`,
+      target_label: `Take ${takes[0].slate} T${takes[0].take_id}`,
+    } : null);
+
+    if (!finalTarget || !newReqTitle.trim()) {
+      alert('Please specify a title and select a target entity for the requirement.');
+      return;
+    }
     setIsSubmittingReq(true);
     try {
       await createRequirement({
         production_id: selectedProductionId,
         shoot_day: selectedDay,
-        target_type: targetForReq.target_type,
-        target_id: targetForReq.target_id,
-        target_label: targetForReq.target_label,
+        target_type: finalTarget.target_type,
+        target_id: finalTarget.target_id,
+        target_label: finalTarget.target_label,
         title: newReqTitle.trim(),
-        description: newReqDesc.trim(),
+        description: newReqDesc.trim() || undefined,
         priority: newReqPriority,
         category: newReqCategory,
         created_by: currentUser.handle,
@@ -205,6 +227,7 @@ export default function App() {
       setIsCreateReqOpen(false);
       setNewReqTitle('');
       setNewReqDesc('');
+      setTargetForReq(null);
       await loadSpineData();
       await loadUsersAndNotifications(currentUser.handle);
     } catch (err: any) {
@@ -234,25 +257,104 @@ export default function App() {
     }
   };
 
+  const jumpToTarget = (targetType: string, targetId: string) => {
+    // 1. Close drawers and modals
+    setIsNotifDrawerOpen(false);
+    setViewingReqsList(null);
+    setSelectedReqForResolve(null);
+
+    // 2. Clear search and reset scene filter so all takes are accessible in Slate Navigator
+    setSearchQuery('');
+    setSelectedSceneFilter('ALL');
+
+    // 3. Switch to Master View & Slate Navigator layout
+    setActiveTab('master');
+    setMasterLayout('slate');
+
+    // 4. Find the matching take in takes list
+    const cleanTargetId = (targetId || '').trim();
+    let matchIndex = -1;
+
+    if (targetType === 'take') {
+      // Matches "49/WT_1" or "49_1" or "27/7_1"
+      matchIndex = takes.findIndex(t => {
+        const fullKey = `${t.slate}_${t.take_id}`;
+        if (fullKey.toUpperCase() === cleanTargetId.toUpperCase()) return true;
+        if (cleanTargetId.includes('_')) {
+          const parts = cleanTargetId.split('_');
+          const pSlate = parts[0];
+          const pTake = parts[1];
+          const slateMatch = t.slate.toUpperCase() === pSlate.toUpperCase() || 
+                             t.slate.replace('/', '').toUpperCase() === pSlate.replace('/', '').toUpperCase();
+          const takeMatch = t.take_id === pTake || parseInt(t.take_id) === parseInt(pTake);
+          return slateMatch && takeMatch;
+        }
+        return t.take_id === cleanTargetId || t.slate.toUpperCase() === cleanTargetId.toUpperCase();
+      });
+    } else if (targetType === 'shot') {
+      // Matches "49/WT" or "49WT" or "27/7"
+      matchIndex = takes.findIndex(t => {
+        if (t.slate.toUpperCase() === cleanTargetId.toUpperCase()) return true;
+        if (t.slate.replace('/', '').toUpperCase() === cleanTargetId.replace('/', '').toUpperCase()) return true;
+        return t.slate.toLowerCase().includes(cleanTargetId.toLowerCase());
+      });
+    } else if (targetType === 'scene') {
+      // Matches "49" or "49WT" or "27"
+      matchIndex = takes.findIndex(t => {
+        if (!t.scene) return false;
+        if (t.scene.toUpperCase() === cleanTargetId.toUpperCase()) return true;
+        const sNum = t.scene.replace(/\D/g, '');
+        const targetNum = cleanTargetId.replace(/\D/g, '');
+        return Boolean(sNum && targetNum && sNum === targetNum);
+      });
+    } else {
+      // Fallback search across slate/scene/take
+      matchIndex = takes.findIndex(t => 
+        t.slate.toLowerCase().includes(cleanTargetId.toLowerCase()) || 
+        (t.scene && t.scene.toLowerCase().includes(cleanTargetId.toLowerCase())) || 
+        t.take_id === cleanTargetId
+      );
+    }
+
+    if (matchIndex !== -1) {
+      setFocusTakeIndex(matchIndex);
+      setInspectedTake(takes[matchIndex]);
+    } else {
+      console.warn(`Target not found in current takes list: type=${targetType}, id=${targetId}`);
+    }
+  };
+
   const handleNotificationClick = async (notif: NotificationItem) => {
     // 1. Mark read
     if (!notif.is_read) {
       await markNotificationRead(notif.notification_id);
       await loadUsersAndNotifications(currentUser.handle);
     }
-    // 2. Jump to target
-    setIsNotifDrawerOpen(false);
-    if (notif.target_type === 'scene') {
-      setActiveTab('sequences');
-      setSearchQuery(notif.target_id);
-    } else if (notif.target_type === 'take') {
-      setActiveTab('master');
-      setSearchQuery(notif.target_id.replace('_', ' '));
-    } else {
-      setActiveTab('master');
-      setSearchQuery(notif.target_id);
+    // 2. Direct jump into Slate Navigator for this scene/shot/take
+    jumpToTarget(notif.target_type, notif.target_id);
+  };
+
+  const handleDeleteRequirement = async (reqId: string, reqTitle: string) => {
+    if (!window.confirm(`Are you sure you want to delete requirement "${reqTitle}"?`)) return;
+    try {
+      await deleteRequirement(reqId);
+      await loadSpineData();
+      await loadUsersAndNotifications(currentUser.handle);
+    } catch (err: any) {
+      alert(`Failed to delete requirement: ${err.message}`);
     }
   };
+
+  const handleUpdateRequirementStatus = async (reqId: string, newStatus: string) => {
+    try {
+      await updateRequirement(reqId, { status: newStatus as any });
+      await loadSpineData();
+      await loadUsersAndNotifications(currentUser.handle);
+    } catch (err: any) {
+      alert(`Failed to update requirement status: ${err.message}`);
+    }
+  };
+
 
   const handleMarkAllNotifsRead = async () => {
     try {
@@ -552,10 +654,59 @@ export default function App() {
     });
   }, [sequences, filterWildTracksOnly, filterVfxOnly, filterDiscrepancyOnly, searchQuery]);
 
+  // Requirements Hub Filtering & Metrics
+  const filteredRequirements = useMemo(() => {
+    return allRequirements.filter(req => {
+      // 1. Status Filter
+      if (reqFilterStatus !== 'ALL') {
+        if (req.status !== reqFilterStatus) return false;
+      }
+      // 2. Assignee Filter
+      if (reqFilterAssignee !== 'ALL') {
+        if (reqFilterAssignee === '@me') {
+          if (req.assigned_to?.toLowerCase() !== currentUser.handle.toLowerCase()) return false;
+        } else if (req.assigned_to?.toLowerCase() !== reqFilterAssignee.toLowerCase()) {
+          return false;
+        }
+      }
+      // 3. Priority Filter
+      if (reqFilterPriority !== 'ALL') {
+        if (req.priority !== reqFilterPriority) return false;
+      }
+      // 4. Category Filter
+      if (reqFilterCategory !== 'ALL') {
+        if (req.category !== reqFilterCategory) return false;
+      }
+      // 5. Text Search
+      if (reqSearchQuery.trim()) {
+        const q = reqSearchQuery.toLowerCase();
+        const matchesTitle = req.title.toLowerCase().includes(q);
+        const matchesDesc = req.description?.toLowerCase().includes(q);
+        const matchesTarget = req.target_label?.toLowerCase().includes(q) || req.target_id?.toLowerCase().includes(q);
+        const matchesCreator = req.created_by?.toLowerCase().includes(q);
+        const matchesAssignee = req.assigned_to?.toLowerCase().includes(q);
+        if (!matchesTitle && !matchesDesc && !matchesTarget && !matchesCreator && !matchesAssignee) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [allRequirements, reqFilterStatus, reqFilterAssignee, reqFilterPriority, reqFilterCategory, reqSearchQuery, currentUser.handle]);
+
+  const reqMetrics = useMemo(() => {
+    const total = allRequirements.length;
+    const open = allRequirements.filter(r => r.status === 'open' || r.status === 'in_progress').length;
+    const assignedToMe = allRequirements.filter(r => r.assigned_to?.toLowerCase() === currentUser.handle.toLowerCase() && r.status !== 'resolved').length;
+    const criticalOrHigh = allRequirements.filter(r => (r.priority === 'critical' || r.priority === 'high') && r.status !== 'resolved').length;
+    const resolved = allRequirements.filter(r => r.status === 'resolved').length;
+    return { total, open, assignedToMe, criticalOrHigh, resolved };
+  }, [allRequirements, currentUser.handle]);
+
   const currentFocusTake = filteredTakes[focusTakeIndex] || filteredTakes[0] || null;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+
       {/* Top Navigation Bar */}
       <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md px-6 py-3 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-20">
         <div className="flex items-center gap-6">
@@ -884,7 +1035,25 @@ export default function App() {
               <FileCode className="w-4 h-4" />
               Source Documents ({documents.length})
             </button>
+
+            <button
+              onClick={() => setActiveTab('requirements')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                activeTab === 'requirements'
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+              }`}
+            >
+              <ListTodo className="w-4 h-4 text-purple-400" />
+              Requirements & Alerts ({allRequirements.length})
+              {reqMetrics.open > 0 && (
+                <span className="bg-purple-500/30 text-purple-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-purple-500/40">
+                  {reqMetrics.open} open
+                </span>
+              )}
+            </button>
           </div>
+
 
           {/* Quick Search & Filters */}
           <div className="flex items-center gap-2.5">
@@ -2464,7 +2633,370 @@ export default function App() {
             </div>
           </section>
         )}
+
+        {/* TAB 4: REQUIREMENTS & ACTION ITEMS HUB */}
+        {activeTab === 'requirements' && (
+          <section className="space-y-4">
+            {/* Header & KPI Summary */}
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-xl">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
+                      <ListTodo className="w-4 h-4" />
+                    </div>
+                    <h2 className="text-base font-bold text-white">Collaborative Requirements & Action Items</h2>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Track director notes, sound cleanups, VFX plates, retakes, and editor tasks attached to scenes, shots, and slates.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setTargetForReq(null);
+                    setNewReqTitle('');
+                    setNewReqDesc('');
+                    setIsCreateReqOpen(true);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-600/30 transition"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  + Create Requirement
+                </button>
+              </div>
+
+              {/* KPI Stats Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2">
+                <div 
+                  onClick={() => { setReqFilterStatus('ALL'); setReqFilterAssignee('ALL'); }}
+                  className={`p-3.5 rounded-xl border cursor-pointer transition ${
+                    reqFilterStatus === 'ALL' && reqFilterAssignee === 'ALL'
+                      ? 'bg-purple-950/40 border-purple-500/50 text-white'
+                      : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:bg-slate-900'
+                  }`}
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-wider block text-slate-400">Total</span>
+                  <span className="text-xl font-mono font-bold text-white">{reqMetrics.total}</span>
+                </div>
+
+                <div 
+                  onClick={() => { setReqFilterStatus('open'); }}
+                  className={`p-3.5 rounded-xl border cursor-pointer transition ${
+                    reqFilterStatus === 'open'
+                      ? 'bg-amber-950/40 border-amber-500/50 text-amber-300'
+                      : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:bg-slate-900'
+                  }`}
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-wider block text-amber-400">Actionable Open</span>
+                  <span className="text-xl font-mono font-bold text-amber-300">{reqMetrics.open}</span>
+                </div>
+
+                <div 
+                  onClick={() => { setReqFilterAssignee(reqFilterAssignee === '@me' ? 'ALL' : '@me'); }}
+                  className={`p-3.5 rounded-xl border cursor-pointer transition ${
+                    reqFilterAssignee === '@me'
+                      ? 'bg-blue-950/40 border-blue-500/50 text-blue-300'
+                      : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:bg-slate-900'
+                  }`}
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-wider block text-blue-400">Assigned To Me</span>
+                  <span className="text-xl font-mono font-bold text-blue-300">{reqMetrics.assignedToMe}</span>
+                </div>
+
+                <div 
+                  onClick={() => { setReqFilterPriority('high'); }}
+                  className={`p-3.5 rounded-xl border cursor-pointer transition ${
+                    reqFilterPriority === 'high'
+                      ? 'bg-red-950/40 border-red-500/50 text-red-300'
+                      : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:bg-slate-900'
+                  }`}
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-wider block text-red-400">Critical / High</span>
+                  <span className="text-xl font-mono font-bold text-red-300">{reqMetrics.criticalOrHigh}</span>
+                </div>
+
+                <div 
+                  onClick={() => { setReqFilterStatus('resolved'); }}
+                  className={`p-3.5 rounded-xl border cursor-pointer transition ${
+                    reqFilterStatus === 'resolved'
+                      ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
+                      : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:bg-slate-900'
+                  }`}
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-wider block text-emerald-400">Resolved</span>
+                  <span className="text-xl font-mono font-bold text-emerald-300">{reqMetrics.resolved}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Filter & Search Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/80 border border-slate-800 rounded-xl p-3">
+              {/* Status Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                {(['ALL', 'open', 'in_progress', 'blocked', 'resolved'] as const).map(statusKey => (
+                  <button
+                    key={statusKey}
+                    onClick={() => setReqFilterStatus(statusKey)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition uppercase font-mono ${
+                      reqFilterStatus === statusKey
+                        ? statusKey === 'resolved'
+                          ? 'bg-emerald-600 text-white'
+                          : statusKey === 'blocked'
+                          ? 'bg-red-600 text-white'
+                          : 'bg-purple-600 text-white'
+                        : 'text-slate-400 hover:text-white bg-slate-950 border border-slate-800'
+                    }`}
+                  >
+                    {statusKey === 'ALL' ? 'All Status' : statusKey.replace('_', ' ')}
+                  </button>
+                ))}
+              </div>
+
+              {/* Filters Dropdown & Search */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Assignee Filter */}
+                <select
+                  value={reqFilterAssignee}
+                  onChange={e => setReqFilterAssignee(e.target.value)}
+                  className="bg-slate-950 border border-slate-700 text-xs px-2.5 py-1.5 rounded-lg text-white font-mono focus:outline-none focus:border-purple-500"
+                >
+                  <option value="ALL">All Assignees</option>
+                  <option value="@me">👤 Assigned to Me ({currentUser.handle})</option>
+                  {teamUsers.map(u => (
+                    <option key={u.handle} value={u.handle}>
+                      {u.handle} ({u.name})
+                    </option>
+                  ))}
+                </select>
+
+                {/* Priority Filter */}
+                <select
+                  value={reqFilterPriority}
+                  onChange={e => setReqFilterPriority(e.target.value)}
+                  className="bg-slate-950 border border-slate-700 text-xs px-2.5 py-1.5 rounded-lg text-white font-mono focus:outline-none focus:border-purple-500"
+                >
+                  <option value="ALL">All Priorities</option>
+                  <option value="critical">🔴 Critical</option>
+                  <option value="high">🟠 High</option>
+                  <option value="medium">🟡 Medium</option>
+                  <option value="low">🔵 Low</option>
+                </select>
+
+                {/* Category Filter */}
+                <select
+                  value={reqFilterCategory}
+                  onChange={e => setReqFilterCategory(e.target.value)}
+                  className="bg-slate-950 border border-slate-700 text-xs px-2.5 py-1.5 rounded-lg text-white font-mono focus:outline-none focus:border-purple-500"
+                >
+                  <option value="ALL">All Categories</option>
+                  <option value="sound">🎙️ Sound</option>
+                  <option value="edit">✂️ Editorial</option>
+                  <option value="vfx">✨ VFX</option>
+                  <option value="camera">🎥 Camera</option>
+                  <option value="color">🎨 Color</option>
+                  <option value="reshoot">🔄 Reshoot</option>
+                  <option value="general">📝 General</option>
+                </select>
+
+                {/* Text Search */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="Filter requirements..."
+                    value={reqSearchQuery}
+                    onChange={e => setReqSearchQuery(e.target.value)}
+                    className="bg-slate-950 border border-slate-700 text-xs pl-8 pr-3 py-1.5 rounded-lg text-white font-mono w-44 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Requirements Cards List */}
+            {filteredRequirements.length === 0 ? (
+              <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-12 text-center text-slate-400 space-y-3">
+                <CheckCircle2 className="w-12 h-12 text-purple-400 mx-auto opacity-70" />
+                <h3 className="text-base font-bold text-white">No Requirements Found</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  No action items match the active filters. Create a new requirement on any scene, shot, or take.
+                </p>
+                <button
+                  onClick={() => {
+                    setTargetForReq(null);
+                    setNewReqTitle('');
+                    setNewReqDesc('');
+                    setIsCreateReqOpen(true);
+                  }}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl transition"
+                >
+                  + Add Requirement
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredRequirements.map(req => {
+                  const isResolved = req.status === 'resolved';
+                  const priorityColor = 
+                    req.priority === 'critical' ? 'border-l-red-500' :
+                    req.priority === 'high' ? 'border-l-orange-500' :
+                    req.priority === 'medium' ? 'border-l-yellow-500' : 'border-l-blue-500';
+
+                  return (
+                    <div
+                      key={req.requirement_id}
+                      className={`bg-slate-900/90 border border-slate-800 ${priorityColor} border-l-4 rounded-xl p-5 space-y-3 shadow-lg transition hover:border-slate-700`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-1.5 flex-1 min-w-[280px]">
+                          {/* Badges Bar */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* Status Badge */}
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono uppercase ${
+                              isResolved
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                : req.status === 'blocked'
+                                ? 'bg-red-500/20 text-red-300 border border-red-500/40'
+                                : req.status === 'in_progress'
+                                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                            }`}>
+                              {req.status.replace('_', ' ')}
+                            </span>
+
+                            {/* Category Badge */}
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-950/60 text-purple-300 border border-purple-500/30 uppercase">
+                              {req.category}
+                            </span>
+
+                            {/* Priority Badge */}
+                            <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded uppercase ${
+                              req.priority === 'critical'
+                                ? 'bg-red-950/80 text-red-300 border border-red-500/40'
+                                : req.priority === 'high'
+                                ? 'bg-orange-950/80 text-orange-300 border border-orange-500/40'
+                                : 'bg-slate-950 text-slate-400 border border-slate-800'
+                            }`}>
+                              {req.priority} Priority
+                            </span>
+
+                            {/* Target Entity Badge */}
+                            <span className="text-xs font-mono font-bold text-cyan-300 bg-cyan-950/50 border border-cyan-500/30 px-2.5 py-0.5 rounded flex items-center gap-1.5">
+                              <Clapperboard className="w-3 h-3 text-cyan-400" />
+                              {req.target_label || `${req.target_type.toUpperCase()} ${req.target_id}`}
+                            </span>
+                          </div>
+
+                          {/* Requirement Title */}
+                          <h4 className="text-sm font-bold text-white pt-1">{req.title}</h4>
+
+                          {/* Requirement Description */}
+                          {req.description && (
+                            <p className="text-xs text-slate-300 bg-slate-950/70 p-3 rounded-lg border border-slate-800/80 leading-relaxed font-sans">
+                              {req.description}
+                            </p>
+                          )}
+
+                          {/* Meta line: Creator, Assignee, Created Date */}
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 pt-1">
+                            <span className="flex items-center gap-1.5 font-mono">
+                              <span className="text-slate-500">Assigned to:</span>
+                              <span className="text-purple-300 font-bold bg-purple-950/60 px-2 py-0.5 rounded border border-purple-500/30">
+                                {req.assigned_to}
+                              </span>
+                            </span>
+                            <span className="text-slate-600">•</span>
+                            <span className="text-slate-400 font-mono">
+                              Created by <strong className="text-slate-200">{req.created_by}</strong>
+                            </span>
+                            <span className="text-slate-600">•</span>
+                            <span className="text-slate-500 font-mono text-[11px]">
+                              {new Date(req.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+
+                          {/* Resolution Quote Callout (if resolved) */}
+                          {isResolved && (
+                            <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-xl p-3 text-xs space-y-1 mt-2">
+                              <div className="flex items-center gap-1.5 text-emerald-400 font-bold font-mono text-[11px]">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                Resolved by {req.resolved_by || 'Team Member'} {req.resolved_at ? `(${new Date(req.resolved_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })})` : ''}
+                              </div>
+                              {req.resolution_note && (
+                                <p className="text-emerald-200/90 italic pl-5">
+                                  "{req.resolution_note}"
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Action Buttons Toolbar */}
+                        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 shrink-0">
+                          {/* DIRECT GO TO SLATE NAVIGATOR BUTTON */}
+                          <button
+                            onClick={() => jumpToTarget(req.target_type, req.target_id)}
+                            className="px-3.5 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 hover:text-white border border-blue-500/40 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow"
+                            title="Jump directly to Slate Navigator for this take/slate"
+                          >
+                            <Clapperboard className="w-3.5 h-3.5 text-blue-400" />
+                            Slate Navigator
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Resolve Button */}
+                          {!isResolved ? (
+                            <button
+                              onClick={() => {
+                                setSelectedReqForResolve(req);
+                                setReqResolutionNote('');
+                              }}
+                              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              Resolve...
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleUpdateRequirementStatus(req.requirement_id, 'in_progress')}
+                              className="px-3.5 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold transition"
+                            >
+                              Re-open
+                            </button>
+                          )}
+
+                          {/* Status changer dropdown if not resolved */}
+                          {!isResolved && (
+                            <select
+                              value={req.status}
+                              onChange={e => handleUpdateRequirementStatus(req.requirement_id, e.target.value)}
+                              className="bg-slate-950 border border-slate-700 text-xs px-2 py-1.5 rounded-lg text-slate-300 font-mono focus:outline-none focus:border-purple-500"
+                            >
+                              <option value="open">Open</option>
+                              <option value="in_progress">In Progress</option>
+                              <option value="blocked">Blocked</option>
+                            </select>
+                          )}
+
+                          {/* Delete button */}
+                          <button
+                            onClick={() => handleDeleteRequirement(req.requirement_id, req.title)}
+                            className="p-1.5 bg-slate-950 hover:bg-red-950/60 text-slate-500 hover:text-red-400 border border-slate-800 hover:border-red-500/30 rounded-lg transition"
+                            title="Delete requirement"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
       </main>
+
 
       {/* DETAILED 3-AXIS WITNESS & CARD LOCATOR DRAWER */}
       {inspectedTake && (
@@ -3080,7 +3612,8 @@ export default function App() {
       )}
 
       {/* 1. CREATE REQUIREMENT MODAL */}
-      {isCreateReqOpen && targetForReq && (
+      {/* 1. CREATE REQUIREMENT MODAL */}
+      {isCreateReqOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -3090,11 +3623,16 @@ export default function App() {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white">Add Requirement</h3>
-                  <p className="text-xs text-purple-300 font-mono">Attaching to: {targetForReq.target_label}</p>
+                  <p className="text-xs text-purple-300 font-mono">
+                    {targetForReq ? `Attaching to: ${targetForReq.target_label}` : 'Select Target Scene, Slate, or Take'}
+                  </p>
                 </div>
               </div>
               <button
-                onClick={() => setIsCreateReqOpen(false)}
+                onClick={() => {
+                  setIsCreateReqOpen(false);
+                  setTargetForReq(null);
+                }}
                 className="text-slate-400 hover:text-white p-1"
               >
                 ✕
@@ -3102,6 +3640,39 @@ export default function App() {
             </div>
 
             <form onSubmit={handleCreateRequirementSubmit} className="space-y-3.5 text-xs">
+              {/* Target Entity Selector (if opened globally from Requirements Hub) */}
+              {!targetForReq && (
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-300 block">Target Entity (Take or Scene):</label>
+                  <select
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (!val) return;
+                      const [type, id, label] = val.split('||');
+                      setTargetForReq({ target_type: type as any, target_id: id, target_label: label });
+                    }}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 font-mono"
+                    defaultValue=""
+                  >
+                    <option value="" disabled>-- Select a Take or Scene to attach requirement --</option>
+                    <optgroup label="🎬 Takes">
+                      {takes.map(t => (
+                        <option key={`${t.slate}_${t.take_id}`} value={`take||${t.slate}_${t.take_id}||Take ${t.slate} T${t.take_id}`}>
+                          Take {t.slate} T{t.take_id} (Scene {t.scene})
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="📜 Scenes">
+                      {uniqueScenes.map(sc => (
+                        <option key={sc} value={`scene||${sc}||Scene ${sc}`}>
+                          Scene {sc}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </div>
+              )}
+
               {/* Title */}
               <div className="space-y-1">
                 <label className="font-bold text-slate-300 block">Requirement Title:</label>
@@ -3115,6 +3686,7 @@ export default function App() {
                   autoFocus
                 />
               </div>
+
 
               {/* Responsible Assignee (with @ symbol) */}
               <div className="space-y-1">
