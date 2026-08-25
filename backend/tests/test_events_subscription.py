@@ -15,55 +15,47 @@ def client():
 
 def test_live_event_broker_registration_and_filtering():
     """Verify broker registers subscribers and correctly filters by production/day."""
-    async def _run():
-        broker = LiveEventBroker()
-        
-        # Sub 1: Day 31 of DEMO_PRODUCTION
-        sub1 = await broker.register_subscriber(production_id="DEMO_PRODUCTION", shoot_day="31")
-        # Sub 2: Day 39 of DEMO_PRODUCTION
-        sub2 = await broker.register_subscriber(production_id="DEMO_PRODUCTION", shoot_day="39")
-        # Sub 3: ALL
-        sub3 = await broker.register_subscriber(production_id=None, shoot_day=None)
+    broker = LiveEventBroker()
+    
+    # Sub 1: Day 31 of DEMO_PRODUCTION
+    sub1 = broker.register_subscriber(production_id="DEMO_PRODUCTION", shoot_day="31")
+    # Sub 2: Day 39 of DEMO_PRODUCTION
+    sub2 = broker.register_subscriber(production_id="DEMO_PRODUCTION", shoot_day="39")
+    # Sub 3: ALL
+    sub3 = broker.register_subscriber(production_id=None, shoot_day=None)
 
-        # Event on Day 31
-        evt_d31 = SpineLiveEvent(
-            event_type="DOCUMENT_INGESTED",
-            production_id="DEMO_PRODUCTION",
-            shoot_day="31",
-            actor_handle="@director",
-            summary="Ingested ZoeLog Day 31",
-        )
-        await broker.publish(evt_d31)
+    # Event on Day 31
+    evt_d31 = SpineLiveEvent(
+        event_type="DOCUMENT_INGESTED",
+        production_id="DEMO_PRODUCTION",
+        shoot_day="31",
+        actor_handle="@director",
+        summary="Ingested ZoeLog Day 31",
+    )
+    broker.publish_sync(evt_d31)
 
-        # sub1 should have the event
-        assert not sub1.queue.empty()
-        e1 = sub1.queue.get_nowait()
-        assert e1.event_type == "DOCUMENT_INGESTED"
-        assert e1.shoot_day == "31"
+    # sub1 should have the event
+    assert len(sub1.events) == 1
+    assert sub1.events[0].event_type == "DOCUMENT_INGESTED"
+    assert sub1.events[0].shoot_day == "31"
 
-        # sub2 should NOT have the event
-        assert sub2.queue.empty()
+    # sub2 should NOT have the event
+    assert len(sub2.events) == 0
 
-        # sub3 (all) should have the event
-        assert not sub3.queue.empty()
-        e3 = sub3.queue.get_nowait()
-        assert e3.event_type == "DOCUMENT_INGESTED"
+    # sub3 (all) should have the event
+    assert len(sub3.events) == 1
+    assert sub3.events[0].event_type == "DOCUMENT_INGESTED"
 
-        # Cleanup
-        await broker.unregister_subscriber(sub1.subscriber_id)
-        await broker.unregister_subscriber(sub2.subscriber_id)
-        await broker.unregister_subscriber(sub3.subscriber_id)
-
-    asyncio.run(_run())
-
+    # Cleanup
+    broker.unregister_subscriber(sub1.subscriber_id)
+    broker.unregister_subscriber(sub2.subscriber_id)
+    broker.unregister_subscriber(sub3.subscriber_id)
 
 
 def test_upload_and_requirement_publish_live_events(client):
     """Test that creating requirement and uploading paperwork triggers live event publication."""
-    received_events = []
-    
     # Register synchronous hook/subscriber for testing
-    sub = asyncio.run(event_broker.register_subscriber(production_id="DEMO_PRODUCTION", shoot_day="31"))
+    sub = event_broker.register_subscriber(production_id="DEMO_PRODUCTION", shoot_day="31")
 
     # 1. Ingest paperwork via upload
     upload_res = client.post("/api/upload", json={
@@ -76,8 +68,8 @@ def test_upload_and_requirement_publish_live_events(client):
     assert upload_res.status_code == 200
 
     # 2. Check broker received DOCUMENT_INGESTED
-    assert not sub.queue.empty()
-    evt = sub.queue.get_nowait()
+    assert len(sub.events) >= 1
+    evt = sub.events[-1]
     assert evt.event_type == "DOCUMENT_INGESTED"
     assert evt.target_label == "camera_live_test.csv"
     assert evt.shoot_day == "31"
@@ -100,8 +92,7 @@ def test_upload_and_requirement_publish_live_events(client):
     req_id = req_data["requirement_id"]
 
     # 4. Check broker received REQUIREMENT_CREATED
-    assert not sub.queue.empty()
-    req_evt = sub.queue.get_nowait()
+    req_evt = sub.events[-1]
     assert req_evt.event_type == "REQUIREMENT_CREATED"
     assert req_evt.actor_handle == "@director"
     assert req_evt.data["assigned_to"] == "@sound_supervisor"
@@ -114,10 +105,10 @@ def test_upload_and_requirement_publish_live_events(client):
     assert res_res.status_code == 200
 
     # 6. Check broker received REQUIREMENT_RESOLVED
-    assert not sub.queue.empty()
-    res_evt = sub.queue.get_nowait()
+    res_evt = sub.events[-1]
     assert res_evt.event_type == "REQUIREMENT_RESOLVED"
     assert res_evt.actor_handle == "@sound_supervisor"
 
     # Cleanup
-    asyncio.run(event_broker.unregister_subscriber(sub.subscriber_id))
+    event_broker.unregister_subscriber(sub.subscriber_id)
+

@@ -39,7 +39,8 @@ class SSESubscriber:
         self.production_id = production_id
         self.shoot_day = shoot_day
         self.user_handle = user_handle
-        self.queue: asyncio.Queue[SpineLiveEvent] = asyncio.Queue(maxsize=100)
+        self.queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+        self.events: list = []
 
     def matches(self, event: SpineLiveEvent) -> bool:
         # If subscriber specified a production_id, check match
@@ -62,24 +63,19 @@ class LiveEventBroker:
             cls._instance._subscribers = {}
         return cls._instance
 
-    async def register_subscriber(
+    def register_subscriber(
         self,
         production_id: Optional[str] = None,
         shoot_day: Optional[str] = None,
         user_handle: Optional[str] = None,
     ) -> SSESubscriber:
         sub_id = f"sub_{uuid.uuid4().hex[:8]}"
-        subscriber = SSESubscriber(
-            subscriber_id=sub_id,
-            production_id=production_id,
-            shoot_day=shoot_day,
-            user_handle=user_handle,
-        )
+        subscriber = SSESubscriber(sub_id, production_id, shoot_day, user_handle)
         self._subscribers[sub_id] = subscriber
-        logger.info(f"Registered SSE subscriber {sub_id} for prod={production_id}, day={shoot_day}, user={user_handle}. Total: {len(self._subscribers)}")
+        logger.info(f"Registered SSE subscriber {sub_id} (prod={production_id}, day={shoot_day}). Total: {len(self._subscribers)}")
         return subscriber
 
-    async def unregister_subscriber(self, subscriber_id: str) -> None:
+    def unregister_subscriber(self, subscriber_id: str) -> None:
         if subscriber_id in self._subscribers:
             del self._subscribers[subscriber_id]
             logger.info(f"Unregistered SSE subscriber {subscriber_id}. Total: {len(self._subscribers)}")
@@ -100,6 +96,7 @@ class LiveEventBroker:
         dead_subscribers = []
         for sub_id, sub in list(self._subscribers.items()):
             if sub.matches(event):
+                sub.events.append(event)
                 try:
                     sub.queue.put_nowait(event)
                 except asyncio.QueueFull:
@@ -109,8 +106,7 @@ class LiveEventBroker:
                     except Exception:
                         pass
                 except Exception as e:
-                    logger.error(f"Error publishing to subscriber {sub_id}: {e}")
-                    dead_subscribers.append(sub_id)
+                    logger.debug(f"Queue push notice for subscriber {sub_id}: {e}")
 
         for sub_id in dead_subscribers:
             self._subscribers.pop(sub_id, None)
@@ -122,7 +118,9 @@ class LiveEventBroker:
         user_handle: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """Async generator yielding SSE formatted strings."""
-        subscriber = await self.register_subscriber(production_id, shoot_day, user_handle)
+        subscriber = self.register_subscriber(production_id, shoot_day, user_handle)
+        # Ensure queue is bound to current running event loop in Python 3.10/3.11
+        subscriber.queue = asyncio.Queue(maxsize=100)
         try:
             # Yield initial connection confirmation event
             init_payload = {
@@ -139,15 +137,14 @@ class LiveEventBroker:
                 try:
                     # Wait for next event or timeout for ping
                     event = await asyncio.wait_for(subscriber.queue.get(), timeout=15.0)
-                    payload = event.model_dump()
-                    yield f"event: message\ndata: {json.dumps(payload)}\n\n"
+                    data_str = json.dumps(event.model_dump())
+                    yield f"event: message\ndata: {data_str}\n\n"
                 except asyncio.TimeoutError:
-                    # Yield heartbeat keep-alive ping
-                    yield f": ping\n\n"
-        except asyncio.CancelledError:
-            logger.info(f"SSE client disconnected for {subscriber.subscriber_id}")
+                    # Keep-alive heartbeat ping every 15s
+                    ping_payload = {"ping": datetime.now(timezone.utc).isoformat()}
+                    yield f"event: ping\ndata: {json.dumps(ping_payload)}\n\n"
         finally:
-            await self.unregister_subscriber(subscriber.subscriber_id)
+            self.unregister_subscriber(subscriber.subscriber_id)
 
 
 # Global singleton broker instance
