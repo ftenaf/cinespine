@@ -51,6 +51,15 @@ class TestSoundRollNormalization:
         assert normalize_sound_roll("R01") == "SR01"
         assert normalize_sound_roll("01") == "SR01"
 
+    def test_sound_roll_filters_dates_and_preserves_sd_folders(self):
+        # Dates (like 280726 = 28 Jul 2026) are not sound rolls
+        assert normalize_sound_roll("280726") is None
+        assert normalize_sound_roll("20260728") is None
+        assert normalize_sound_roll("n/a") is None
+        assert normalize_sound_roll("MOS") is None
+        # Sound Devices reel tape folder format
+        assert normalize_sound_roll("26Y07M27") == "26Y07M27"
+
 
 class TestSlateNormalization:
     """

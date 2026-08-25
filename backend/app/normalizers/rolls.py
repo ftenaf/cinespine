@@ -43,22 +43,34 @@ def normalize_camera_roll(raw_roll: Optional[str]) -> Optional[str]:
 
 def normalize_sound_roll(raw_roll: Optional[str]) -> Optional[str]:
     """
-    Folds sound rolls into canonical SR## form.
+    Folds sound rolls into canonical SR## form or preserves Sound Devices reel tape folders (e.g. '26Y07M27').
+    Filters out dates (e.g. '280726') and non-sound indicators (e.g. 'n/a', 'MOS').
     
     Examples:
     - 'SR01', 'SR_001', 'R01', '01' -> 'SR01'
+    - '26Y07M27' -> '26Y07M27'
+    - '280726', '20260728' -> None (shoot date, not sound roll)
+    - 'n/a', 'NONE', 'MOS' -> None
     """
     if not raw_roll or not isinstance(raw_roll, str):
         return None
     
     cleaned = raw_roll.strip().upper()
-    if not cleaned:
+    if not cleaned or cleaned in ["N/A", "NONE", "NO", "MOS", "-", "FALSE"]:
         return None
 
-    # Extract all digits
-    digits = re.findall(r"\d+", cleaned)
-    if not digits:
+    # Preserve Sound Devices folder formats like 26Y07M27
+    if re.match(r"^\d{2}Y\d{2}M\d{2}$", cleaned):
         return cleaned
-    
-    num = int(digits[0])
-    return f"SR{num:02d}"
+
+    # 6 or 8-digit date strings (e.g. 280726, 20260728) are shoot dates, not sound rolls
+    if re.match(r"^\d{6,8}$", cleaned):
+        return None
+
+    # Match SR## or 1-3 digit roll number
+    m = re.match(r"^(?:SR|R|SOUND)?[\-_]?0*(\d{1,3})$", cleaned)
+    if m:
+        num = int(m.group(1))
+        return f"SR{num:02d}"
+
+    return cleaned if "SR" in cleaned else None

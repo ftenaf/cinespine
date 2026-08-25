@@ -77,7 +77,8 @@ class TestPDFParsers:
         assert r1.slate == "27/7"
         assert r1.take_id == "1"
         assert r1.camera_roll == "A120"
-        assert r1.sound_roll == "SR280726" or r1.sound_roll is not None
+        # Script supervisor logs track camera cards and shoot date, not sound rolls
+        assert r1.sound_roll is None
 
         r2 = records[1]
         assert r2.slate == "27/7"
