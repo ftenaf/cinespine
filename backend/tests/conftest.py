@@ -17,6 +17,21 @@ def isolated_character_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_live_ai_calls(monkeypatch):
+    """
+    Keeps the suite hermetic.
+
+    backend/app/main.py loads .env, so once a developer has a real
+    GEMINI_API_KEY every test touching /api/script/upload would make a live,
+    billed call — roughly 25 seconds each, and failing offline. Tests that
+    exercise inference opt back in by deleting this variable and stubbing
+    _call_gemini.
+    """
+    monkeypatch.setenv("CINESPINE_DISABLE_AI_CHARACTER_INFERENCE", "1")
+    yield
+
+
+@pytest.fixture(autouse=True)
 def reset_gcs_availability_cache():
     """
     The GCS integration caches "no credentials" for the life of the process to

@@ -284,6 +284,26 @@ def test_prompt_states_the_specificity_contract(screenplay):
     assert "Differentiate the cast" in prompt
 
 
+def test_prompt_pins_facts_stated_in_dialogue(screenplay):
+    """
+    Regression guard. Against the live model, an age stated in an action line
+    ("INES MARCHETTI, 52") was honoured but one stated in dialogue ("He's
+    twenty-three") came back as 24 on every run. The prompt has to say that
+    dialogue is evidence too.
+    """
+    prompt = character_ai.build_prompt(screenplay)
+    assert "stated in dialogue" in prompt
+    assert "twenty-three" in prompt and "23" in prompt
+
+
+def test_timeout_leaves_headroom_over_a_typical_call():
+    """
+    A timeout discards the entire inference. Measured round trips on a
+    five-scene script were 22-27s, so the default must sit well clear of that.
+    """
+    assert character_ai.TIMEOUT_SECONDS >= 45
+
+
 def test_disabled_inference_leaves_profiles_intact_and_says_so(screenplay, monkeypatch):
     monkeypatch.setenv("CINESPINE_DISABLE_AI_CHARACTER_INFERENCE", "1")
     before = screenplay.characters[0].actor_reference

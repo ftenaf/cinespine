@@ -26,7 +26,10 @@ from typing import Any, Dict, List, Optional
 from backend.app.script.parser import Screenplay, ScreenplayScene
 
 MODEL = os.environ.get("CINESPINE_GEMINI_MODEL", "gemini-3.6-flash")
-TIMEOUT_SECONDS = float(os.environ.get("CINESPINE_AI_CHARACTER_TIMEOUT", "30"))
+# A timeout discards the whole inference, so the default is generous: measured
+# round trips on a five-scene script run ~23s, which left too little headroom
+# at the previous 30s.
+TIMEOUT_SECONDS = float(os.environ.get("CINESPINE_AI_CHARACTER_TIMEOUT", "60"))
 
 # Per character, how much evidence to send. Keeps the prompt bounded on
 # feature-length scripts.
@@ -131,6 +134,10 @@ def build_prompt(screenplay: Screenplay, retry_feedback: Optional[str] = None) -
         "RULES\n"
         "1. Ground every choice in the evidence. What a character says, how they "
         "say it, what they do and where they are all constrain how they look.\n"
+        "1a. Any fact the evidence states is fixed. Use it exactly, never an "
+        "approximation. This includes facts stated in dialogue rather than in an "
+        "action line: if a character is called twenty-three, they are 23, not 24. "
+        "The same holds for names, ages, injuries, and objects they carry.\n"
         "2. Where the screenplay is silent, decide. Commit to one specific "
         "option consistent with the role, period and setting. Never hedge, never "
         "offer alternatives, never say a detail is unknown or to be determined.\n"
