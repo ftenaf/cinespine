@@ -149,6 +149,48 @@ flowchart TB
 
 ---
 
+### ⚡ Event System & Real-Time SSE Broker Architecture
+
+![CineSpine Event System Animated](docs/architecture/cinespine-event-system-animated.svg)
+
+```mermaid
+flowchart LR
+    subgraph Producers["1. Event Producers"]
+        P1["Document Parser"]
+        P2["3-Axis Reconciliation"]
+        P3["Consensus Hub"]
+        P4["Previz Studio"]
+    end
+
+    subgraph EventSpine["2. ClickHouse Event Spine (Immutable)"]
+        direction TB
+        E1["#8492 [TAKE_EXTRACTED]<br/>Slate 27/3 • Take 3"]
+        E2["#8493 [DISCREPANCY_FLAGGED]<br/>False Start vs Good"]
+        E3["#8494 [PREVIZ_GENERATED]<br/>Cam C 85mm T1.4"]
+        E4["#8495 [DISCREPANCY_RESOLVED]<br/>Consensus Recorded"]
+        E1 --> E2 --> E3 --> E4
+    end
+
+    subgraph Broker["3. LiveEventBroker (SSE)"]
+        B1["/api/events/subscribe"]
+        B2["Role Filter: SOUND / CAMERA / EDITORIAL"]
+        B3["User Dispatch: @director"]
+    end
+
+    subgraph Consumers["4. Reactive Client State"]
+        C1["Discrepancy Matrix (Auto-Updates)"]
+        C2["Previz Canvas (Real-Time Render)"]
+        C3["Toast Notifications (@director)"]
+        C4["Grafana Telemetry & Sync Lag"]
+    end
+
+    Producers -->|append_event| EventSpine
+    EventSpine -->|broadcast| Broker
+    Broker -->|Server-Sent Events| Consumers
+```
+
+---
+
 ## ✨ Core Innovations & Capabilities
 
 ### 1. 🔍 3-Axis Discrepancy Reconciliation Engine

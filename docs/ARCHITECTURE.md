@@ -142,3 +142,55 @@ sequenceDiagram
     API-->>UI: 200 OK (image_url, compiled_prompt, provider: "Google Imagen 3")
     UI-->>User: Displays new photorealistic 35mm film still with "Live AI Diffusion" badge
 ```
+
+---
+
+## ⚡ 5. Append-Only Event Spine & Live SSE Fan-Out Architecture
+
+### Animated Event System Diagram (SMIL SVG)
+
+![CineSpine Event System Animated](architecture/cinespine-event-system-animated.svg)
+
+### Event Sourcing & State Projection Model
+
+```mermaid
+flowchart LR
+    subgraph Producers["1. Event Producers"]
+        P1["Document Parser"]
+        P2["3-Axis Reconciliation"]
+        P3["Consensus Hub"]
+        P4["Previz Studio"]
+    end
+
+    subgraph EventSpine["2. ClickHouse Event Spine (Immutable)"]
+        direction TB
+        E1["#8492 [TAKE_EXTRACTED]<br/>Slate 27/3 • Take 3"]
+        E2["#8493 [DISCREPANCY_FLAGGED]<br/>False Start vs Good"]
+        E3["#8494 [PREVIZ_GENERATED]<br/>Cam C 85mm T1.4"]
+        E4["#8495 [DISCREPANCY_RESOLVED]<br/>Consensus Recorded"]
+        E1 --> E2 --> E3 --> E4
+    end
+
+    subgraph Broker["3. LiveEventBroker (SSE)"]
+        B1["/api/events/subscribe"]
+        B2["Role Filter: SOUND / CAMERA / EDITORIAL"]
+        B3["User Dispatch: @director"]
+    end
+
+    subgraph Consumers["4. Reactive Client State"]
+        C1["Discrepancy Matrix (Auto-Updates)"]
+        C2["Previz Canvas (Real-Time Render)"]
+        C3["Toast Notifications (@director)"]
+        C4["Grafana Telemetry & Sync Lag"]
+    end
+
+    Producers -->|append_event| EventSpine
+    EventSpine -->|broadcast| Broker
+    Broker -->|Server-Sent Events| Consumers
+```
+
+### Event System Guarantees:
+1. **Zero Mutation Invariant:** Events are append-only. Takes and slates are never updated in place; state is computed as a fold over historical events.
+2. **Auditability & Traceability:** Every discrepancy resolution, consensus vote, and prompt modification records the originating practitioner handle (`@assistant_editor`, `@director`) and UTC timestamp.
+3. **Non-Blocking Real-Time Fan-Out:** The FastAPI `LiveEventBroker` utilizes asynchronous Server-Sent Events (SSE) scoped by `production_id`, `shoot_day`, and user handle to push live updates with sub-millisecond latency and zero browser polling.
+

@@ -1,0 +1,259 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 650" width="100%" height="100%" style="background:#090d16; font-family:'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f19" />
+      <stop offset="50%" stop-color="#0d1527" />
+      <stop offset="100%" stop-color="#080c15" />
+    </linearGradient>
+
+    <linearGradient id="eventGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#eab308" />
+      <stop offset="100%" stop-color="#fef08a" />
+    </linearGradient>
+
+    <linearGradient id="brokerPurple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#9333ea" />
+      <stop offset="100%" stop-color="#d8b4fe" />
+    </linearGradient>
+
+    <linearGradient id="streamCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#a5f3fc" />
+    </linearGradient>
+
+    <!-- Glow Filters -->
+    <filter id="glowGold" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="glowCyan" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="glowPurple" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#1e293b" stroke-width="0.75" opacity="0.3" />
+    </pattern>
+  </defs>
+
+  <!-- Background Layer -->
+  <rect width="1200" height="650" fill="url(#bgGrad)" />
+  <rect width="1200" height="650" fill="url(#grid)" />
+
+  <!-- Header -->
+  <g transform="translate(60, 45)">
+    <text x="0" y="0" font-size="20" font-weight="900" fill="#f8fafc" letter-spacing="1.2">⚡ CINESPINE <tspan fill="#facc15">EVENT SYSTEM</tspan> &amp; <tspan fill="#a855f7">SSE STREAM BROKER</tspan></text>
+    <text x="0" y="20" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="0.8">IMMUTABLE APPEND-ONLY EVENT LOGGING • NON-BLOCKING SSE FAN-OUT • REAL-TIME CLIENT PROJECTION</text>
+  </g>
+
+  <!-- ============================================================== -->
+  <!-- 1. EVENT PRODUCERS (LEFT)                                      -->
+  <!-- ============================================================== -->
+  <g transform="translate(50, 95)">
+    <rect width="260" height="510" rx="14" fill="#0f172a" stroke="#334155" stroke-width="1.5" />
+    <rect width="260" height="36" rx="14" fill="#1e293b" opacity="0.8" />
+    <text x="18" y="23" font-size="11.5" font-weight="800" fill="#94a3b8" letter-spacing="0.8">1. EVENT PRODUCERS (SOURCES)</text>
+
+    <!-- Source 1: Document Ingest -->
+    <g transform="translate(15, 50)">
+      <rect width="230" height="62" rx="8" fill="#1e293b" stroke="#3b82f6" stroke-width="1" />
+      <circle cx="15" cy="20" r="4" fill="#60a5fa" />
+      <text x="26" y="24" font-size="10" font-weight="800" fill="#93c5fd">Document Ingestion Service</text>
+      <text x="12" y="44" font-size="8.5" fill="#cbd5e1">Script Supervisor PDF, Sound ALE, ZoeLog</text>
+      <text x="12" y="55" font-size="7.5" font-family="monospace" fill="#60a5fa">DOCUMENT_PARSED, TAKE_EXTRACTED</text>
+    </g>
+
+    <!-- Source 2: 3-Axis Reconciliation -->
+    <g transform="translate(15, 125)">
+      <rect width="230" height="62" rx="8" fill="#1e293b" stroke="#f43f5e" stroke-width="1" />
+      <circle cx="15" cy="20" r="4" fill="#fb7185" />
+      <text x="26" y="24" font-size="10" font-weight="800" fill="#fda4af">3-Axis Reconciliation Engine</text>
+      <text x="12" y="44" font-size="8.5" fill="#cbd5e1">Intent vs Belief vs Existence Scanner</text>
+      <text x="12" y="55" font-size="7.5" font-family="monospace" fill="#f43f5e">DISCREPANCY_FLAGGED</text>
+    </g>
+
+    <!-- Source 3: Consensus & Triage -->
+    <g transform="translate(15, 200)">
+      <rect width="230" height="62" rx="8" fill="#1e293b" stroke="#10b981" stroke-width="1" />
+      <circle cx="15" cy="20" r="4" fill="#34d399" />
+      <text x="26" y="24" font-size="10" font-weight="800" fill="#6ee7b7">Editorial Consensus Hub</text>
+      <text x="12" y="44" font-size="8.5" fill="#cbd5e1">Assistant Editor Discrepancy Resolution</text>
+      <text x="12" y="55" font-size="7.5" font-family="monospace" fill="#10b981">DISCREPANCY_RESOLVED</text>
+    </g>
+
+    <!-- Source 4: Previz Studio -->
+    <g transform="translate(15, 275)">
+      <rect width="230" height="62" rx="8" fill="#1e293b" stroke="#a855f7" stroke-width="1" />
+      <circle cx="15" cy="20" r="4" fill="#c084fc" />
+      <text x="26" y="24" font-size="10" font-weight="800" fill="#d8b4fe">Script &amp; Previz Synthesizer</text>
+      <text x="12" y="44" font-size="8.5" fill="#cbd5e1">Google Imagen 3 &amp; Gemini 2.0 Stills</text>
+      <text x="12" y="55" font-size="7.5" font-family="monospace" fill="#a855f7">PREVIZ_FRAME_GENERATED</text>
+    </g>
+
+    <!-- Source 5: Notifications & Actions -->
+    <g transform="translate(15, 350)">
+      <rect width="230" height="62" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="1" />
+      <circle cx="15" cy="20" r="4" fill="#fcd34d" />
+      <text x="26" y="24" font-size="10" font-weight="800" fill="#fde68a">Requirements &amp; Crew Alerts</text>
+      <text x="12" y="44" font-size="8.5" fill="#cbd5e1">Department Head Action Item Assigned</text>
+      <text x="12" y="55" font-size="7.5" font-family="monospace" fill="#f59e0b">NOTIFICATION_DISPATCHED</text>
+    </g>
+
+    <!-- Source 6: GCS Media Archival -->
+    <g transform="translate(15, 425)">
+      <rect width="230" height="62" rx="8" fill="#1e293b" stroke="#06b6d4" stroke-width="1" />
+      <circle cx="15" cy="20" r="4" fill="#22d3ee" />
+      <text x="26" y="24" font-size="10" font-weight="800" fill="#67e8f9">Google Cloud Storage Pipeline</text>
+      <text x="12" y="44" font-size="8.5" fill="#cbd5e1">gs://cinespine-production-media/</text>
+      <text x="12" y="55" font-size="7.5" font-family="monospace" fill="#06b6d4">MEDIA_BLOB_ARCHIVED</text>
+    </g>
+  </g>
+
+  <!-- ============================================================== -->
+  <!-- 2. CONNECTING PIPELINES: PRODUCERS TO EVENT SPINE             -->
+  <!-- ============================================================== -->
+  <path d="M 310 350 L 410 350" fill="none" stroke="#eab308" stroke-width="2.5" stroke-dasharray="6,4">
+    <animate attributeName="stroke-dashoffset" values="20;0" dur="1s" repeatCount="indefinite" />
+  </path>
+  <circle cx="360" cy="350" r="5" fill="#fde047" filter="url(#glowGold)">
+    <animateMotion path="M 310 350 L 410 350" dur="1.2s" repeatCount="indefinite" />
+  </circle>
+
+  <!-- ============================================================== -->
+  <!-- 3. CENTER ENGINE: APPEND-ONLY EVENT SPINE (CLICKHOUSE)        -->
+  <!-- ============================================================== -->
+  <g transform="translate(410, 95)">
+    <rect width="360" height="510" rx="16" fill="#0c1322" stroke="url(#eventGold)" stroke-width="2" filter="url(#glowGold)" opacity="0.25" />
+    <rect width="360" height="510" rx="16" fill="#0b1120" stroke="url(#eventGold)" stroke-width="1.8" />
+    
+    <!-- Spine Header -->
+    <rect width="360" height="42" rx="16" fill="#27220a" opacity="0.8" />
+    <text x="180" y="26" font-size="13" font-weight="900" fill="#fef08a" text-anchor="middle" letter-spacing="1">2. IMMUTABLE EVENT SPINE (CLICKHOUSE)</text>
+    
+    <!-- Schema Spec Box -->
+    <g transform="translate(18, 55)">
+      <rect width="324" height="180" rx="8" fill="#141c2e" stroke="#334155" stroke-width="1" />
+      <text x="14" y="20" font-size="10" font-weight="800" fill="#fde047">TABLE: production_events (ClickHouse OLAP)</text>
+      
+      <g font-family="monospace" font-size="8" fill="#94a3b8" transform="translate(14, 38)">
+        <text x="0" y="0"><tspan fill="#38bdf8">event_id</tspan>      : UUIDv7 / String (Primary Key)</text>
+        <text x="0" y="16"><tspan fill="#38bdf8">production_id</tspan> : LowCardinality(String) ['DEMO_PRODUCTION']</text>
+        <text x="0" y="32"><tspan fill="#38bdf8">shoot_day</tspan>     : UInt16 [31]</text>
+        <text x="0" y="48"><tspan fill="#38bdf8">event_type</tspan>    : Enum8('DISCREPANCY_FLAGGED', 'TAKE_EXTRACTED'...)</text>
+        <text x="0" y="64"><tspan fill="#38bdf8">aggregate_id</tspan>  : String ['TAKE-27-03', 'SCENE-27']</text>
+        <text x="0" y="80"><tspan fill="#38bdf8">payload_json</tspan>  : JSON (Immutable Event Payload)</text>
+        <text x="0" y="96"><tspan fill="#38bdf8">created_by</tspan>    : String ['@director', '@system']</text>
+        <text x="0" y="112"><tspan fill="#38bdf8">created_at</tspan>    : DateTime64(3, 'UTC')</text>
+      </g>
+    </g>
+
+    <!-- Event Append Stream Simulator -->
+    <g transform="translate(18, 250)">
+      <rect width="324" height="235" rx="8" fill="#0f172a" stroke="#7e22ce" stroke-width="1" />
+      <text x="14" y="22" font-size="10.5" font-weight="800" fill="#d8b4fe">LIVE EVENT LOG STREAM (APPEND-ONLY)</text>
+      
+      <!-- Event 1 -->
+      <g transform="translate(10, 36)">
+        <rect width="304" height="40" rx="4" fill="#1e1b4b" stroke="#6366f1" stroke-width="0.8" />
+        <text x="10" y="16" font-size="8.5" font-weight="700" fill="#a5b4fc">#8492 [TAKE_EXTRACTED] Slate 27/3 • Take 3</text>
+        <text x="10" y="30" font-size="7.5" font-family="monospace" fill="#94a3b8">Source: Scripte_TCLog.pdf • Circled: True</text>
+      </g>
+
+      <!-- Event 2 (Alert) -->
+      <g transform="translate(10, 84)">
+        <rect width="304" height="40" rx="4" fill="#3b0718" stroke="#f43f5e" stroke-width="0.8" />
+        <text x="10" y="16" font-size="8.5" font-weight="700" fill="#fda4af">#8493 [DISCREPANCY_FLAGGED] False Start vs Good</text>
+        <text x="10" y="30" font-size="7.5" font-family="monospace" fill="#94a3b8">Axis: Belief (Sound vs Script) • Severity: HIGH</text>
+      </g>
+
+      <!-- Event 3 (Previz) -->
+      <g transform="translate(10, 132)">
+        <rect width="304" height="40" rx="4" fill="#141c38" stroke="#06b6d4" stroke-width="0.8" />
+        <text x="10" y="16" font-size="8.5" font-weight="700" fill="#67e8f9">#8494 [PREVIZ_GENERATED] Cam C (85mm T1.4)</text>
+        <text x="10" y="30" font-size="7.5" font-family="monospace" fill="#94a3b8">Provider: Google Imagen 3 • Ratio: 2.39:1</text>
+      </g>
+
+      <!-- Event 4 (Resolved) -->
+      <g transform="translate(10, 180)">
+        <rect width="304" height="40" rx="4" fill="#062e24" stroke="#10b981" stroke-width="0.8" />
+        <text x="10" y="16" font-size="8.5" font-weight="700" fill="#6ee7b7">#8495 [DISCREPANCY_RESOLVED] Consensus Recorded</text>
+        <text x="10" y="30" font-size="7.5" font-family="monospace" fill="#94a3b8">Resolved By: @assistant_editor • Status: FALSE_START</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- ============================================================== -->
+  <!-- 4. CONNECTING PIPELINES: SPINE TO BROKER & SUBSCRIBERS        -->
+  <!-- ============================================================== -->
+  <path d="M 770 350 L 850 350" fill="none" stroke="#a855f7" stroke-width="2.5" stroke-dasharray="6,4">
+    <animate attributeName="stroke-dashoffset" values="0;20" dur="1s" repeatCount="indefinite" />
+  </path>
+  <circle cx="810" cy="350" r="5" fill="#c084fc" filter="url(#glowPurple)">
+    <animateMotion path="M 770 350 L 850 350" dur="1.2s" repeatCount="indefinite" />
+  </circle>
+
+  <!-- ============================================================== -->
+  <!-- 5. RIGHT COLUMN: SSE LIVE EVENT BROKER & REACT SUBSCRIBERS     -->
+  <!-- ============================================================== -->
+  <g transform="translate(850, 95)">
+    <rect width="300" height="510" rx="14" fill="#0f172a" stroke="#a855f7" stroke-width="1.5" />
+    <rect width="300" height="36" rx="14" fill="#3b0764" opacity="0.8" />
+    <text x="18" y="23" font-size="11.5" font-weight="800" fill="#f3e8ff" letter-spacing="0.8">3. LIVE SSE FAN-OUT BROKER</text>
+
+    <!-- SSE Multiplexer Box -->
+    <g transform="translate(15, 50)">
+      <rect width="270" height="110" rx="8" fill="#1e1b4b" stroke="#7e22ce" stroke-width="1" />
+      <text x="14" y="22" font-size="10.5" font-weight="800" fill="#e9d5ff">LiveEventBroker (Async SSE)</text>
+      <text x="14" y="40" font-size="8.5" font-family="monospace" fill="#38bdf8">GET /api/events/subscribe</text>
+      <text x="14" y="56" font-size="8" fill="#cbd5e1">• Filter: production_id + shoot_day</text>
+      <text x="14" y="70" font-size="8" fill="#cbd5e1">• Role Channel: SOUND, CAMERA, EDITORIAL</text>
+      <text x="14" y="84" font-size="8" fill="#cbd5e1">• Direct User Dispatch: @director</text>
+      <text x="14" y="98" font-size="8" fill="#a855f7">• Zero-Polling Instant Server-Push</text>
+    </g>
+
+    <!-- Reactive Clients -->
+    <g transform="translate(15, 175)">
+      <text x="0" y="0" font-size="10.5" font-weight="800" fill="#94a3b8" letter-spacing="0.5">REACTIVE CLIENT PROJECTIONS</text>
+
+      <!-- Client 1: Discrepancy Matrix -->
+      <g transform="translate(0, 12)">
+        <rect width="270" height="54" rx="6" fill="#1e293b" stroke="#f43f5e" stroke-width="0.8" />
+        <text x="12" y="20" font-size="9.5" font-weight="800" fill="#fca5a5">Discrepancy Matrix UI</text>
+        <text x="12" y="36" font-size="8" fill="#cbd5e1">Auto-updates conflict badges without page refresh</text>
+      </g>
+
+      <!-- Client 2: Previz Studio -->
+      <g transform="translate(0, 76)">
+        <rect width="270" height="54" rx="6" fill="#1e293b" stroke="#06b6d4" stroke-width="0.8" />
+        <text x="12" y="20" font-size="9.5" font-weight="800" fill="#67e8f9">Script &amp; Previz Lightbox</text>
+        <text x="12" y="36" font-size="8" fill="#cbd5e1">Live renders 3-cam AI frames upon generation</text>
+      </g>
+
+      <!-- Client 3: Crew Alert Toasts -->
+      <g transform="translate(0, 140)">
+        <rect width="270" height="54" rx="6" fill="#1e293b" stroke="#f59e0b" stroke-width="0.8" />
+        <text x="12" y="20" font-size="9.5" font-weight="800" fill="#fde68a">Notification Center (@director)</text>
+        <text x="12" y="36" font-size="8" fill="#cbd5e1">Instant high-priority toast &amp; audio notification</text>
+      </g>
+
+      <!-- Client 4: Grafana Telemetry -->
+      <g transform="translate(0, 204)">
+        <rect width="270" height="54" rx="6" fill="#1e293b" stroke="#10b981" stroke-width="0.8" />
+        <text x="12" y="20" font-size="9.5" font-weight="800" fill="#6ee7b7">Grafana Telemetry Dashboard</text>
+        <text x="12" y="36" font-size="8" fill="#cbd5e1">Records event latency, ingest throughput &amp; sync lag</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Footer -->
+  <g transform="translate(60, 630)">
+    <text x="0" y="0" font-size="9.5" font-weight="600" fill="#64748b">CineSpine Event System Architecture • Zero Data Mutation • Sub-Millisecond SSE Delivery</text>
+  </g>
+</svg>
