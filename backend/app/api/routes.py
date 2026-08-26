@@ -205,7 +205,9 @@ def get_document_raw(doc_id: str):
     
     # If raw_bytes wasn't in memory (e.g. initial demo load), resolve from local example directory
     if not raw_bytes:
-        examples_path = os.path.join("data/examples", filename)
+        examples_path = os.path.join(
+            os.environ.get("CINESPINE_EXAMPLES_DIR", "data/examples"), filename
+        )
         if os.path.exists(examples_path):
             try:
                 with open(examples_path, "rb") as f:

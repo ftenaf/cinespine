@@ -84,7 +84,7 @@ class TestSoundALEParser:
 
     def test_parse_real_sound_report_csv(self):
         real_style_csv = """SOUND REPORT
-Project:,"GREAT HALL"
+Project:,"DEMO PRODUCTION"
 Director:,"DIRECTOR"
 Date:,"27/07/26"
 Sound Mixer:,"SOUND MIXER"

@@ -63,11 +63,10 @@ def infer_production_and_day(
     # 1. Infer Production ID
     inferred_prod = None
     if (
-        "LAC" in fn_upper
+        "DEMO" in fn_upper
         or "DEMOPRODUCTION" in fn_upper
         or "DEMO PRODUCTION" in text_sample
-        or 'PROJECT:,"GREAT HALL"' in text_sample
-        or "GREAT HALL" in text_sample
+        or 'PROJECT:,"DEMO PRODUCTION"' in text_sample
     ):
         inferred_prod = "DEMO_PRODUCTION"
 

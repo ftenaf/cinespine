@@ -159,4 +159,4 @@ flowchart TB
 - **GitHub Repository:** [https://github.com/ftenaf/cinespine](https://github.com/ftenaf/cinespine)
 - **License:** Open Source MIT License (included in root repository)
 - **Video Demo (3-Minute Trailer):** *[YouTube / Vimeo Link]*
-- **Documentation & Architecture:** `docs/` and `docs/design/`
+- **Documentation & Architecture:** `docs/` and `docs/architecture/`

@@ -16,7 +16,7 @@ from backend.app.parsers.classifier import (
 class TestProductionAndDayInference:
     def test_infer_from_sound_csv_content_and_filename(self):
         content = """SOUND REPORT
-Project:,"GREAT HALL",
+Project:,"DEMO PRODUCTION",
 Date:,"28/07/26",
 Sound Mixer:,"SOUND MIXER",
 File Name,Scene,Take,Length,Start TC

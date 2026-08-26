@@ -16,7 +16,7 @@ from backend.app.integrations.google_cloud import (
 )
 
 SAMPLE_PDF_BYTES = b"%PDF-1.4 sample screenplay content for GCS"
-SAMPLE_SCENE = "INT. GREAT HALL - NAVE - DAY\nThomas plays the organ with intense focus."
+SAMPLE_SCENE = "INT. GREAT HALL - NAVE - DAY\nLEAD plays the organ with intense focus."
 
 
 @pytest.fixture

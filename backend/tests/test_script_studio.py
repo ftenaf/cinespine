@@ -268,15 +268,15 @@ def test_character_relationships_detection():
     
     # Verify relationships are extracted
     assert len(lead.relationships) >= 1
-    rel_to_emily = next(r for r in lead.relationships if r.target_character == "SUPPORT")
-    assert "Ally" in rel_to_emily.relationship_type or "Key" in rel_to_emily.relationship_type
-    assert "1" in rel_to_emily.shared_scenes
-    assert rel_to_emily.interaction_count >= 1
+    rel_to_support = next(r for r in lead.relationships if r.target_character == "SUPPORT")
+    assert "Ally" in rel_to_support.relationship_type or "Key" in rel_to_support.relationship_type
+    assert "1" in rel_to_support.shared_scenes
+    assert rel_to_support.interaction_count >= 1
 
     # Check SUPPORT's inverse relationship to LEAD
-    rel_to_thomas = next(r for r in support.relationships if r.target_character == "LEAD")
-    assert rel_to_thomas.target_character == "LEAD"
-    assert "1" in rel_to_thomas.shared_scenes
+    rel_to_lead = next(r for r in support.relationships if r.target_character == "LEAD")
+    assert rel_to_lead.target_character == "LEAD"
+    assert "1" in rel_to_lead.shared_scenes
 
 
 def test_api_generate_character_portrait_endpoint(client):

@@ -56,9 +56,14 @@ yarn-error.log*
 .coverage
 htmlcov/
 
-# Real production paperwork (Never commit raw confidential assets)
+# Real production paperwork (Never commit raw confidential assets).
+# Third-party call sheets, camera reports and script logs are copyrighted and
+# routinely carry crew personal data, so they stay out of the repository.
+# Point CINESPINE_EXAMPLES_DIR at a local copy instead.
 data/raw/
 data/staging/
+data/examples/
+*.pdf
 *.cif
 *.kdm
 *.db

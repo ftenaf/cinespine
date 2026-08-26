@@ -18,7 +18,9 @@ from backend.app.parsers.pdf_parsers import (
     parse_silverstack_pdf_text,
 )
 
-EXAMPLES_DIR = r"data/examples"
+# Honours the same variable as /api/seed, so pointing one at a local example
+# set enables both. No production paperwork is committed to this repository.
+EXAMPLES_DIR = os.environ.get("CINESPINE_EXAMPLES_DIR", "data/examples")
 
 
 @pytest.mark.skipif(not os.path.exists(EXAMPLES_DIR), reason="Example PDFs not present locally")
