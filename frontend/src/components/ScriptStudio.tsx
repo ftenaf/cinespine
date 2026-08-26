@@ -16,7 +16,10 @@ import {
   Aperture,
   Crosshair,
   Terminal,
-  Palette
+  Palette,
+  Plus,
+  Trash2,
+  X
 } from 'lucide-react';
 
 export interface DialogueLine {
@@ -407,7 +410,134 @@ export const ScriptStudio: React.FC = () => {
     }
   };
 
-  // Batch Render All 3 Cameras (A, B, C) for a Shot
+  // Helper to compute next camera letter (e.g. A -> B -> C -> D -> E -> F -> G...)
+  const getNextCameraLetter = (existingLetters: string[]): string => {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+    for (const char of alphabet) {
+      if (!existingLetters.includes(char)) {
+        return char;
+      }
+    }
+    return `C${existingLetters.length + 1}`;
+  };
+
+  // Add a New Camera Angle to a Specific Shot Setup
+  const handleAddCameraToShot = (shot: ShotProposal) => {
+    if (!shot) return;
+    const existingLetters = (shot.cameras || []).map(c => c.camera_letter);
+    const nextLetter = getNextCameraLetter(existingLetters);
+
+    // Preset configurations for typical multi-camera extensions
+    let defaultRole = `Camera ${nextLetter} (Supplementary Coverage)`;
+    let defaultFocal = 50;
+    let defaultAperture = 'T2.8';
+    let defaultSize = 'MCU';
+    let defaultAngle = 'EYE_LEVEL';
+
+    if (nextLetter === 'D') {
+      defaultRole = 'Camera D (High Angle Crane / Wide POV)';
+      defaultFocal = 24;
+      defaultSize = 'WS';
+      defaultAngle = 'HIGH_ANGLE';
+    } else if (nextLetter === 'E') {
+      defaultRole = 'Camera E (Extreme Close-Up Macro / Detail)';
+      defaultFocal = 135;
+      defaultSize = 'ECU';
+      defaultAngle = 'EYE_LEVEL';
+    } else if (nextLetter === 'F') {
+      defaultRole = 'Camera F (Dynamic Steadicam / Low Dutch Angle)';
+      defaultFocal = 35;
+      defaultSize = 'MS';
+      defaultAngle = 'LOW_ANGLE';
+    }
+
+    const charDetails = getActiveCharacterDetails(shot.characters);
+    const prompt = `Cinematic 35mm film still, Camera ${nextLetter} (${defaultRole}), ${defaultSize} shot, ${defaultFocal}mm lens at ${defaultAperture}, ${defaultAngle.toLowerCase().replace('_', ' ')}, ${shot.dop_spec?.dop_preset || selectedPreset} lighting (${shot.dop_spec?.lighting_ratio || customLightingRatio}), ${shot.subject_description}${charDetails ? `, featuring ${charDetails}` : ''}, authentic film grain, anamorphic optical characteristics, 8k masterpiece.`;
+
+    const newCam: CameraAngleProposal = {
+      id: `CAM-${Date.now().toString(36).toUpperCase()}-${nextLetter}`,
+      camera_letter: nextLetter,
+      camera_role: defaultRole,
+      shot_size: defaultSize,
+      focal_length: defaultFocal,
+      aperture: defaultAperture,
+      camera_angle: defaultAngle,
+      camera_movement: 'STATIC',
+      coverage_description: defaultRole,
+      prompt: prompt,
+      status: 'pending'
+    };
+
+    setShotsMap(prev => {
+      const sceneShots = prev[shot.scene_number] || [];
+      return {
+        ...prev,
+        [shot.scene_number]: sceneShots.map(s => {
+          if (s.id === shot.id) {
+            return {
+              ...s,
+              cameras: [...s.cameras, newCam]
+            };
+          }
+          return s;
+        })
+      };
+    });
+
+    setSelectedShotId(shot.id);
+    setActiveCamLetter(nextLetter);
+  };
+
+  // Remove Camera Angle from a Shot Setup
+  const handleRemoveCameraFromShot = (shot: ShotProposal, camLetter: string) => {
+    if (!shot || shot.cameras.length <= 1) return;
+
+    setShotsMap(prev => {
+      const sceneShots = prev[shot.scene_number] || [];
+      return {
+        ...prev,
+        [shot.scene_number]: sceneShots.map(s => {
+          if (s.id === shot.id) {
+            const filteredCameras = s.cameras.filter(c => c.camera_letter !== camLetter);
+            const nextActive = filteredCameras[0]?.camera_letter || 'A';
+            if (activeCamLetter === camLetter) {
+              setActiveCamLetter(nextActive);
+            }
+            return {
+              ...s,
+              cameras: filteredCameras,
+              active_camera: s.active_camera === camLetter ? nextActive : s.active_camera
+            };
+          }
+          return s;
+        })
+      };
+    });
+  };
+
+  // Update Specific Camera Properties (Focal Length, Aperture, Role, Angle, Size)
+  const handleUpdateCameraProperty = (shot: ShotProposal, camLetter: string, patch: Partial<CameraAngleProposal>) => {
+    setShotsMap(prev => {
+      const sceneShots = prev[shot.scene_number] || [];
+      return {
+        ...prev,
+        [shot.scene_number]: sceneShots.map(s => {
+          if (s.id === shot.id) {
+            const updatedCameras = (s.cameras || []).map(c => {
+              if (c.camera_letter === camLetter) {
+                return { ...c, ...patch };
+              }
+              return c;
+            });
+            return { ...s, cameras: updatedCameras };
+          }
+          return s;
+        })
+      };
+    });
+  };
+
+  // Batch Render All Cameras for a Shot
   const handleRenderAllCamerasForShot = async (shot: ShotProposal) => {
     if (!shot || !shot.cameras) return;
     for (const cam of shot.cameras) {
@@ -1127,40 +1257,66 @@ export const ScriptStudio: React.FC = () => {
 
                     <p className="text-[11px] text-slate-300 line-clamp-2">{shot.subject_description}</p>
 
-                    {/* Camera Switcher Pills */}
+                    {/* Camera Switcher & Multi-Angle Manager */}
                     <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2 border-t border-slate-800/80">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 flex-wrap">
                         {shot.cameras.map(cam => (
-                          <button
-                            key={cam.camera_letter}
-                            onClick={e => {
-                              e.stopPropagation();
-                              setSelectedShotId(shot.id);
-                              setActiveCamLetter(cam.camera_letter);
-                            }}
-                            className={`px-2 py-1 text-[10px] font-bold rounded flex items-center gap-1 transition ${
-                              selectedShot?.id === shot.id && activeCamLetter === cam.camera_letter
-                                ? 'bg-purple-600 text-white shadow-sm'
-                                : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
-                            }`}
-                          >
-                            <Camera className="w-2.5 h-2.5" />
-                            Cam {cam.camera_letter}
-                          </button>
+                          <div key={cam.camera_letter} className="relative group/cam flex items-center">
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                setSelectedShotId(shot.id);
+                                setActiveCamLetter(cam.camera_letter);
+                              }}
+                              className={`px-2 py-1 text-[10px] font-bold rounded flex items-center gap-1 transition ${
+                                selectedShot?.id === shot.id && activeCamLetter === cam.camera_letter
+                                  ? 'bg-purple-600 text-white shadow-sm'
+                                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
+                              }`}
+                            >
+                              <Camera className="w-2.5 h-2.5" />
+                              Cam {cam.camera_letter}
+                            </button>
+                            {shot.cameras.length > 1 && (
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  handleRemoveCameraFromShot(shot, cam.camera_letter);
+                                }}
+                                className="opacity-0 group-hover/cam:opacity-100 ml-0.5 p-0.5 text-slate-500 hover:text-rose-400 transition"
+                                title={`Remove Camera ${cam.camera_letter}`}
+                              >
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            )}
+                          </div>
                         ))}
+
+                        {/* Add Camera Angle Button */}
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            handleAddCameraToShot(shot);
+                          }}
+                          className="px-1.5 py-1 text-[10px] font-bold text-purple-300 hover:text-white bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/30 rounded flex items-center gap-0.5 transition"
+                          title="Add an additional camera angle to this setup"
+                        >
+                          <Plus className="w-2.5 h-2.5" />
+                          Cam
+                        </button>
                       </div>
 
-                      {/* 1-Click Render All 3 Cams for this Shot */}
+                      {/* 1-Click Render All Cams for this Setup */}
                       <button
                         onClick={e => {
                           e.stopPropagation();
                           handleRenderAllCamerasForShot(shot);
                         }}
-                        className="px-2 py-1 text-[10px] font-bold text-amber-300 hover:text-white bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded flex items-center gap-1 transition"
-                        title="Batch Render AI Concepts for Cameras A, B, and C"
+                        className="px-2 py-1 text-[10px] font-bold text-amber-300 hover:text-white bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded flex items-center gap-1 transition shrink-0"
+                        title={`Batch Render AI Concepts for all ${shot.cameras.length} Cameras`}
                       >
                         <Sparkles className="w-2.5 h-2.5" />
-                        Render 3 Cams
+                        Render {shot.cameras.length} Cams
                       </button>
                     </div>
                   </div>
@@ -1173,6 +1329,46 @@ export const ScriptStudio: React.FC = () => {
           <div className="col-span-5 bg-[#090D16] flex flex-col overflow-y-auto p-4 space-y-4">
             {selectedShot && selectedCam ? (
               <div className="space-y-4">
+                {/* Multi-Camera Angle Selector Bar & Add/Remove Controls */}
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800 gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {selectedShot.cameras.map(cam => (
+                      <button
+                        key={cam.camera_letter}
+                        onClick={() => setActiveCamLetter(cam.camera_letter)}
+                        className={`px-3 py-1 text-xs font-bold rounded-lg flex items-center gap-1.5 transition ${
+                          activeCamLetter === cam.camera_letter
+                            ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                            : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        <Camera className="w-3 h-3" />
+                        Cam {cam.camera_letter} ({cam.focal_length}mm)
+                      </button>
+                    ))}
+
+                    <button
+                      onClick={() => handleAddCameraToShot(selectedShot)}
+                      className="px-2.5 py-1 text-xs font-bold text-purple-300 hover:text-white bg-purple-950/60 hover:bg-purple-900 border border-purple-500/40 rounded-lg flex items-center gap-1 transition"
+                      title="Add New Camera Angle (e.g. Cam D, E, F)"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add Cam
+                    </button>
+                  </div>
+
+                  {selectedShot.cameras.length > 1 && (
+                    <button
+                      onClick={() => handleRemoveCameraFromShot(selectedShot, activeCamLetter)}
+                      className="px-2.5 py-1 text-xs font-semibold text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 border border-rose-500/30 rounded-lg flex items-center gap-1 transition shrink-0"
+                      title={`Delete Camera ${activeCamLetter} from this setup`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Delete Cam {activeCamLetter}
+                    </button>
+                  )}
+                </div>
+
                 {/* Visual Frame Canvas Header */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -1206,7 +1402,7 @@ export const ScriptStudio: React.FC = () => {
 
                   {/* Overlay Badge */}
                   <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/70 backdrop-blur text-[10px] font-mono font-bold text-purple-300 rounded border border-purple-500/30">
-                    35mm Previz • {selectedShot.dop_spec.dop_preset}
+                    35mm Previz • {selectedShot.dop_spec?.dop_preset || selectedPreset}
                   </div>
 
                   {/* Character Lock Badge */}
@@ -1231,6 +1427,73 @@ export const ScriptStudio: React.FC = () => {
                         <Maximize2 className="w-3.5 h-3.5" />
                       </button>
                     )}
+                  </div>
+                </div>
+
+                {/* Quick Optics Tuners (Focal Length, Aperture, Shot Size) */}
+                <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                      <Sliders className="w-3 h-3 text-purple-400" />
+                      Camera {activeCamLetter} Optics &amp; Framing:
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      {selectedCam.shot_size} • {selectedCam.focal_length}mm • {selectedCam.aperture}
+                    </span>
+                  </div>
+
+                  {/* Focal Length Pills */}
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="text-[10px] font-semibold text-slate-400 mr-1">Lens:</span>
+                    {[18, 24, 35, 50, 85, 135].map(fl => (
+                      <button
+                        key={fl}
+                        onClick={() => handleUpdateCameraProperty(selectedShot, activeCamLetter, { focal_length: fl })}
+                        className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded transition ${
+                          selectedCam.focal_length === fl
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {fl}mm
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Aperture Pills */}
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="text-[10px] font-semibold text-slate-400 mr-1">Iris:</span>
+                    {['T1.4', 'T2.0', 'T2.8', 'T4.0', 'T5.6', 'T8.0'].map(ap => (
+                      <button
+                        key={ap}
+                        onClick={() => handleUpdateCameraProperty(selectedShot, activeCamLetter, { aperture: ap })}
+                        className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded transition ${
+                          selectedCam.aperture === ap
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {ap}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Shot Size Pills */}
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="text-[10px] font-semibold text-slate-400 mr-1">Framing:</span>
+                    {['EWS', 'WS', 'MS', 'MCU', 'CU', 'ECU', 'OTS', 'POV'].map(sz => (
+                      <button
+                        key={sz}
+                        onClick={() => handleUpdateCameraProperty(selectedShot, activeCamLetter, { shot_size: sz })}
+                        className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded transition ${
+                          selectedCam.shot_size === sz
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {sz}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
