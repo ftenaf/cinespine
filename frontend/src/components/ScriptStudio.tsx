@@ -12,17 +12,17 @@ import {
   Users,
   ShieldCheck,
   Save,
-  Sun,
+  
   Aperture,
   Crosshair,
-  Terminal,
-  Palette,
+  
+  
   Plus,
   Trash2,
   X
 } from 'lucide-react';
 import {
-  SENSOR_FORMATS,
+  
   DEFAULT_SENSOR_ID,
   PROTECT_RATIOS,
   REFERENCE_FOCAL_MM,
@@ -35,9 +35,10 @@ import {
   miredShift,
   rgbToCss,
   extractedResolution,
-  parseStop,
+  
   backgroundBlurRadius
 } from '../optics';
+import { DopControls, DopSettings } from './DopControls';
 
 export interface DialogueLine {
   character: string;
@@ -109,6 +110,7 @@ export interface CameraAngleProposal {
   prompt: string;
   image_url?: string;
   status: 'pending' | 'generating' | 'generated' | 'failed';
+  dop_spec?: any;
 }
 
 export interface StoryboardFrame {
@@ -205,11 +207,23 @@ export const ScriptStudio: React.FC = () => {
   const [protectRatio, setProtectRatio] = useState<string>('16:9');
   const [focusDistanceM, setFocusDistanceM] = useState<number>(3);
   const [whiteBalanceK, setWhiteBalanceK] = useState<number>(5600);
-
-  // Presets Dictionary
+  const [customPresets, setCustomPresets] = useState<Record<string, any>>({});
   const [presetsDict, setPresetsDict] = useState<Record<string, any>>({});
   const [enlargedImage, setEnlargedImage] = useState<{ url: string; prompt: string; title: string } | null>(null);
   const [generatingCamMap, setGeneratingCamMap] = useState<Record<string, boolean>>({});
+  const [showCamSettings, setShowCamSettings] = useState<boolean>(false);
+
+  // Load custom presets on mount
+  React.useEffect(() => {
+    try {
+      const stored = localStorage.getItem('cinespine_custom_presets');
+      if (stored) {
+        setCustomPresets(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.warn("Failed to load custom presets:", e);
+    }
+  }, []);
 
   // Real-Time Viewfinder Geometry (sensor extraction, angle of view, framing scale)
   const geometry = useMemo(
@@ -333,12 +347,100 @@ export const ScriptStudio: React.FC = () => {
     fetch('/api/script/presets')
       .then(res => res.json())
       .then(data => {
-        if (data.presets) setPresetsDict(data.presets);
+        if (data.presets) {
+          setPresetsDict(_prev => ({ ...data.presets, ...customPresets }));
+        }
       })
       .catch(err => console.error('Failed to load DoP presets:', err));
 
     handleParseScript(DEMO_FOUNTAIN_SCRIPT);
   }, []);
+
+  // Update presetsDict when customPresets changes
+  useEffect(() => {
+    setPresetsDict(prev => ({ ...prev, ...customPresets }));
+  }, [customPresets]);
+
+  const globalDopSettings: DopSettings = {
+    dopMode, aspectRatio, selectedPreset, customFocalLength, customAperture,
+    focusDistanceM, customColorTemp, whiteBalanceK, customLightingRatio,
+    customSensorFormat, customLutEmulation, customMoodPrompt
+  };
+
+  const handleGlobalDopChange = (updates: Partial<DopSettings>) => {
+    if (updates.dopMode !== undefined) setDopMode(updates.dopMode);
+    if (updates.aspectRatio !== undefined) setAspectRatio(updates.aspectRatio);
+    if (updates.selectedPreset !== undefined) setSelectedPreset(updates.selectedPreset);
+    if (updates.customFocalLength !== undefined) setCustomFocalLength(updates.customFocalLength);
+    if (updates.customAperture !== undefined) setCustomAperture(updates.customAperture);
+    if (updates.focusDistanceM !== undefined) setFocusDistanceM(updates.focusDistanceM);
+    if (updates.customColorTemp !== undefined) setCustomColorTemp(updates.customColorTemp);
+    if (updates.whiteBalanceK !== undefined) setWhiteBalanceK(updates.whiteBalanceK);
+    if (updates.customLightingRatio !== undefined) setCustomLightingRatio(updates.customLightingRatio);
+    if (updates.customSensorFormat !== undefined) setCustomSensorFormat(updates.customSensorFormat);
+    if (updates.customLutEmulation !== undefined) setCustomLutEmulation(updates.customLutEmulation);
+    if (updates.customMoodPrompt !== undefined) setCustomMoodPrompt(updates.customMoodPrompt);
+  };
+
+  const handleSavePreset = (name: string, tagline: string, description: string, basePresetOverrides?: Partial<DopSettings>) => {
+    const newPreset = {
+      name,
+      tagline,
+      description,
+      focal_length: basePresetOverrides?.customFocalLength || customFocalLength,
+      aperture: basePresetOverrides?.customAperture || customAperture,
+      color_temperature_k: basePresetOverrides?.customColorTemp || customColorTemp,
+      lighting_ratio: basePresetOverrides?.customLightingRatio || customLightingRatio,
+      lut_emulation: basePresetOverrides?.customLutEmulation || customLutEmulation,
+      prompt_style_tag: basePresetOverrides?.customMoodPrompt || customMoodPrompt,
+      is_custom: true
+    };
+    
+    setCustomPresets(prev => {
+      const next = { ...prev, [name]: newPreset };
+      localStorage.setItem('cinespine_custom_presets', JSON.stringify(next));
+      return next;
+    });
+    
+    // Automatically select it globally
+    setSelectedPreset(name);
+    setDopMode('preset');
+  };
+
+  const handleCamDopChange = (shot: ShotProposal, camLetter: string, updates: Partial<DopSettings>) => {
+    setShotsMap(prev => {
+      const sceneShots = prev[shot.scene_number] || [];
+      const updatedShots = sceneShots.map(s => {
+        if (s.id === shot.id) {
+          const updatedCameras = (s.cameras || []).map(c => {
+            if (c.camera_letter === camLetter) {
+              const currentSpec = c.dop_spec || {};
+              const nextSpec = { ...currentSpec };
+              
+              if (updates.dopMode !== undefined) nextSpec.dopMode = updates.dopMode;
+              if (updates.customColorTemp !== undefined) nextSpec.color_temp_k = updates.customColorTemp;
+              if (updates.whiteBalanceK !== undefined) nextSpec.whiteBalanceK = updates.whiteBalanceK;
+              if (updates.customLightingRatio !== undefined) nextSpec.lighting_ratio = updates.customLightingRatio;
+              if (updates.customLutEmulation !== undefined) nextSpec.lut_emulation = updates.customLutEmulation;
+              if (updates.selectedPreset !== undefined) nextSpec.dop_preset = updates.selectedPreset;
+              if (updates.customMoodPrompt !== undefined) nextSpec.prompt_style_tag = updates.customMoodPrompt;
+              
+              return { 
+                ...c, 
+                dop_spec: nextSpec,
+                focal_length: updates.customFocalLength !== undefined ? updates.customFocalLength : c.focal_length,
+                aperture: updates.customAperture !== undefined ? updates.customAperture : c.aperture
+              };
+            }
+            return c;
+          });
+          return { ...s, cameras: updatedCameras };
+        }
+        return s;
+      });
+      return { ...prev, [shot.scene_number]: updatedShots };
+    });
+  };
 
   // Parse Script Handler
   const handleParseScript = async (textToParse: string, title?: string) => {
@@ -455,10 +557,10 @@ export const ScriptStudio: React.FC = () => {
           shot_size: cam.shot_size,
           focal_length: cam.focal_length,
           aperture: cam.aperture,
-          dop_preset: shot.dop_spec?.dop_preset || selectedPreset,
-          lighting_ratio: shot.dop_spec?.lighting_ratio || customLightingRatio,
-          color_temp_k: shot.dop_spec?.color_temperature_k || customColorTemp,
-          lut_emulation: shot.dop_spec?.lut_emulation || customLutEmulation,
+          dop_preset: cam.dop_spec?.dop_preset || selectedPreset,
+          lighting_ratio: cam.dop_spec?.lighting_ratio || customLightingRatio,
+          color_temp_k: cam.dop_spec?.color_temp_k || customColorTemp,
+          lut_emulation: cam.dop_spec?.lut_emulation || customLutEmulation,
           aspect_ratio: aspectRatio,
           character_details: charDetails
         })
@@ -1521,6 +1623,13 @@ export const ScriptStudio: React.FC = () => {
                     <span className="text-[11px] font-mono text-purple-300">
                       {selectedCam.focal_length}mm • {selectedCam.aperture} • {aspectRatio}
                     </span>
+                    <button
+                      onClick={() => setShowCamSettings(!showCamSettings)}
+                      className={`p-1.5 rounded-lg transition ${showCamSettings ? 'bg-purple-600 text-white shadow-md' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+                      title="Camera DoP Overrides"
+                    >
+                      <Sliders className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
 
@@ -1584,6 +1693,42 @@ export const ScriptStudio: React.FC = () => {
                     )}
                   </div>
                 </div>
+
+                {showCamSettings && (
+                  <div className="p-4 bg-slate-900/95 border border-purple-500/50 rounded-xl shadow-lg shadow-purple-500/10 h-[500px] flex flex-col">
+                    <div className="flex justify-between items-center mb-4">
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Sliders className="w-4 h-4 text-purple-400" />
+                        Camera {activeCamLetter} DoP Overrides
+                      </h4>
+                      <button onClick={() => setShowCamSettings(false)} className="text-slate-400 hover:text-white">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto pr-2">
+                      <DopControls
+                        settings={{
+                          dopMode: selectedCam.dop_spec?.dopMode || dopMode,
+                          aspectRatio: aspectRatio,
+                          selectedPreset: selectedCam.dop_spec?.dop_preset || selectedPreset,
+                          customFocalLength: selectedCam.focal_length,
+                          customAperture: selectedCam.aperture,
+                          focusDistanceM: selectedCam.dop_spec?.focusDistanceM || focusDistanceM,
+                          customColorTemp: selectedCam.dop_spec?.color_temp_k || customColorTemp,
+                          whiteBalanceK: selectedCam.dop_spec?.whiteBalanceK || whiteBalanceK,
+                          customLightingRatio: selectedCam.dop_spec?.lighting_ratio || customLightingRatio,
+                          customSensorFormat: selectedCam.dop_spec?.customSensorFormat || customSensorFormat,
+                          customLutEmulation: selectedCam.dop_spec?.lut_emulation || customLutEmulation,
+                          customMoodPrompt: selectedCam.dop_spec?.prompt_style_tag || customMoodPrompt,
+                        }}
+                        onChange={(updates) => handleCamDopChange(selectedShot, selectedCam.camera_letter, updates)}
+                        presetsDict={presetsDict}
+                        onSavePreset={handleSavePreset}
+                        hideAspectRatio={true}
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* Quick Optics Tuners (Focal Length, Aperture, Shot Size) */}
                 <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2.5">
@@ -1740,405 +1885,16 @@ export const ScriptStudio: React.FC = () => {
                     Define cinematography via Master Presets, Manual Optics Matrix, or Natural Language.
                   </p>
                 </div>
-
-                {/* DoP Aspect Ratio Framing Selector */}
-                <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
-                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider px-1.5">Ratio:</span>
-                  {['2.39:1', '1.85:1', '16:9', '4:3'].map(ar => (
-                    <button
-                      key={ar}
-                      onClick={() => setAspectRatio(ar)}
-                      className={`px-2.5 py-1 text-xs font-mono font-bold rounded-lg transition ${
-                        aspectRatio === ar
-                          ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                          : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                      }`}
-                    >
-                      {ar}
-                    </button>
-                  ))}
-                </div>
               </div>
-
-              {/* Mode Switcher Tabs */}
-              <div className="grid grid-cols-3 gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800 mt-4">
-                <button
-                  onClick={() => setDopMode('preset')}
-                  className={`py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
-                    dopMode === 'preset'
-                      ? 'bg-purple-600 text-white shadow-md'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Palette className="w-3.5 h-3.5" />
-                  Master Presets
-                </button>
-                <button
-                  onClick={() => setDopMode('matrix')}
-                  className={`py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
-                    dopMode === 'matrix'
-                      ? 'bg-purple-600 text-white shadow-md'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Aperture className="w-3.5 h-3.5" />
-                  Manual Matrix
-                </button>
-                <button
-                  onClick={() => setDopMode('prompt')}
-                  className={`py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
-                    dopMode === 'prompt'
-                      ? 'bg-purple-600 text-white shadow-md'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Terminal className="w-3.5 h-3.5" />
-                  Natural Language
-                </button>
+              <div className="mt-4 flex-1 overflow-hidden flex flex-col">
+                <DopControls
+                  settings={globalDopSettings}
+                  onChange={handleGlobalDopChange}
+                  presetsDict={presetsDict}
+                  onSavePreset={handleSavePreset}
+                />
               </div>
             </div>
-
-            {/* MODE 1: MASTER PRESETS */}
-            {dopMode === 'preset' && (
-              <div className="space-y-3">
-                <h3 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider">
-                  Curated Cinematographer Masters
-                </h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {Object.entries(presetsDict).map(([presetName, presetData]: [string, any]) => (
-                    <div
-                      key={presetName}
-                      onClick={() => {
-                        setSelectedPreset(presetName);
-                        if (presetData.focal_length) setCustomFocalLength(presetData.focal_length);
-                        if (presetData.aperture) setCustomAperture(presetData.aperture);
-                        if (presetData.color_temperature_k) setCustomColorTemp(presetData.color_temperature_k);
-                        if (presetData.lighting_ratio) setCustomLightingRatio(presetData.lighting_ratio);
-                        if (presetData.lut_emulation) setCustomLutEmulation(presetData.lut_emulation);
-                      }}
-                      className={`p-3.5 rounded-xl border transition cursor-pointer ${
-                        selectedPreset === presetName
-                          ? 'bg-purple-950/60 border-purple-500 shadow-lg shadow-purple-500/20'
-                          : 'bg-slate-900/50 border-slate-800 hover:border-slate-700'
-                      }`}
-                    >
-                      <h4 className="text-xs font-bold text-white">{presetData.name || presetName}</h4>
-                      <p className="text-[10px] text-purple-300 mt-0.5">{presetData.tagline}</p>
-                      <p className="text-[11px] text-slate-400 line-clamp-2 mt-1.5 leading-relaxed">{presetData.description}</p>
-                      <div className="flex flex-wrap gap-1 mt-2.5">
-                        <span className="px-1.5 py-0.5 text-[9px] bg-slate-800 text-slate-300 rounded">
-                          {presetData.focal_length || 35}mm
-                        </span>
-                        <span className="px-1.5 py-0.5 text-[9px] bg-slate-800 text-slate-300 rounded">
-                          {presetData.aperture || 'T2.8'}
-                        </span>
-                        <span className="px-1.5 py-0.5 text-[9px] bg-slate-800 text-slate-300 rounded">
-                          {presetData.color_temperature_k || 5600}K
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* MODE 2: MANUAL OPTICS & LIGHTING MATRIX */}
-            {dopMode === 'matrix' && (
-              <div className="space-y-5">
-                {/* Focal Length Selector */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <Camera className="w-3.5 h-3.5 text-purple-400" />
-                      Lens Focal Length
-                    </label>
-                    <span className="text-xs font-mono font-bold text-purple-300">{customFocalLength}mm</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={Math.log(12)}
-                    max={Math.log(250)}
-                    step="0.01"
-                    value={Math.log(customFocalLength)}
-                    onChange={e => setCustomFocalLength(Math.round(Math.exp(Number(e.target.value))))}
-                    className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                  />
-                  <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-                    {[12, 14, 18, 24, 35, 50, 85, 100, 135, 200].map(fl => (
-                      <button
-                        key={fl}
-                        onClick={() => setCustomFocalLength(fl)}
-                        className={`px-1.5 py-0.5 text-[10px] font-mono font-bold rounded transition ${
-                          customFocalLength === fl
-                            ? 'bg-purple-600 text-white'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                        }`}
-                      >
-                        {fl}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Aperture Selector */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <Aperture className="w-3.5 h-3.5 text-blue-400" />
-                      Lens Aperture &amp; Depth of Field
-                    </label>
-                    <span className="text-xs font-mono font-bold text-blue-300">
-                      T{parseStop(customAperture).toFixed(1).replace(/\.0$/, '')}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={Math.log2(1.0)}
-                    max={Math.log2(22.0)}
-                    step="0.01"
-                    value={Math.log2(parseStop(customAperture))}
-                    onChange={e => {
-                      const val = Math.pow(2, Number(e.target.value));
-                      const valStr = val >= 10 ? Math.round(val).toString() : val.toFixed(1);
-                      setCustomAperture('T' + valStr);
-                    }}
-                    className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                  />
-                  <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-                    {['T1.0', 'T1.4', 'T2.0', 'T2.8', 'T4.0', 'T5.6', 'T8.0', 'T11', 'T16', 'T22'].map(ap => (
-                      <button
-                        key={ap}
-                        onClick={() => setCustomAperture(ap)}
-                        className={`px-1.5 py-0.5 text-[10px] font-mono font-bold rounded transition ${
-                          Math.abs(parseStop(customAperture) - parseStop(ap)) < 0.1
-                            ? 'bg-blue-600 text-white'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                        }`}
-                      >
-                        {ap}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Focus Distance — the missing half of any depth of field figure */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <Crosshair className="w-3.5 h-3.5 text-emerald-400" />
-                      Focus Distance
-                    </label>
-                    <span className="text-xs font-mono font-bold text-emerald-300">
-                      {formatDistance(focusDistanceM)}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={Math.log(0.3)}
-                    max={Math.log(100)}
-                    step="0.01"
-                    value={Math.log(focusDistanceM)}
-                    onChange={e => setFocusDistanceM(+Math.exp(Number(e.target.value)).toFixed(2))}
-                    className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                  />
-                  <div className="flex items-center gap-1.5 mt-1.5">
-                    {[0.5, 1, 2, 3, 5, 10, 25].map(d => (
-                      <button
-                        key={d}
-                        onClick={() => setFocusDistanceM(d)}
-                        className={`px-1.5 py-0.5 text-[10px] font-mono font-bold rounded transition ${
-                          Math.abs(focusDistanceM - d) < 0.01
-                            ? 'bg-emerald-600 text-white'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                        }`}
-                      >
-                        {d < 1 ? `${d * 100}cm` : `${d}m`}
-                      </button>
-                    ))}
-                    <button
-                      onClick={() => setFocusDistanceM(+dof.hyperfocalM.toFixed(2))}
-                      className="px-1.5 py-0.5 text-[10px] font-mono font-bold rounded text-amber-300 hover:bg-slate-800 transition"
-                      title={`Hyperfocal: ${formatDistance(dof.hyperfocalM)}`}
-                    >
-                      HYP
-                    </button>
-                  </div>
-                </div>
-
-                {/* Key Light Source Kelvin Slider */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <Sun className="w-3.5 h-3.5 text-amber-400" />
-                      Key Light Source (Kelvin)
-                    </label>
-                    <span className="text-xs font-mono font-bold text-amber-300">{customColorTemp}K</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="2800"
-                    max="7500"
-                    step="100"
-                    value={customColorTemp}
-                    onChange={e => setCustomColorTemp(Number(e.target.value))}
-                    className="w-full h-2 bg-gradient-to-r from-amber-500 via-slate-200 to-cyan-500 rounded-lg appearance-none cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1">
-                    <span>2800K (Warm Tungsten)</span>
-                    <span>5600K (Daylight)</span>
-                    <span>7500K (Cool Blue Hour)</span>
-                  </div>
-                </div>
-
-                {/* Camera White Balance — the image only shifts when these disagree */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <Palette className="w-3.5 h-3.5 text-cyan-400" />
-                      Camera White Balance
-                    </label>
-                    <span className="text-xs font-mono font-bold text-cyan-300">{whiteBalanceK}K</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="2800"
-                    max="7500"
-                    step="100"
-                    value={whiteBalanceK}
-                    onChange={e => setWhiteBalanceK(Number(e.target.value))}
-                    className="w-full h-2 bg-gradient-to-r from-cyan-500 via-slate-200 to-amber-500 rounded-lg appearance-none cursor-pointer"
-                  />
-                  <div className="flex items-center justify-between text-[10px] font-mono mt-1">
-                    <button
-                      onClick={() => setWhiteBalanceK(customColorTemp)}
-                      className="text-slate-400 hover:text-white underline decoration-dotted"
-                    >
-                      Match to key ({customColorTemp}K)
-                    </button>
-                    <span className={Math.abs(wbMired) < 1 ? 'text-slate-500' : 'text-amber-300'}>
-                      {Math.abs(wbMired) < 1
-                        ? 'Neutral — balanced to source'
-                        : `${wbMired > 0 ? '+' : ''}${wbMired.toFixed(0)} mired ${wbMired > 0 ? '(cool)' : '(warm)'}`}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Lighting Ratio Selector */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-bold text-slate-300">
-                      Key-to-Fill Lighting Contrast Ratio
-                    </label>
-                    <span className="text-xs font-mono font-bold text-purple-300">{customLightingRatio}</span>
-                  </div>
-                  <div className="grid grid-cols-5 gap-1.5">
-                    {[
-                      { label: '1:1 (Flat)', val: '1:1' },
-                      { label: '2:1 (Soft)', val: '2:1' },
-                      { label: '4:1 (Dramatic)', val: '4:1' },
-                      { label: '8:1 (Noir)', val: '8:1' },
-                      { label: '16:1 (Silhouette)', val: '16:1' }
-                    ].map(r => (
-                      <button
-                        key={r.val}
-                        onClick={() => setCustomLightingRatio(r.val)}
-                        className={`py-1.5 px-2 text-[11px] font-bold rounded-lg border transition ${
-                          customLightingRatio === r.val
-                            ? 'bg-purple-600 border-purple-500 text-white'
-                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        {r.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Sensor & Camera Body */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Camera Body / Sensor Format</label>
-                    <select
-                      value={customSensorFormat}
-                      onChange={e => setCustomSensorFormat(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500"
-                    >
-                      {SENSOR_FORMATS.map(sf => (
-                        <option key={sf.id} value={sf.id}>
-                          {sf.label} — {sf.widthMm}×{sf.heightMm}mm
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Film Stock / LUT Emulation</label>
-                    <select
-                      value={customLutEmulation}
-                      onChange={e => setCustomLutEmulation(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500"
-                    >
-                      <option value="Kodak 5219 Vision3 500T">Kodak 5219 Vision3 500T</option>
-                      <option value="Kodak 5207 Vision3 250D">Kodak 5207 Vision3 250D</option>
-                      <option value="Fujifilm Eterna 500">Fujifilm Eterna 500</option>
-                      <option value="Bleach Bypass Custom LUT">Bleach Bypass Custom LUT</option>
-                      <option value="Film Print Kodak 2383">Film Print Kodak 2383</option>
-                      <option value="Technicolor 3-Strip Vintage">Technicolor 3-Strip Vintage</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* MODE 3: NATURAL LANGUAGE PROMPT DIRECTOR */}
-            {dopMode === 'prompt' && (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">
-                    Natural Language Cinematography Instructions
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={customMoodPrompt}
-                    onChange={e => setCustomMoodPrompt(e.target.value)}
-                    placeholder="e.g. Rain-slicked gothic great_hall square, pierced by harsh halogen searchlights, deep amber sodium vapor streetlamps, heavy volumetric water droplets, anamorphic horizontal streak flares, high-contrast dark copper shadows..."
-                    className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500 font-sans leading-relaxed"
-                  />
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    Describe atmospheric textures, weather, motivated lighting directions, and palette nuances in plain English.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                    Quick Cinematography Modifiers
-                  </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {[
-                      '+ Volumetric Haze',
-                      '+ Anamorphic Oval Bokeh',
-                      '+ Chiaroscuro Rim Light',
-                      '+ Eye Catchlights Glow',
-                      '+ Bleach Bypass Contrast',
-                      '+ Kodak 5219 Grain',
-                      '+ Symmetrical 1-Point Framing',
-                      '+ Rain Reflections on Cobblestones'
-                    ].map(mod => (
-                      <button
-                        key={mod}
-                        onClick={() => {
-                          const cur = customMoodPrompt.trim();
-                          setCustomMoodPrompt(cur ? `${cur}, ${mod}` : mod);
-                        }}
-                        className="px-2.5 py-1 text-[10px] font-semibold bg-slate-900 hover:bg-purple-950 text-slate-300 hover:text-purple-200 border border-slate-800 hover:border-purple-500/40 rounded-lg transition"
-                      >
-                        {mod}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Right Column: Real-Time Optical Viewfinder & HUD Preview Canvas */}

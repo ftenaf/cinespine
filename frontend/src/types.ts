@@ -94,6 +94,7 @@ export interface CameraAngle {
   camera_roll?: string;
   file_name: string;
   thumbnail_url?: string;
+  dop_spec?: any; // Used to override DoP defaults on a specific camera
 }
 
 export interface TakeRecord {
