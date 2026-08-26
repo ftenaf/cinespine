@@ -1,18 +1,266 @@
-fastapi>=0.110.0
-uvicorn[standard]>=0.28.0
-pydantic>=2.6.0
-pydantic-settings>=2.2.0
-clickhouse-connect>=0.7.0
-confluent-kafka>=2.3.0
-google-generativeai>=0.5.0
-google-genai>=1.0.0
-google-cloud-storage>=2.14.0
-python-multipart>=0.0.9
-prometheus-client>=0.20.0
-httpx>=0.27.0
-pypdf>=4.0.0
-pdfplumber>=0.11.0
-pytest>=8.0.0
-pytest-asyncio>=0.23.0
-pytest-cov>=4.1.0
-ruff>=0.3.0
+# Locked runtime + development dependencies for CineSpine.
+#
+# GENERATED FILE — do not edit by hand.
+#
+# Dependencies are declared once, in pyproject.toml. This file is the fully
+# pinned resolution of those declarations, so CI, Replit and local installs all
+# get byte-identical versions. Editing a version here without changing
+# pyproject.toml will be silently reverted on the next regeneration.
+#
+# After changing dependencies in pyproject.toml, regenerate with:
+#
+#   uv pip compile pyproject.toml --extra dev --universal \
+#       --python-version 3.11 -o backend/requirements.txt
+#
+# The resolution is universal: markers cover Windows/Linux and Python 3.11+,
+# so the same lock installs on a developer machine and on the 3.11 CI runner.
+
+annotated-doc==0.0.5
+    # via fastapi
+annotated-types==0.8.0
+    # via pydantic
+anyio==4.14.2
+    # via
+    #   google-genai
+    #   httpx
+    #   starlette
+    #   watchfiles
+ast-serialize==0.8.0
+    # via mypy
+backports-zstd==1.7.0 ; python_full_version < '3.14'
+    # via clickhouse-connect
+certifi==2026.7.22
+    # via
+    #   clickhouse-connect
+    #   httpcore
+    #   httpx
+    #   requests
+cffi==2.1.1 ; platform_python_implementation != 'PyPy'
+    # via cryptography
+charset-normalizer==3.5.1
+    # via
+    #   pdfminer-six
+    #   requests
+click==8.4.2
+    # via uvicorn
+clickhouse-connect==1.7.2
+    # via cinespine (pyproject.toml)
+colorama==0.4.6 ; sys_platform == 'win32'
+    # via
+    #   click
+    #   pytest
+    #   tqdm
+confluent-kafka==2.15.0
+    # via cinespine (pyproject.toml)
+coverage==7.15.4
+    # via pytest-cov
+cryptography==50.0.1
+    # via
+    #   google-auth
+    #   pdfminer-six
+distro==1.9.0
+    # via google-genai
+fastapi==0.141.1
+    # via cinespine (pyproject.toml)
+google-ai-generativelanguage==0.6.15
+    # via google-generativeai
+google-api-core==2.25.2
+    # via
+    #   google-ai-generativelanguage
+    #   google-api-python-client
+    #   google-cloud-core
+    #   google-cloud-storage
+    #   google-generativeai
+google-api-python-client==2.199.0
+    # via google-generativeai
+google-auth==2.57.0
+    # via
+    #   google-ai-generativelanguage
+    #   google-api-core
+    #   google-api-python-client
+    #   google-auth-httplib2
+    #   google-cloud-core
+    #   google-cloud-storage
+    #   google-genai
+    #   google-generativeai
+google-auth-httplib2==0.4.2
+    # via google-api-python-client
+google-cloud-core==2.6.0
+    # via google-cloud-storage
+google-cloud-storage==3.4.1
+    # via cinespine (pyproject.toml)
+google-crc32c==1.8.0
+    # via
+    #   google-cloud-storage
+    #   google-resumable-media
+google-genai==2.20.0
+    # via cinespine (pyproject.toml)
+google-generativeai==0.8.6
+    # via cinespine (pyproject.toml)
+google-resumable-media==2.10.2
+    # via google-cloud-storage
+googleapis-common-protos==1.75.0
+    # via
+    #   google-api-core
+    #   grpcio-status
+grpcio==1.83.0
+    # via
+    #   google-api-core
+    #   grpcio-status
+grpcio-status==1.71.2
+    # via google-api-core
+h11==0.16.0
+    # via
+    #   httpcore
+    #   uvicorn
+httpcore==1.0.9
+    # via httpx
+httplib2==0.32.0
+    # via
+    #   google-api-python-client
+    #   google-auth-httplib2
+httptools==0.8.0
+    # via uvicorn
+httpx==0.28.1
+    # via
+    #   cinespine (pyproject.toml)
+    #   google-genai
+idna==3.19
+    # via
+    #   anyio
+    #   httpx
+    #   requests
+iniconfig==2.3.0
+    # via pytest
+librt==0.15.0 ; platform_python_implementation != 'PyPy'
+    # via mypy
+lz4==4.4.5
+    # via clickhouse-connect
+mypy==2.3.1
+    # via cinespine (pyproject.toml)
+mypy-extensions==1.1.0
+    # via mypy
+packaging==26.3
+    # via pytest
+pathspec==1.1.1
+    # via mypy
+pdfminer-six==20260107
+    # via pdfplumber
+pdfplumber==0.11.10
+    # via cinespine (pyproject.toml)
+pillow==12.3.0
+    # via pdfplumber
+pluggy==1.6.0
+    # via
+    #   pytest
+    #   pytest-cov
+prometheus-client==0.26.0
+    # via cinespine (pyproject.toml)
+proto-plus==1.28.2
+    # via
+    #   google-ai-generativelanguage
+    #   google-api-core
+protobuf==5.29.6
+    # via
+    #   google-ai-generativelanguage
+    #   google-api-core
+    #   google-generativeai
+    #   googleapis-common-protos
+    #   grpcio-status
+    #   proto-plus
+pyasn1==0.6.4
+    # via pyasn1-modules
+pyasn1-modules==0.4.2
+    # via google-auth
+pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+    # via cffi
+pydantic==2.13.4
+    # via
+    #   cinespine (pyproject.toml)
+    #   fastapi
+    #   google-genai
+    #   google-generativeai
+    #   pydantic-settings
+pydantic-core==2.46.4
+    # via pydantic
+pydantic-settings==2.15.0
+    # via cinespine (pyproject.toml)
+pygments==2.21.0
+    # via pytest
+pyparsing==3.3.2
+    # via httplib2
+pypdf==6.16.2
+    # via cinespine (pyproject.toml)
+pypdfium2==5.13.0
+    # via pdfplumber
+pytest==9.1.1
+    # via
+    #   cinespine (pyproject.toml)
+    #   pytest-asyncio
+    #   pytest-cov
+pytest-asyncio==1.4.0
+    # via cinespine (pyproject.toml)
+pytest-cov==7.1.0
+    # via cinespine (pyproject.toml)
+python-dotenv==1.2.3
+    # via
+    #   pydantic-settings
+    #   uvicorn
+python-multipart==0.0.32
+    # via cinespine (pyproject.toml)
+pyyaml==6.0.3
+    # via uvicorn
+requests==2.34.2
+    # via
+    #   google-api-core
+    #   google-auth
+    #   google-cloud-storage
+    #   google-genai
+ruff==0.16.4
+    # via cinespine (pyproject.toml)
+sniffio==1.3.1
+    # via google-genai
+starlette==1.6.0
+    # via fastapi
+tenacity==9.1.4
+    # via google-genai
+tomli==2.4.1 ; python_full_version <= '3.11'
+    # via coverage
+tqdm==4.70.0
+    # via google-generativeai
+typing-extensions==4.16.0
+    # via
+    #   anyio
+    #   fastapi
+    #   google-genai
+    #   google-generativeai
+    #   grpcio
+    #   mypy
+    #   pydantic
+    #   pydantic-core
+    #   pytest-asyncio
+    #   starlette
+    #   typing-inspection
+typing-inspection==0.4.4
+    # via
+    #   fastapi
+    #   pydantic
+    #   pydantic-settings
+tzdata==2026.3 ; sys_platform == 'win32'
+    # via clickhouse-connect
+uritemplate==4.2.0
+    # via google-api-python-client
+urllib3==2.7.0
+    # via
+    #   clickhouse-connect
+    #   requests
+uvicorn==0.52.4
+    # via cinespine (pyproject.toml)
+uvloop==0.22.1 ; platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32'
+    # via uvicorn
+watchfiles==1.2.0
+    # via uvicorn
+websockets==16.1.1
+    # via
+    #   google-genai
+    #   uvicorn
