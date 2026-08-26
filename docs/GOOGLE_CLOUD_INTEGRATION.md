@@ -28,9 +28,10 @@ CineSpine incorporates native, runtime integration with Google Cloud and the Gem
 ## 2. Implemented SDKs & Modules
 
 ### A. `google-genai` SDK
-* **Module:** [`backend/app/integrations/google_cloud.py`](backend/app/integrations/google_cloud.py) and [`backend/app/script/ai_image_service.py`](backend/app/script/ai_image_service.py)
-* **Model 1 (`gemini-2.0-flash`):** Screenplay analysis, emotional tension mapping, and DoP camera placement logic.
-* **Model 2 (`imagen-3.0-generate-002`):** Direct generation of photorealistic 35mm film stills customized for Camera A, B, and C.
+* **Modules:** [`backend/app/integrations/google_cloud.py`](backend/app/integrations/google_cloud.py), [`backend/app/script/ai_image_service.py`](backend/app/script/ai_image_service.py) and [`backend/app/script/character_ai.py`](backend/app/script/character_ai.py)
+* **Character inference (`gemini-3.6-flash`, override with `CINESPINE_GEMINI_MODEL`):** Reads each character's dialogue, parentheticals, the action lines naming them and the settings they appear in, and returns their role, physical appearance, costume and facial features. Called once for the whole cast so the ensemble stays visually coherent, with `response_mime_type: application/json` for structured output.
+* **Screenplay analysis (`gemini-2.0-flash`):** Scene-level tension mapping and DoP camera placement logic.
+* **Image synthesis (`imagen-3.0-generate-002`):** Photorealistic 35mm stills per camera, with a REST fallback if the SDK path fails.
 
 ### B. `google-cloud-storage` SDK
 * **Module:** [`backend/app/integrations/google_cloud.py`](backend/app/integrations/google_cloud.py)
@@ -38,6 +39,25 @@ CineSpine incorporates native, runtime integration with Google Cloud and the Gem
 * **Archival Paths:**
   * Screenplay scripts: `gs://cinespine-production-media/screenplays/{filename}`
   * Previz stills: `gs://cinespine-production-media/previz/{shot_id}_{cam_letter}.jpg`
+
+---
+
+## 2b. Degradation & Cost Behaviour
+
+Every Google Cloud call in CineSpine is optional. The application runs, and its tests pass, with no
+credentials at all.
+
+* **No API key** — character inference is skipped, profiles fall back to what the screenplay literally
+  states, and the UI says so in a parse warning. Uploads still succeed.
+* **No GCS credentials** — archival degrades to returning an auditable `gs://` reference. Constructing a
+  storage client without credentials probes the GCE metadata server and blocks for roughly twelve
+  seconds, so the unavailable result is **cached for the life of the process**; only the first upload
+  pays it. The call also runs off the event loop, so it never stalls other requests.
+* **Timeouts** — character inference abandons after `CINESPINE_AI_CHARACTER_TIMEOUT` seconds (default
+  `60`). Measured round trips on a five-scene script are 22–27s. A timeout discards the whole inference,
+  so the default deliberately leaves headroom.
+* **Tests never call the API.** `main.py` loads `.env`, so a developer with a real key would otherwise
+  have every upload test making a live, billed request. A fixture disables inference by default.
 
 ---
 

@@ -100,26 +100,39 @@ C4Component
   title Component Diagram - CineSpine Core Backend Subsystems
 
   Container_Boundary(backend_core, "CineSpine FastAPI Service") {
-    Component(routes, "API Route Handlers", "backend.app.api.routes", "REST endpoints for /api/script/*, /api/takes, /api/discrepancies")
-    Component(script_parser, "Screenplay Ingestion Engine", "backend.app.script.parser", "Parses Fountain, PDF, and FDX formats into structured scenes and dialogue")
-    Component(breakdown, "Multi-Camera Previz Engine", "backend.app.script.breakdown_engine", "Calculates synchronized 3-camera rigs (Cam A, B, C) per setup")
-    Component(dop_matrix, "DoP Optical Matrix", "backend.app.script.dop_matrix", "Calculates focal lengths, T-stops, Kelvin, and lighting contrast ratios")
-    Component(ai_service, "AI Generative Service", "backend.app.script.ai_image_service", "Calls Google GenAI (Imagen 3 & Gemini 2.0) with DoP prompt compilation")
+    Component(routes, "API Route Handlers", "backend.app.api.routes", "REST and SSE endpoints for /api/script/*, /api/takes, /api/discrepancies")
+    Component(script_parser, "Screenplay Ingestion Engine", "backend.app.script.parser", "Parses Fountain, Markdown, plaintext, PDF and FDX into scenes, cast and relationships")
+    Component(char_ai, "Character Inference", "backend.app.script.character_ai", "Sends per-character script evidence to Gemini, then validates the answer for specificity")
+    Component(char_store, "Character Profile Store", "backend.app.spine.character_store", "SQLite persistence of screenplays and hand-edited character profiles")
+    Component(breakdown, "Multi-Camera Previz Engine", "backend.app.script.breakdown_engine", "Calculates synchronized camera rigs per setup")
+    Component(dop_presets, "DoP Style Presets", "backend.app.script.dop_presets", "Master cinematographer style profiles and override resolution")
+    Component(ai_service, "AI Generative Service", "backend.app.script.ai_image_service", "Calls Imagen / DALL-E with the compiled DoP prompt")
     Component(gcp_client, "Google Cloud Integration Client", "backend.app.integrations.google_cloud", "Wraps google.genai and google.cloud.storage clients")
-    Component(recon, "3-Axis Reconciliation Engine", "backend.app.engine.reconciliation", "Executes multi-witness diffing algorithms")
-    Component(spine, "Append-Only Event Spine", "backend.app.core.event_spine", "ClickHouse / SQLite append-only storage and replay engine")
+    Component(recon, "3-Axis Reconciliation Engine", "backend.app.reconciliation.engine", "Executes multi-witness diffing algorithms")
+    Component(spine, "Append-Only Event Spine", "backend.app.spine.writer", "ClickHouse / in-memory append-only event and document store")
   }
 
   Rel(routes, script_parser, "Parses uploaded script bytes")
+  Rel(routes, char_ai, "Infers cast appearance, wardrobe and facial detail")
+  Rel(char_ai, gcp_client, "Calls Gemini for grounded character profiles")
+  Rel(routes, char_store, "Stores and reads character profiles")
+  Rel(char_store, spine, "Reached through the spine writer facade")
   Rel(routes, breakdown, "Generates multi-camera coverage")
-  Rel(breakdown, dop_matrix, "Applies DoP optical physics")
+  Rel(breakdown, dop_presets, "Applies master DoP style")
   Rel(routes, ai_service, "Executes prompt-to-image synthesis")
   Rel(ai_service, gcp_client, "Calls Google GenAI & Imagen 3")
-  Rel(routes, gcp_client, "Archives PDF scripts to GCS")
+  Rel(routes, gcp_client, "Archives uploaded scripts to GCS")
   Rel(routes, recon, "Runs discrepancy reconciliation")
   Rel(recon, spine, "Appends discrepancy events")
   Rel(routes, spine, "Appends consensus resolutions")
 ```
+
+### Note on optical computation
+
+There is deliberately **no backend DoP optics component**. Sensor geometry, angle of view, depth of field
+and delivery resolution are computed in the browser (`frontend/src/optics.ts`) because they must respond
+to a slider without a round trip. The backend holds *style* (`dop_presets.py`), not *physics*. The two
+meet only in the compiled image prompt.
 
 ---
 
@@ -152,7 +165,52 @@ sequenceDiagram
 
 ---
 
-## ⚡ 5. Append-Only Event Spine & Live SSE Fan-Out Architecture
+## 5. Character Profile Lifecycle
+
+A character profile is the one artefact in the Script Studio a human authors by hand, and it drives every
+generated frame that character appears in. Four properties follow from that, and the design exists to
+guarantee them.
+
+```mermaid
+flowchart TD
+  U["Screenplay uploaded"] --> P["Parse<br/>scenes, cast, relationships"]
+  P --> ID["script_id = hash(script text)"]
+  P --> SEED["Seed profiles from the script itself<br/>action-line appositives, dialogue"]
+  SEED --> AI{"Inference<br/>available?"}
+  AI -- no --> WARN["Keep script-derived profile<br/>+ parse warning"]
+  AI -- yes --> GEM["Gemini: grounded per-character evidence"]
+  GEM --> VAL{"Specific<br/>enough?"}
+  VAL -- no --> RETRY["One targeted retry<br/>naming the weak fields"]
+  RETRY --> VAL2{"Better?"}
+  VAL2 -- no --> WARN2["Report which characters stayed generic"]
+  VAL2 -- yes --> MERGE
+  VAL -- yes --> MERGE["Merge into stored profiles"]
+  WARN --> MERGE
+  WARN2 --> MERGE
+  MERGE --> STORE[("SQLite<br/>character_profiles")]
+  STORE --> UI["Cast profiler (editable)"]
+  UI -- "user edits" --> STORE
+  STORE --> PROMPT["Scene image prompt<br/>only characters present in that scene"]
+```
+
+**1. Identity is content-derived.** `script_id` is a hash of the normalised screenplay text, so
+re-uploading the same script resolves to the same profiles instead of regenerating them.
+
+**2. The merge is asymmetric, on purpose.** Structural fields (dialogue counts, scene presence,
+relationships) always come from the fresh parse. Fields a human has edited always win. An edited
+character who disappears from a later draft is retained and flagged, not deleted.
+
+**3. Inference can never fail an upload.** Missing key, error, timeout, unparseable output and partial
+coverage each leave the script-derived profile in place and add a parse warning. The user is told what
+happened rather than shown a silent downgrade.
+
+**4. Specificity is measured, not requested.** A prompt cannot guarantee that "a striking screen presence"
+does not come back. Each free-text field is checked for filler words, placeholder phrasing, minimum length
+and at least one concrete noun. Only demonstrably better text replaces a weak field.
+
+---
+
+## ⚡ 6. Append-Only Event Spine & Live SSE Fan-Out Architecture
 
 ### Animated Event System Diagram (SMIL SVG)
 

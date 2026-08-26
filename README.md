@@ -203,10 +203,38 @@ CineSpine decouples filmmaking operations into two distinct, distraction-free he
   * Generates synchronized **Camera A** ($28\text{mm}$ Wide Master), **Camera B** ($50\text{mm}$ Medium / OTS), and **Camera C** ($85\text{mm}$ Profile / Macro).
   * **Add & Remove Cameras Dynamically:** Add **Camera D (Crane / Wide POV)**, **Camera E (Extreme Close-Up Macro)**, or **Camera F (Steadicam)** per scene, or remove unneeded cameras with automatic re-focusing.
   * **1-Click Batch Render:** Render concepts for all cameras ($A, B, C, D\dots$) simultaneously in parallel.
-* **DoP Framing & Master Optical Controls:**
-  * **Aspect Ratio Selector ($2.39:1$ Scope, $1.85:1$ Flat, $16:9$ UHD, $4:3$ Academy)** located inside the DoP Studio.
-  * Real-time optical tuners: Lens focal lengths ($18\text{mm}–135\text{mm}$), Apertures ($T1.3–T11$), Color temperatures ($2800\text{K}–7500\text{K}$), Key-to-fill lighting ratios ($1:1$ to $16:1$), and film stock LUT emulations.
-* **Persistent Character Consistency:** Locks character physical traits and headshot profiles so all generated camera concepts enforce consistent actor appearance.
+* **DoP Framing & Master Optical Controls — computed, not decorative:**
+  * **Real sensor geometry.** Each camera body carries its published open-gate dimensions and photosite count. Choosing an aspect ratio computes the largest frame that actually fits inside the gate, and reports what it costs: `2.39:1` on an ALEXA 35 extracts `27.99 × 11.71 mm`, uses `60.9%` of the gate (width-limited) and delivers `4608 × 1928` (DCI 4K). Switch to `4:3` and the extraction becomes height-limited at `91.6%`.
+  * **Angle of view from the extraction**, not a lookup table: `2·atan(w / 2f)`. A 35→85mm change punches in by the correct `2.43×` and moves horizontal AoV from `43.6°` to `17.1°`.
+  * **Geometric depth of field.** Circle of confusion derives from the extracted frame diagonal; the marked T-stop converts to a geometric f-number (`N = T·√τ`), so `T2.8` correctly reads as `f/2.50`. Hyperfocal, near and far limits use the standard formulas, and the far limit goes genuinely infinite past hyperfocal. Requires the **focus distance** control, without which no depth-of-field figure means anything.
+  * **Key light and white balance are separate.** The image only shifts colour when they disagree — matching them renders neutral, and the tint comes from a Planckian-locus approximation of the ratio, with the mired offset displayed.
+  * **Surround view and frame lines.** The viewfinder shows the full open gate with everything outside the delivery extraction dimmed, plus selectable shoot-and-protect lines.
+  * Honest about its limits: perspective compression cannot be recovered from a flat plate, and a crop cannot invent field of view. Both are labelled in the UI rather than faked.
+
+```mermaid
+flowchart LR
+  BODY["Camera body<br/>open-gate mm + photosites"] --> EXT
+  AR["Delivery ratio<br/>2.39 / 1.85 / 16:9 / 4:3"] --> EXT["Extraction<br/>largest frame inside the gate"]
+  EXT --> RES["Delivered resolution<br/>4608 x 1928 - DCI 4K"]
+  EXT --> COC["Circle of confusion<br/>frame diagonal / 1500"]
+  FL["Focal length"] --> AOV["Angle of view<br/>2 atan w / 2f"]
+  EXT --> AOV
+  TSTOP["T-stop"] --> FNUM["f-number<br/>N = T sqrt(transmission)"]
+  FNUM --> DOF
+  COC --> DOF["Depth of field<br/>hyperfocal, near, far"]
+  FOCUS["Focus distance"] --> DOF
+  AOV --> VF["Viewfinder<br/>surround, frame lines, HUD"]
+  DOF --> VF
+  RES --> VF
+  KEY["Key light K"] --> WB
+  CAM["Camera WB K"] --> WB["Tint = ratio on the Planckian locus<br/>matched means neutral"]
+  WB --> VF
+```
+* **AI Character Profiling & Consistency:**
+  * On ingestion, each character's dialogue, parentheticals, the action lines naming them and the settings they appear in are gathered as evidence and sent to Gemini, which returns their **role and archetype, physical appearance, costume and props, and facial features**.
+  * Output is **validated, not trusted**: descriptions are checked for filler words, placeholder phrasing, minimum length and the presence of at least one concrete noun. Anything too generic to render gets one targeted retry, and anything still vague is reported rather than passed off as good.
+  * Profiles are **editable and durable** — stored in SQLite against a script identity derived from the screenplay text, so hand-authored looks survive a re-upload *and* a backend restart. Structural data (dialogue counts, scene presence, relationships) refreshes from each parse while your edits win.
+  * Every generated frame is prompted with **only the characters present in that scene**.
 
 ### 3. 🔍 3-Axis Discrepancy Reconciliation Engine
 * Reconciles Intent (Planned), Belief (Logged on set), and Existence (Stored on disk) with sub-millisecond precision.
@@ -277,10 +305,39 @@ python -m venv .venv
 # On Linux/macOS:
 source .venv/bin/activate
 
-# Install dependencies (including Google Cloud SDKs)
-pip install -e .
-pip install google-genai google-cloud-storage
+# Install the pinned dependency set, then the project itself
+pip install -r backend/requirements.txt
+pip install -e . --no-deps
 ```
+
+> **Dependencies are declared once, in `pyproject.toml`.** `backend/requirements.txt` is its compiled
+> lock: 82 packages pinned to exact versions, resolved universally so the same file installs on the
+> Linux 3.11 CI runner and a Windows 3.14 developer machine. Never hand-edit the lock. After changing
+> `pyproject.toml`, regenerate it:
+>
+> ```bash
+> uv pip compile pyproject.toml --extra dev --universal --python-version 3.11 -o backend/requirements.txt
+> ```
+
+### Configuration
+
+Copy `.env.example` to `.env` and fill in what you need. Everything is optional — the app runs without
+any of it, degrading gracefully rather than failing.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `GEMINI_API_KEY` | *unset* | Enables AI character inference and image generation. Without it, character profiles fall back to what the script literally states and the UI says so. |
+| `CINESPINE_GEMINI_MODEL` | `gemini-3.6-flash` | Model used for character inference. |
+| `CINESPINE_AI_CHARACTER_TIMEOUT` | `60` | Seconds before inference is abandoned. A timeout discards the whole inference, so leave headroom: measured round trips on a five-scene script are 22–27s. |
+| `CINESPINE_DISABLE_AI_CHARACTER_INFERENCE` | *unset* | Set to `1` to skip inference entirely. Useful for offline work and required for a hermetic test run. |
+| `CINESPINE_DB_PATH` | `spine.db` | SQLite file holding screenplays and character profiles. Relative to the working directory, so set an absolute path for a deployment. |
+| `CINESPINE_EXAMPLES_DIR` | `data/examples` | Local folder of example production paperwork. Nothing is committed — see the note below. |
+| `GOOGLE_CLOUD_PROJECT` / `GCS_BUCKET_NAME` | demo values | Google Cloud Storage archival target. |
+
+> **Production paperwork is never committed.** Real call sheets, camera reports and script logs are
+> third-party copyrighted material and routinely carry crew personal data. `data/examples/`, `data/raw/`
+> and `*.pdf` are gitignored. Point `CINESPINE_EXAMPLES_DIR` at a local copy to enable the PDF
+> integration tests, which skip by default.
 
 ### 2. Start the Backend API Server
 ```bash
@@ -300,23 +357,64 @@ npm run dev
 
 ---
 
-## 🧪 Automated Test Suite (100% Green)
+## 🔌 Script Studio API
 
-CineSpine includes a comprehensive test suite covering parsers, 3-axis reconciliation algorithms, Google Cloud runtime integrations, and Script Studio endpoints:
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/script/upload` | Upload `.fountain` / `.md` / `.txt` / `.pdf` / `.fdx`. Parses scenes and cast, runs AI character inference, stores the result. |
+| `POST /api/script/parse` | Same, from raw text instead of a file. |
+| `GET /api/script/{script_id}/characters` | Read stored character profiles, including edits. |
+| `POST /api/script/characters/update` | Persist edits to one character. Requires `script_id`; answers `404` for an unknown character rather than reporting a success that did not happen. |
+| `POST /api/script/characters/generate-portrait` | Photorealistic 85mm portrait locking a character's likeness. |
+| `POST /api/script/breakdown` | Scene → multi-camera shot proposals. |
+| `POST /api/script/generate-storyboard` | Render a camera frame. |
+
+Every parse returns a **`script_id`** derived from the screenplay text, plus **`parse_warnings`**.
+
+The `script_id` is what makes edits durable: re-uploading the same screenplay resolves to the same id, so
+previously saved profiles are reattached rather than regenerated.
+
+`parse_warnings` is how a poor parse explains itself instead of presenting as success — no scene headings
+found, no character cues detected, inference unavailable, or descriptions that stayed generic after a
+retry. The UI surfaces them as an amber banner.
+
+---
+
+## 🧪 Automated Test Suite
 
 ```bash
-pytest -v
+pytest
 ```
 
 ```
-============================== 100 passed in 130s ===============================
-backend/tests/test_agents.py .................. [100%]
-backend/tests/test_api.py ..................... [100%]
-backend/tests/test_google_cloud_integration.py  [100%] (5 passed)
-backend/tests/test_script_studio.py ........... [100%] (9 passed)
-backend/tests/test_reconciliation.py .......... [100%]
-backend/tests/test_pdf_parsers.py ............. [100%]
+142 passed, 7 skipped in 68s
 ```
+
+Coverage by area:
+
+| Suite | Tests | Covers |
+|---|---|---|
+| `test_character_ai.py` | 22 | Evidence gathering, prompt contract, response parsing, the vagueness validator and its retry, every inference failure path |
+| `test_script_studio.py` | 17 | Screenplay parsing, title-block handling, character persistence, restart durability |
+| `test_normalizers.py` | 16 | Roll, slate, take and shoot-day normalisation |
+| `test_api.py` | 9 | REST surface, seeding, sequences |
+| `test_google_cloud_integration.py` | 8 | SDK availability, and that the real and fallback paths are distinguishable |
+| `test_reconciliation.py` | 8 | 3-axis discrepancy detection |
+| `test_parsers.py` / `test_pdf_parsers.py` / `test_scripte_parsers.py` | 16 | Camera CSV, sound ALE, Silverstack and Scripte log parsing |
+| *others* | 46 | Classification, streaming, requirements, previews, agents |
+
+**The 7 skips are deliberate.** `test_real_pdf_examples.py` exercises parsing against real production
+PDFs, which are copyrighted and not committed. Point `CINESPINE_EXAMPLES_DIR` at a local set to run them.
+
+Two properties worth knowing:
+
+* **The suite is hermetic.** `main.py` loads `.env`, so once a real `GEMINI_API_KEY` is present every
+  test touching `/api/script/upload` would otherwise make a live, billed call — roughly 25 seconds each,
+  and failing offline. A fixture disables inference by default; tests that exercise it opt in explicitly
+  and stub the model.
+* **The AI tests are falsifiable.** The vagueness validator is calibrated against eleven cases in both
+  directions, and the inference tests assert *which* code path ran rather than that a call returned
+  something.
 
 ---
 
@@ -324,35 +422,45 @@ backend/tests/test_pdf_parsers.py ............. [100%]
 
 ```
 cinespine/
+├── pyproject.toml                       # Single source of dependency truth
 ├── backend/
+│   ├── requirements.txt                 # Compiled lock (generated — do not edit)
 │   ├── app/
-│   │   ├── api/routes.py                # FastAPI REST & SSE Gateway
-│   │   ├── core/                        # Event spine, database models, state
-│   │   ├── engine/                      # 3-Axis Discrepancy Reconciliation Engine
+│   │   ├── main.py                      # FastAPI application gateway
+│   │   ├── api/routes.py                # REST & SSE gateway
+│   │   ├── agents/                      # MCP server, multimodal agent
+│   │   ├── core/telemetry.py            # Prometheus metrics
 │   │   ├── integrations/
-│   │   │   └── google_cloud.py          # Google GenAI & GCS Storage Client
+│   │   │   └── google_cloud.py          # google-genai & GCS client
+│   │   ├── normalizers/                 # Roll, slate, take, shoot-day normalisation
+│   │   ├── parsers/                     # Camera CSV, sound ALE, Silverstack, PDF, classifier
+│   │   ├── reconciliation/              # 3-axis engine, models, timecode
 │   │   ├── script/
-│   │   │   ├── parser.py                # Screenplay Parser (.fountain, .pdf, .fdx)
-│   │   │   ├── breakdown_engine.py      # Multi-Camera (A/B/C) Coverage Engine
-│   │   │   ├── dop_matrix.py            # Master DoP Optical Matrix
-│   │   │   ├── ai_image_service.py      # Real-Time AI Generation Engine
-│   │   │   └── storyboard_generator.py  # 35mm Cinema Still Generator
-│   │   └── main.py                      # FastAPI Application Gateway
-│   └── tests/                           # 100 Automated Pytest Tests
+│   │   │   ├── parser.py                # Screenplay parser (.fountain/.md/.txt/.pdf/.fdx)
+│   │   │   ├── character_ai.py          # AI character inference + vagueness validator
+│   │   │   ├── breakdown_engine.py      # Multi-camera coverage engine
+│   │   │   ├── dop_presets.py           # Master DoP style presets
+│   │   │   ├── ai_image_service.py      # Imagen / DALL·E generation
+│   │   │   └── storyboard_generator.py  # 35mm still generator
+│   │   ├── spine/
+│   │   │   ├── writer.py                # Append-only event & document store
+│   │   │   ├── character_store.py       # Durable character profiles (SQLite)
+│   │   │   └── schema.py
+│   │   └── streaming/                   # SSE broker, event bus, dispatcher
+│   └── tests/                           # 142 pytest tests + conftest fixtures
 ├── frontend/
 │   ├── src/
-│   │   ├── components/
-│   │   │   ├── ScriptStudio.tsx         # AI Script & Multi-Cam Previz Studio
-│   │   │   ├── ProductionDashboard.tsx  # Main Operations & Dailies Hub
-│   │   │   ├── DiscrepancyMatrix.tsx    # 3-Axis Reconciliation Hub
-│   │   │   └── NotificationPanel.tsx    # Crew Real-Time Dispatch
-│   │   └── App.tsx                      # Root Studio Application
+│   │   ├── App.tsx                      # Set & Editorial Spine (root application)
+│   │   ├── components/ScriptStudio.tsx  # Screenplay, cast profiler & DoP Studio
+│   │   ├── optics.ts                    # Sensor geometry, angle of view, depth of field
+│   │   ├── api.ts / types.ts
 │   └── package.json
 ├── docs/
-│   ├── DEVPOST_SUBMISSION.md            # Official Hackathon Submission Package
-│   ├── GOOGLE_CLOUD_INTEGRATION.md      # Google Cloud Architecture Guide
-│   ├── DEMO_VIDEO_SCRIPT.md             # 3-Minute Demo Video Walkthrough Script
-│   └── architecture/                    # C4 Architecture Diagrams
+│   ├── ARCHITECTURE.md                  # C4 model + event spine
+│   ├── DEVPOST_SUBMISSION.md            # Hackathon submission package
+│   ├── GOOGLE_CLOUD_INTEGRATION.md      # Google Cloud architecture guide
+│   ├── DEMO_VIDEO_SCRIPT.md             # Demo walkthrough script
+│   └── architecture/                    # C4 doc + animated SMIL SVG diagrams
 └── README.md
 ```
 
