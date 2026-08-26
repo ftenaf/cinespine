@@ -28,7 +28,13 @@ import {
   REFERENCE_FOCAL_MM,
   computeViewfinderGeometry,
   parseAspectRatio,
-  protectFrameInset
+  protectFrameInset,
+  depthOfField,
+  formatDistance,
+  whiteBalanceTint,
+  miredShift,
+  rgbToCss,
+  extractedResolution
 } from '../optics';
 
 export interface DialogueLine {
@@ -191,6 +197,8 @@ export const ScriptStudio: React.FC = () => {
   const [showViewfinderGrid, setShowViewfinderGrid] = useState<boolean>(true);
   const [showSurround, setShowSurround] = useState<boolean>(true);
   const [protectRatio, setProtectRatio] = useState<string>('16:9');
+  const [focusDistanceM, setFocusDistanceM] = useState<number>(3);
+  const [whiteBalanceK, setWhiteBalanceK] = useState<number>(5600);
 
   // Presets Dictionary
   const [presetsDict, setPresetsDict] = useState<Record<string, any>>({});
@@ -209,13 +217,62 @@ export const ScriptStudio: React.FC = () => {
     [geometry.aspect, protectRatio]
   );
 
+  // Geometric depth of field for the current lens, stop and focus distance
+  const dof = useMemo(
+    () => depthOfField(geometry.frame, customFocalLength, customAperture, focusDistanceM),
+    [geometry.frame, customFocalLength, customAperture, focusDistanceM]
+  );
+
+  // Pixel dimensions the current extraction actually delivers
+  const resolution = useMemo(
+    () => extractedResolution(geometry.sensor, geometry.frame),
+    [geometry.sensor, geometry.frame]
+  );
+
+  // Image only shifts colour when white balance disagrees with the key light
+  const wbTint = useMemo(
+    () => whiteBalanceTint(customColorTemp, whiteBalanceK),
+    [customColorTemp, whiteBalanceK]
+  );
+  const wbMired = miredShift(customColorTemp, whiteBalanceK);
+
+  // Log-scaled position (0-100%) of a distance on the focus scale bar
+  const DEPTH_SCALE_MIN_M = 0.3;
+  const DEPTH_SCALE_MAX_M = 100;
+  const depthScalePos = (m: number): number => {
+    if (!isFinite(m)) return 100;
+    const v = Math.min(Math.max(m, DEPTH_SCALE_MIN_M), DEPTH_SCALE_MAX_M);
+    return (Math.log(v / DEPTH_SCALE_MIN_M) / Math.log(DEPTH_SCALE_MAX_M / DEPTH_SCALE_MIN_M)) * 100;
+  };
+
+  /**
+   * Background blur strength as a stand-in for shallow focus. Derived from the
+   * computed depth of field rather than a hardcoded aperture list, but still an
+   * approximation: a real defocus needs a depth map, not a radial mask.
+   */
+  const defocusPx = useMemo(() => {
+    if (!isFinite(dof.totalM)) return 0;
+    // Roughly: under ~10cm of depth is very shallow, beyond ~3m is deep focus.
+    const shallowness = Math.min(Math.max((3 - dof.totalM) / 3, 0), 1);
+    return +(shallowness * 4).toFixed(2);
+  }, [dof.totalM]);
+
   // Dynamic Real-Time DoP Prompt Compiler
   const compileDoPPromptPreview = (): string => {
     if (dopMode === 'prompt' && customMoodPrompt.trim()) {
       return `Cinematic master film still, ${customMoodPrompt.trim()}, ${customFocalLength}mm lens at ${customAperture}, ${customColorTemp}K color temperature, ${customLightingRatio} lighting ratio, ${customLutEmulation} LUT, 8k resolution, authentic 35mm grain`;
     }
     if (dopMode === 'matrix') {
-      return `Cinematic master film still, captured on ${customSensorFormat}, ${customFocalLength}mm prime lens at ${customAperture} aperture, ${customColorTemp}K color temperature, ${customLightingRatio} key-to-fill lighting ratio, ${customLutEmulation} film stock emulsion grade, 8k resolution, photorealistic master cinema frame`;
+      const focusPhrase = `focused at ${formatDistance(focusDistanceM)} with ${
+        dof.atInfinity ? 'deep focus to infinity' : `${formatDistance(dof.totalM)} of depth of field`
+      }`;
+      const wbPhrase =
+        Math.abs(wbMired) < 1
+          ? `${customColorTemp}K key light, neutrally balanced`
+          : `${customColorTemp}K key light balanced at ${whiteBalanceK}K for a ${
+              wbMired > 0 ? 'cool blue' : 'warm amber'
+            } cast`;
+      return `Cinematic master film still, captured on ${customSensorFormat}, ${customFocalLength}mm prime lens at ${customAperture} aperture, ${focusPhrase}, ${wbPhrase}, ${customLightingRatio} key-to-fill lighting ratio, ${customLutEmulation} film stock emulsion grade, 8k resolution, photorealistic master cinema frame`;
     }
     const preset = presetsDict[selectedPreset];
     return preset?.prompt_style_tag || `Cinematic master film still in the style of ${selectedPreset}, natural lighting, master prime clarity, 8k photorealistic film still`;
@@ -1425,7 +1482,7 @@ export const ScriptStudio: React.FC = () => {
                       src={selectedCam.image_url}
                       alt={selectedCam.prompt}
                       className="w-full h-full object-cover origin-center transition-transform duration-200"
-                      style={{ transform: `scale(${selectedCamGeometry.framingScale.toFixed(4)})` }}
+                      style={{ transform: `scale(${selectedCamGeometry.appliedScale.toFixed(4)})` }}
                     />
                   ) : (
                     <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs">
@@ -1776,12 +1833,56 @@ export const ScriptStudio: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Color Temperature Kelvin Slider */}
+                {/* Focus Distance — the missing half of any depth of field figure */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <Crosshair className="w-3.5 h-3.5 text-emerald-400" />
+                      Focus Distance
+                    </label>
+                    <span className="text-xs font-mono font-bold text-emerald-300">
+                      {formatDistance(focusDistanceM)}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={Math.log(0.3)}
+                    max={Math.log(100)}
+                    step="0.01"
+                    value={Math.log(focusDistanceM)}
+                    onChange={e => setFocusDistanceM(+Math.exp(Number(e.target.value)).toFixed(2))}
+                    className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  />
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    {[0.5, 1, 2, 3, 5, 10, 25].map(d => (
+                      <button
+                        key={d}
+                        onClick={() => setFocusDistanceM(d)}
+                        className={`px-1.5 py-0.5 text-[10px] font-mono font-bold rounded transition ${
+                          Math.abs(focusDistanceM - d) < 0.01
+                            ? 'bg-emerald-600 text-white'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        {d < 1 ? `${d * 100}cm` : `${d}m`}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setFocusDistanceM(+dof.hyperfocalM.toFixed(2))}
+                      className="px-1.5 py-0.5 text-[10px] font-mono font-bold rounded text-amber-300 hover:bg-slate-800 transition"
+                      title={`Hyperfocal: ${formatDistance(dof.hyperfocalM)}`}
+                    >
+                      HYP
+                    </button>
+                  </div>
+                </div>
+
+                {/* Key Light Source Kelvin Slider */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                       <Sun className="w-3.5 h-3.5 text-amber-400" />
-                      Color Temperature (Kelvin)
+                      Key Light Source (Kelvin)
                     </label>
                     <span className="text-xs font-mono font-bold text-amber-300">{customColorTemp}K</span>
                   </div>
@@ -1798,6 +1899,39 @@ export const ScriptStudio: React.FC = () => {
                     <span>2800K (Warm Tungsten)</span>
                     <span>5600K (Daylight)</span>
                     <span>7500K (Cool Blue Hour)</span>
+                  </div>
+                </div>
+
+                {/* Camera White Balance — the image only shifts when these disagree */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <Palette className="w-3.5 h-3.5 text-cyan-400" />
+                      Camera White Balance
+                    </label>
+                    <span className="text-xs font-mono font-bold text-cyan-300">{whiteBalanceK}K</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="2800"
+                    max="7500"
+                    step="100"
+                    value={whiteBalanceK}
+                    onChange={e => setWhiteBalanceK(Number(e.target.value))}
+                    className="w-full h-2 bg-gradient-to-r from-cyan-500 via-slate-200 to-amber-500 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <div className="flex items-center justify-between text-[10px] font-mono mt-1">
+                    <button
+                      onClick={() => setWhiteBalanceK(customColorTemp)}
+                      className="text-slate-400 hover:text-white underline decoration-dotted"
+                    >
+                      Match to key ({customColorTemp}K)
+                    </button>
+                    <span className={Math.abs(wbMired) < 1 ? 'text-slate-500' : 'text-amber-300'}>
+                      {Math.abs(wbMired) < 1
+                        ? 'Neutral — balanced to source'
+                        : `${wbMired > 0 ? '+' : ''}${wbMired.toFixed(0)} mired ${wbMired > 0 ? '(cool)' : '(warm)'}`}
+                    </span>
                   </div>
                 </div>
 
@@ -1956,7 +2090,7 @@ export const ScriptStudio: React.FC = () => {
                 alt="DoP Optical Simulation"
                 className="absolute inset-0 w-full h-full object-cover origin-center transition-transform duration-200"
                 style={{
-                  transform: `scale(${geometry.framingScale.toFixed(4)})`,
+                  transform: `scale(${geometry.appliedScale.toFixed(4)})`,
                   filter: `contrast(${
                     customLightingRatio === '16:1' ? 145 : customLightingRatio === '8:1' ? 125 : customLightingRatio === '4:1' ? 110 : 100
                   }%) brightness(${
@@ -1969,21 +2103,27 @@ export const ScriptStudio: React.FC = () => {
               <div
                 className="absolute inset-0 pointer-events-none transition-colors duration-300"
                 style={{
-                  backgroundColor:
-                    customColorTemp <= 3400
-                      ? 'rgba(245, 158, 11, 0.22)' // Warm Amber
-                      : customColorTemp <= 4500
-                      ? 'rgba(251, 191, 36, 0.12)' // Mild Golden
-                      : customColorTemp <= 5800
-                      ? 'rgba(255, 255, 255, 0.02)' // Neutral
-                      : 'rgba(6, 182, 212, 0.22)', // Cold Cyan
-                  mixBlendMode: 'color'
+                  // Multiply by the source/white-balance ratio: matched values are
+                  // neutral white and shift nothing.
+                  backgroundColor: rgbToCss(wbTint),
+                  mixBlendMode: 'multiply'
                 }}
               />
 
-              {/* Shallow Depth of Field Blur Simulation (for wide apertures T1.3/T1.4/T2.0) */}
-              {['T1.3', 'T1.4', 'T1.8', 'T2.0'].includes(customAperture) && (
-                <div className="absolute inset-0 pointer-events-none border-[16px] border-black/30 backdrop-blur-[2px] rounded-2xl" />
+              {/* Shallow-focus approximation, strength driven by the computed depth of
+                  field. Masked to the frame edges — a true defocus needs a depth map. */}
+              {defocusPx > 0.05 && (
+                <div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    backdropFilter: `blur(${defocusPx}px)`,
+                    WebkitBackdropFilter: `blur(${defocusPx}px)`,
+                    WebkitMaskImage:
+                      'radial-gradient(ellipse 60% 65% at 50% 50%, transparent 35%, black 100%)',
+                    maskImage:
+                      'radial-gradient(ellipse 60% 65% at 50% 50%, transparent 35%, black 100%)'
+                  } as React.CSSProperties}
+                />
               )}
 
               {/* Delivery Extraction Window.
@@ -1993,8 +2133,9 @@ export const ScriptStudio: React.FC = () => {
               <div
                 className="absolute pointer-events-none"
                 style={{
-                  width: `${(geometry.frame.widthMm / geometry.sensor.widthMm) * 100}%`,
-                  height: `${(geometry.frame.heightMm / geometry.sensor.heightMm) * 100}%`,
+                  // With the surround off the container is already the delivery frame.
+                  width: showSurround ? `${(geometry.frame.widthMm / geometry.sensor.widthMm) * 100}%` : '100%',
+                  height: showSurround ? `${(geometry.frame.heightMm / geometry.sensor.heightMm) * 100}%` : '100%',
                   left: '50%',
                   top: '50%',
                   transform: 'translate(-50%, -50%)',
@@ -2015,7 +2156,7 @@ export const ScriptStudio: React.FC = () => {
                       transform: 'translate(-50%, -50%)'
                     }}
                   >
-                    <span className="absolute -top-4 left-0 text-[9px] font-mono font-bold text-amber-300/90">
+                    <span className="absolute top-0.5 left-1 text-[9px] font-mono font-bold text-amber-300/90 drop-shadow">
                       PROTECT {protectRatio}
                     </span>
                   </div>
@@ -2046,21 +2187,50 @@ export const ScriptStudio: React.FC = () => {
                 )}
               </div>
 
+              {/* Plate coverage warning — crop cannot synthesise a wider field of view */}
+              {geometry.plateLimited && (
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-12 z-10 pointer-events-none">
+                  <span className="block whitespace-nowrap px-2 py-0.5 rounded bg-amber-500/90 text-slate-950 text-[9px] font-mono font-bold tracking-wide">
+                    FRAMING @ {REFERENCE_FOCAL_MM}MM — RE-RENDER FOR {customFocalLength}MM
+                  </span>
+                </div>
+              )}
+
               {/* On-Screen Display (OSD HUD) */}
               <div className="absolute inset-0 p-3 flex flex-col justify-between pointer-events-none font-mono text-[10px] text-emerald-400 select-none">
                 <div className="flex items-center justify-between bg-black/50 backdrop-blur-sm px-2 py-1 rounded">
                   <div className="flex items-center gap-2">
-                    <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                    <span className="font-bold text-white">REC 24.0 FPS</span>
-                    <span className="text-slate-400">• ARRI RAW</span>
+                    {resolution ? (
+                      <>
+                        <span className="font-bold text-white">
+                          {resolution.widthPx} × {resolution.heightPx}
+                        </span>
+                        <span
+                          className={`px-1.5 py-px rounded text-[9px] font-bold ${
+                            resolution.meetsHd
+                              ? 'bg-emerald-500/20 text-emerald-300'
+                              : 'bg-red-500/25 text-red-300'
+                          }`}
+                        >
+                          {resolution.masteringTarget}
+                        </span>
+                        <span className="text-slate-400">
+                          {resolution.pixelPitchUm.toFixed(2)}µm
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-slate-300">
+                        PHOTOCHEMICAL · resolution set by scan
+                      </span>
+                    )}
                   </div>
                   <div className="text-purple-300 font-bold">
                     {aspectRatio} • {geometry.sensor.label}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between bg-black/60 backdrop-blur-sm px-2.5 py-1.5 rounded">
-                  <div className="flex items-center gap-3">
+                <div className="flex items-center justify-between gap-x-3 gap-y-1 flex-wrap bg-black/60 backdrop-blur-sm px-2.5 py-1.5 rounded">
+                  <div className="flex items-center gap-3 [&>span]:whitespace-nowrap">
                     <span>
                       LENS: <strong className="text-white">{customFocalLength}mm</strong>
                     </span>
@@ -2068,13 +2238,19 @@ export const ScriptStudio: React.FC = () => {
                       IRIS: <strong className="text-white">{customAperture}</strong>
                     </span>
                     <span>
-                      CCT: <strong className="text-amber-300">{customColorTemp}K</strong>
+                      FOCUS: <strong className="text-white">{formatDistance(focusDistanceM)}</strong>
+                    </span>
+                    <span>
+                      DOF:{' '}
+                      <strong className="text-white">
+                        {formatDistance(dof.nearM)}–{formatDistance(dof.farM)}
+                      </strong>
+                    </span>
+                    <span>
+                      WB: <strong className="text-amber-300">{whiteBalanceK}K</strong>
                     </span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span>
-                      HFOV: <strong className="text-purple-300">{geometry.hfovDeg.toFixed(1)}°</strong>
-                    </span>
+                  <div className="flex items-center gap-3 [&>span]:whitespace-nowrap">
                     <span>
                       RATIO: <strong className="text-purple-300">{customLightingRatio}</strong>
                     </span>
@@ -2145,10 +2321,85 @@ export const ScriptStudio: React.FC = () => {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">PLATE SCALE</span>
-                  <strong className="text-white">
+                  <strong className={geometry.plateLimited ? 'text-amber-300' : 'text-white'}>
                     {geometry.framingScale.toFixed(2)}× vs {REFERENCE_FOCAL_MM}mm
                   </strong>
                 </div>
+                {geometry.plateLimited && (
+                  <div className="text-[9px] text-amber-300/90 leading-snug pt-0.5">
+                    Wider than the plate — a crop cannot add field of view. Framing shown at
+                    {' '}{REFERENCE_FOCAL_MM}mm; run a test render for true {customFocalLength}mm coverage.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Depth of Field — geometric, from CoC, f-number and focus distance */}
+            <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Aperture className="w-3.5 h-3.5 text-purple-400" />
+                  <span className="text-[11px] font-bold text-slate-200">Depth of Field</span>
+                </div>
+                <span className="font-mono text-[9px] text-slate-500">
+                  f/{dof.fNumber.toFixed(2)} from {customAperture} • CoC {dof.cocMm.toFixed(4)}mm
+                </span>
+              </div>
+
+              {/* Focus scale — logarithmic, 0.3m to 100m */}
+              <div className="pt-3 pb-1">
+                <div className="relative h-1.5 bg-slate-800 rounded-full">
+                  <div
+                    className="absolute h-full bg-emerald-500/70 rounded-full"
+                    style={{
+                      left: `${depthScalePos(dof.nearM)}%`,
+                      width: `${Math.max(depthScalePos(dof.farM) - depthScalePos(dof.nearM), 0.8)}%`
+                    }}
+                  />
+                  <div
+                    className="absolute -top-1 w-0.5 h-3.5 bg-white rounded-full"
+                    style={{ left: `${depthScalePos(focusDistanceM)}%` }}
+                  />
+                  {dof.hyperfocalM <= DEPTH_SCALE_MAX_M && (
+                    <div
+                      className="absolute -top-0.5 w-px h-2.5 bg-amber-400/80"
+                      style={{ left: `${depthScalePos(dof.hyperfocalM)}%` }}
+                      title="Hyperfocal"
+                    />
+                  )}
+                </div>
+                <div className="flex justify-between font-mono text-[8px] text-slate-600 pt-1">
+                  <span>0.3m</span>
+                  <span>1m</span>
+                  <span>3m</span>
+                  <span>10m</span>
+                  <span>30m</span>
+                  <span>∞</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2 font-mono text-[10px]">
+                <div>
+                  <div className="text-slate-500 text-[8px] uppercase tracking-wide">Near</div>
+                  <strong className="text-emerald-300">{formatDistance(dof.nearM)}</strong>
+                </div>
+                <div>
+                  <div className="text-slate-500 text-[8px] uppercase tracking-wide">Far</div>
+                  <strong className="text-emerald-300">{formatDistance(dof.farM)}</strong>
+                </div>
+                <div>
+                  <div className="text-slate-500 text-[8px] uppercase tracking-wide">Total</div>
+                  <strong className="text-white">{formatDistance(dof.totalM)}</strong>
+                </div>
+                <div>
+                  <div className="text-slate-500 text-[8px] uppercase tracking-wide">Hyperfocal</div>
+                  <strong className="text-amber-300">{formatDistance(dof.hyperfocalM)}</strong>
+                </div>
+              </div>
+
+              <div className="font-mono text-[9px] text-slate-500">
+                {formatDistance(dof.inFrontM)} in front • {formatDistance(dof.behindM)} behind
+                {dof.atInfinity && ' — focused at or past hyperfocal, far limit is infinite'}
               </div>
             </div>
 

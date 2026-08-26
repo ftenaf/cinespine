@@ -16,6 +16,12 @@ export interface SensorFormat {
   /** Open gate active image area, in millimetres. */
   widthMm: number;
   heightMm: number;
+  /**
+   * Open gate photosite count. Null for photochemical formats, where there is
+   * no pixel grid and delivered resolution is a property of the scan.
+   */
+  photositesW: number | null;
+  photositesH: number | null;
 }
 
 /**
@@ -24,11 +30,11 @@ export interface SensorFormat {
  * on the readouts for real production decisions.
  */
 export const SENSOR_FORMATS: SensorFormat[] = [
-  { id: 'Large Format 35mm (ARRI ALEXA 35)', label: 'ARRI ALEXA 35 (S35 open gate)', widthMm: 27.99, heightMm: 19.22 },
-  { id: 'Full Frame 65mm (ARRI ALEXA 65)', label: 'ARRI ALEXA 65 (open gate)', widthMm: 54.12, heightMm: 25.58 },
-  { id: 'Super 35mm (Panavision Panaflex Gold)', label: 'Panavision Panaflex Gold (4-perf S35)', widthMm: 24.89, heightMm: 18.66 },
-  { id: 'RED V-Raptor 8K VV', label: 'RED V-Raptor 8K VV (open gate)', widthMm: 40.96, heightMm: 21.60 },
-  { id: 'Large Format 35mm (ARRI ALEXA Mini LF)', label: 'ARRI ALEXA Mini LF (open gate)', widthMm: 36.70, heightMm: 25.54 },
+  { id: 'Large Format 35mm (ARRI ALEXA 35)', label: 'ARRI ALEXA 35 (S35 open gate)', widthMm: 27.99, heightMm: 19.22, photositesW: 4608, photositesH: 3164 },
+  { id: 'Full Frame 65mm (ARRI ALEXA 65)', label: 'ARRI ALEXA 65 (open gate)', widthMm: 54.12, heightMm: 25.58, photositesW: 6560, photositesH: 3100 },
+  { id: 'Super 35mm (Panavision Panaflex Gold)', label: 'Panavision Panaflex Gold (4-perf S35)', widthMm: 24.89, heightMm: 18.66, photositesW: null, photositesH: null },
+  { id: 'RED V-Raptor 8K VV', label: 'RED V-Raptor 8K VV (open gate)', widthMm: 40.96, heightMm: 21.60, photositesW: 8192, photositesH: 4320 },
+  { id: 'Large Format 35mm (ARRI ALEXA Mini LF)', label: 'ARRI ALEXA Mini LF (open gate)', widthMm: 36.70, heightMm: 25.54, photositesW: 4448, photositesH: 3096 },
 ];
 
 export const DEFAULT_SENSOR_ID = SENSOR_FORMATS[0].id;
@@ -123,8 +129,19 @@ export interface ViewfinderGeometry {
   /** Vertical angle of view of the extracted frame, in degrees. */
   vfovDeg: number;
   cropFactor: number;
-  /** CSS transform scale for the plate inside the extraction window. */
+  /**
+   * True angle-of-view ratio against the reference focal length. Below 1 for
+   * lenses wider than the plate was framed at.
+   */
   framingScale: number;
+  /**
+   * Scale actually applied to the plate, clamped at 1. A crop cannot synthesise
+   * field of view the plate does not contain, so going wider than the reference
+   * is not simulatable — only a re-render can show it.
+   */
+  appliedScale: number;
+  /** True when the requested focal length is wider than the plate can show. */
+  plateLimited: boolean;
   /**
    * Scale for the dimmed surround view: how much larger the open gate is than
    * the extraction along each axis.
@@ -142,6 +159,7 @@ export function computeViewfinderGeometry(
   const sensor = resolveSensor(sensorId);
   const aspect = parseAspectRatio(aspectRatio);
   const frame = extractFrame(sensor, aspect);
+  const scale = framingScale(frame.widthMm, focalLengthMm, referenceFocalMm);
 
   return {
     sensor,
@@ -150,7 +168,9 @@ export function computeViewfinderGeometry(
     hfovDeg: angleOfView(frame.widthMm, focalLengthMm),
     vfovDeg: angleOfView(frame.heightMm, focalLengthMm),
     cropFactor: cropFactor(frame),
-    framingScale: framingScale(frame.widthMm, focalLengthMm, referenceFocalMm),
+    framingScale: scale,
+    appliedScale: Math.max(1, scale),
+    plateLimited: scale < 0.999,
     surroundScaleX: sensor.widthMm / frame.widthMm,
     surroundScaleY: sensor.heightMm / frame.heightMm,
   };
@@ -171,4 +191,247 @@ export function protectFrameInset(deliveryAspect: number, protectAspect: number)
   }
   // Narrower than delivery: full height, narrower width.
   return { widthPct: (protectAspect / deliveryAspect) * 100, heightPct: 100 };
+}
+
+/* ------------------------------------------------------------------------- *
+ * Depth of field
+ *
+ * Real geometric depth of field, computed from the extracted frame's circle of
+ * confusion, the lens f-number, and the focus distance. These are the same
+ * formulas a pCAM/Artemis-class calculator uses, so the numbers are checkable
+ * against the tools an AC already carries.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Circle of confusion divisor applied to the extracted frame diagonal.
+ * 1500 puts Super 35 at roughly 0.020mm, the value commonly used for cinema
+ * acquisition (stills calculators typically use a looser 1442-1730).
+ */
+export const COC_DIVISOR = 1500;
+
+/**
+ * Typical cine prime transmission efficiency. A T-stop is the measured
+ * transmission stop; the geometric f-number that governs depth of field is
+ * N = T * sqrt(transmission).
+ */
+export const LENS_TRANSMISSION = 0.8;
+
+/** Parses "T2.8" (or "f/2.8", or "2.8") into its numeric stop. */
+export function parseStop(stop: string): number {
+  const n = parseFloat(String(stop).replace(/[^0-9.]/g, ''));
+  return isFinite(n) && n > 0 ? n : 2.8;
+}
+
+/** Geometric f-number behind a marked T-stop. */
+export function fNumberFromTStop(tStop: number): number {
+  return tStop * Math.sqrt(LENS_TRANSMISSION);
+}
+
+/** Circle of confusion in millimetres for a given extracted frame. */
+export function circleOfConfusion(frame: ExtractedFrame): number {
+  return Math.hypot(frame.widthMm, frame.heightMm) / COC_DIVISOR;
+}
+
+export interface DepthOfField {
+  /** Hyperfocal distance, metres. */
+  hyperfocalM: number;
+  /** Near limit of acceptable sharpness, metres. */
+  nearM: number;
+  /** Far limit, metres. Infinity once focus reaches the hyperfocal distance. */
+  farM: number;
+  /** Total depth, metres. Infinity when the far limit is unbounded. */
+  totalM: number;
+  /** Depth in front of the focus plane, metres. */
+  inFrontM: number;
+  /** Depth behind the focus plane, metres. Infinity when unbounded. */
+  behindM: number;
+  /** Circle of confusion used, millimetres. */
+  cocMm: number;
+  /** Geometric f-number derived from the marked T-stop. */
+  fNumber: number;
+  /** True once the far limit runs to infinity. */
+  atInfinity: boolean;
+}
+
+/**
+ * Depth of field for a focus distance in metres.
+ *
+ * H  = f^2 / (N * c) + f
+ * Dn = s (H - f) / (H + s - 2f)
+ * Df = s (H - f) / (H - s)      -> infinity once s >= H
+ */
+export function depthOfField(
+  frame: ExtractedFrame,
+  focalLengthMm: number,
+  tStop: string | number,
+  focusDistanceM: number,
+): DepthOfField {
+  const c = circleOfConfusion(frame);
+  const f = focalLengthMm;
+  const N = fNumberFromTStop(typeof tStop === 'number' ? tStop : parseStop(tStop));
+  const s = Math.max(focusDistanceM, 0.01) * 1000; // mm
+
+  const H = (f * f) / (N * c) + f;
+
+  // Focusing closer than the focal length is not physically meaningful.
+  if (s <= f) {
+    return {
+      hyperfocalM: H / 1000, nearM: 0, farM: 0, totalM: 0,
+      inFrontM: 0, behindM: 0, cocMm: c, fNumber: N, atInfinity: false,
+    };
+  }
+
+  const nearMm = (s * (H - f)) / (H + s - 2 * f);
+  const atInfinity = s >= H;
+  const farMm = atInfinity ? Infinity : (s * (H - f)) / (H - s);
+
+  const nearM = nearMm / 1000;
+  const farM = atInfinity ? Infinity : farMm / 1000;
+  const focusM = s / 1000;
+
+  return {
+    hyperfocalM: H / 1000,
+    nearM,
+    farM,
+    totalM: atInfinity ? Infinity : farM - nearM,
+    inFrontM: focusM - nearM,
+    behindM: atInfinity ? Infinity : farM - focusM,
+    cocMm: c,
+    fNumber: N,
+    atInfinity,
+  };
+}
+
+/** Formats a distance in metres for a viewfinder readout. */
+export function formatDistance(m: number): string {
+  if (!isFinite(m)) return '∞';
+  if (m < 1) return `${(m * 100).toFixed(0)}cm`;
+  if (m < 10) return `${m.toFixed(2)}m`;
+  return `${m.toFixed(1)}m`;
+}
+
+/* ------------------------------------------------------------------------- *
+ * Colour temperature
+ *
+ * The image only shifts when the camera's white balance disagrees with the key
+ * light. Matching WB to source is neutral by definition; balancing cooler than
+ * the source warms the image, and balancing warmer cools it.
+ * ------------------------------------------------------------------------- */
+
+export interface Rgb {
+  r: number;
+  g: number;
+  b: number;
+}
+
+/**
+ * Approximate sRGB rendering of a Planckian (blackbody) radiator, after the
+ * Tanner Helland approximation. Valid roughly 1000K-40000K. Channels 0..1.
+ */
+export function colorTemperatureToRgb(kelvin: number): Rgb {
+  const t = Math.min(Math.max(kelvin, 1000), 40000) / 100;
+  const clamp = (v: number) => Math.min(Math.max(v, 0), 255) / 255;
+
+  let r: number;
+  let g: number;
+  let b: number;
+
+  if (t <= 66) {
+    r = 255;
+    g = 99.4708025861 * Math.log(t) - 161.1195681661;
+  } else {
+    r = 329.698727446 * Math.pow(t - 60, -0.1332047592);
+    g = 288.1221695283 * Math.pow(t - 60, -0.0755148492);
+  }
+
+  if (t >= 66) {
+    b = 255;
+  } else if (t <= 19) {
+    b = 0;
+  } else {
+    b = 138.5177312231 * Math.log(t - 10) - 305.0447927307;
+  }
+
+  return { r: clamp(r), g: clamp(g), b: clamp(b) };
+}
+
+/**
+ * Multiplicative tint produced by shooting a `sourceK` key light while the
+ * camera is balanced for `whiteBalanceK`. Normalised so the strongest channel
+ * is 1, which makes it safe to apply as a multiply blend: matching values give
+ * white (no shift), a mismatch darkens the opposing channels.
+ */
+export function whiteBalanceTint(sourceK: number, whiteBalanceK: number): Rgb {
+  const src = colorTemperatureToRgb(sourceK);
+  const wb = colorTemperatureToRgb(whiteBalanceK);
+
+  const ratio = {
+    r: src.r / Math.max(wb.r, 0.0001),
+    g: src.g / Math.max(wb.g, 0.0001),
+    b: src.b / Math.max(wb.b, 0.0001),
+  };
+
+  const peak = Math.max(ratio.r, ratio.g, ratio.b, 0.0001);
+  return { r: ratio.r / peak, g: ratio.g / peak, b: ratio.b / peak };
+}
+
+/** Mired shift between source and white balance — how many CC units off it is. */
+export function miredShift(sourceK: number, whiteBalanceK: number): number {
+  return 1e6 / whiteBalanceK - 1e6 / sourceK;
+}
+
+export function rgbToCss({ r, g, b }: Rgb): string {
+  return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+}
+
+/* ------------------------------------------------------------------------- *
+ * Delivered resolution
+ *
+ * What the chosen extraction actually yields in pixels, and whether that still
+ * clears the common mastering targets. Replaces the decorative "REC / RAW"
+ * chrome with something a DoP or DIT can act on.
+ * ------------------------------------------------------------------------- */
+
+export interface ExtractedResolution {
+  widthPx: number;
+  heightPx: number;
+  /** Photosite pitch in micrometres. */
+  pixelPitchUm: number;
+  /** Highest mastering target the extraction width clears. */
+  masteringTarget: string;
+  /** False once the extraction drops below HD width. */
+  meetsHd: boolean;
+}
+
+const MASTERING_TARGETS: { minWidth: number; label: string }[] = [
+  { minWidth: 7680, label: '8K UHD' },
+  { minWidth: 6144, label: '6K' },
+  { minWidth: 4096, label: 'DCI 4K' },
+  { minWidth: 3840, label: 'UHD 4K' },
+  { minWidth: 2048, label: 'DCI 2K' },
+  { minWidth: 1920, label: 'HD' },
+];
+
+/**
+ * Pixel dimensions of the extracted frame. Returns null for photochemical
+ * formats, where resolution is a property of the scan rather than the camera.
+ */
+export function extractedResolution(
+  sensor: SensorFormat,
+  frame: ExtractedFrame,
+): ExtractedResolution | null {
+  if (sensor.photositesW === null || sensor.photositesH === null) return null;
+
+  const widthPx = Math.round(sensor.photositesW * (frame.widthMm / sensor.widthMm));
+  const heightPx = Math.round(sensor.photositesH * (frame.heightMm / sensor.heightMm));
+  const pixelPitchUm = (sensor.widthMm / sensor.photositesW) * 1000;
+  const target = MASTERING_TARGETS.find(t => widthPx >= t.minWidth);
+
+  return {
+    widthPx,
+    heightPx,
+    pixelPitchUm,
+    masteringTarget: target ? target.label : 'sub-HD',
+    meetsHd: widthPx >= 1920,
+  };
 }
