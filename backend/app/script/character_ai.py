@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional
 
 from backend.app.script.parser import Screenplay, ScreenplayScene
 
-MODEL = "gemini-2.0-flash"
+MODEL = os.environ.get("CINESPINE_GEMINI_MODEL", "gemini-3.6-flash")
 TIMEOUT_SECONDS = float(os.environ.get("CINESPINE_AI_CHARACTER_TIMEOUT", "30"))
 
 # Per character, how much evidence to send. Keeps the prompt bounded on
