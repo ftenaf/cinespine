@@ -169,7 +169,7 @@ export function computeViewfinderGeometry(
     vfovDeg: angleOfView(frame.heightMm, focalLengthMm),
     cropFactor: cropFactor(frame),
     framingScale: scale,
-    appliedScale: Math.max(1, scale),
+    appliedScale: scale,
     plateLimited: scale < 0.999,
     surroundScaleX: sensor.widthMm / frame.widthMm,
     surroundScaleY: sensor.heightMm / frame.heightMm,

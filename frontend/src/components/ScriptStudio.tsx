@@ -2226,8 +2226,8 @@ export const ScriptStudio: React.FC = () => {
               {/* Plate coverage warning — crop cannot synthesise a wider field of view */}
               {geometry.plateLimited && (
                 <div className="absolute left-1/2 -translate-x-1/2 bottom-12 z-10 pointer-events-none">
-                  <span className="block whitespace-nowrap px-2 py-0.5 rounded bg-amber-500/90 text-slate-950 text-[9px] font-mono font-bold tracking-wide">
-                    FRAMING @ {REFERENCE_FOCAL_MM}MM — RE-RENDER FOR {customFocalLength}MM
+                  <span className="block whitespace-nowrap px-2.5 py-1 rounded bg-purple-600/90 text-white text-[9px] font-mono font-bold tracking-wide shadow-lg border border-purple-400/40">
+                    OPTICAL {customFocalLength}MM WIDE FOV ({geometry.hfovDeg.toFixed(1)}° HFOV) · TEST RENDER FOR 8K NATIVE COVERAGE
                   </span>
                 </div>
               )}
@@ -2362,9 +2362,8 @@ export const ScriptStudio: React.FC = () => {
                   </strong>
                 </div>
                 {geometry.plateLimited && (
-                  <div className="text-[9px] text-amber-300/90 leading-snug pt-0.5">
-                    Wider than the plate — a crop cannot add field of view. Framing shown at
-                    {' '}{REFERENCE_FOCAL_MM}mm; run a test render for true {customFocalLength}mm coverage.
+                  <div className="text-[9px] text-purple-300 leading-snug pt-0.5 font-medium">
+                    Wide-angle field of view ({geometry.framingScale.toFixed(2)}× optical scale). Run test render for full native {customFocalLength}mm sensor coverage.
                   </div>
                 )}
               </div>
