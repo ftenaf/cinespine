@@ -302,6 +302,29 @@ export function depthOfField(
   };
 }
 
+/**
+ * Calculates the apparent blur radius (in pixels relative to a standard 1000px wide container)
+ * of a background object at infinity. This drives the real-time visual DoF simulator.
+ */
+export function backgroundBlurRadius(
+  focalLengthMm: number,
+  fNumber: number,
+  focusDistanceM: number,
+  sensorWidthMm: number,
+): number {
+  // Focus distance in mm. Cap to avoid division by zero or macro infinity.
+  const s = Math.max(focusDistanceM * 1000, focalLengthMm + 1);
+  
+  // Blur circle diameter on the physical sensor (mm) for an object at infinity
+  const cBg = (focalLengthMm * focalLengthMm) / (fNumber * s);
+  
+  // Convert physical mm to a relative pixel blur radius for the UI
+  const blurRadiusPx = (cBg / sensorWidthMm) * 1000 * 0.5;
+  
+  // Cap max blur to 40px to prevent visual clipping and performance drops
+  return Math.min(blurRadiusPx, 40);
+}
+
 /** Formats a distance in metres for a viewfinder readout. */
 export function formatDistance(m: number): string {
   if (!isFinite(m)) return '∞';

@@ -34,7 +34,9 @@ import {
   whiteBalanceTint,
   miredShift,
   rgbToCss,
-  extractedResolution
+  extractedResolution,
+  parseStop,
+  backgroundBlurRadius
 } from '../optics';
 
 export interface DialogueLine {
@@ -225,6 +227,12 @@ export const ScriptStudio: React.FC = () => {
   const dof = useMemo(
     () => depthOfField(geometry.frame, customFocalLength, customAperture, focusDistanceM),
     [geometry.frame, customFocalLength, customAperture, focusDistanceM]
+  );
+
+  // CSS pixel blur simulation for the visual DoF engine
+  const visualBlurRadius = useMemo(
+    () => backgroundBlurRadius(customFocalLength, dof.fNumber, focusDistanceM, geometry.sensor.widthMm),
+    [customFocalLength, dof.fNumber, focusDistanceM, geometry.sensor.widthMm]
   );
 
   // Pixel dimensions the current extraction actually delivers
@@ -742,10 +750,18 @@ export const ScriptStudio: React.FC = () => {
   const selectedCharacter = characters.find(c => c.id === selectedCharId) || characters[0];
 
   // Geometry for the selected shot camera, which carries its own focal length
-  const selectedCamGeometry = computeViewfinderGeometry(
-    customSensorFormat,
-    aspectRatio,
-    selectedCam?.focal_length ?? customFocalLength
+  const selectedCamFocalLength = selectedCam?.focal_length ?? customFocalLength;
+  const selectedCamGeometry = useMemo(
+    () => computeViewfinderGeometry(customSensorFormat, aspectRatio, selectedCamFocalLength),
+    [customSensorFormat, aspectRatio, selectedCamFocalLength]
+  );
+  const selectedCamDof = useMemo(
+    () => depthOfField(selectedCamGeometry.frame, selectedCamFocalLength, customAperture, focusDistanceM),
+    [selectedCamGeometry.frame, selectedCamFocalLength, customAperture, focusDistanceM]
+  );
+  const selectedCamBlurRadius = useMemo(
+    () => backgroundBlurRadius(selectedCamFocalLength, selectedCamDof.fNumber, focusDistanceM, selectedCamGeometry.sensor.widthMm),
+    [selectedCamFocalLength, selectedCamDof.fNumber, focusDistanceM, selectedCamGeometry.sensor.widthMm]
   );
 
   // Script Upload State
@@ -1514,12 +1530,24 @@ export const ScriptStudio: React.FC = () => {
                   style={{ aspectRatio: `${selectedCamGeometry.aspect}` }}
                 >
                   {selectedCam.image_url ? (
-                    <img
-                      src={selectedCam.image_url}
-                      alt={selectedCam.prompt}
-                      className="w-full h-full object-cover origin-center transition-transform duration-200"
-                      style={{ transform: `scale(${selectedCamGeometry.appliedScale.toFixed(4)})` }}
-                    />
+                    <>
+                      <img
+                        src={selectedCam.image_url}
+                        alt={selectedCam.prompt}
+                        className="w-full h-full object-cover origin-center transition-transform duration-200"
+                        style={{ transform: `scale(${selectedCamGeometry.appliedScale.toFixed(4)})` }}
+                      />
+                      {/* CSS Masked Blur DoF Simulator */}
+                      <div
+                        className="absolute inset-0 pointer-events-none transition-all duration-100 ease-out"
+                        style={{
+                          backdropFilter: `blur(${selectedCamBlurRadius}px)`,
+                          WebkitBackdropFilter: `blur(${selectedCamBlurRadius}px)`,
+                          maskImage: 'radial-gradient(circle at 50% 45%, transparent 25%, black 75%)',
+                          WebkitMaskImage: 'radial-gradient(circle at 50% 45%, transparent 25%, black 75%)',
+                        }}
+                      />
+                    </>
                   ) : (
                     <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs">
                       <Camera className="w-8 h-8 mb-2 text-slate-600" />
@@ -1819,25 +1847,34 @@ export const ScriptStudio: React.FC = () => {
               <div className="space-y-5">
                 {/* Focal Length Selector */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                       <Camera className="w-3.5 h-3.5 text-purple-400" />
                       Lens Focal Length
                     </label>
                     <span className="text-xs font-mono font-bold text-purple-300">{customFocalLength}mm</span>
                   </div>
-                  <div className="grid grid-cols-6 gap-1.5">
-                    {[18, 24, 35, 50, 85, 135].map(fl => (
+                  <input
+                    type="range"
+                    min={Math.log(12)}
+                    max={Math.log(250)}
+                    step="0.01"
+                    value={Math.log(customFocalLength)}
+                    onChange={e => setCustomFocalLength(Math.round(Math.exp(Number(e.target.value))))}
+                    className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                  />
+                  <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                    {[12, 14, 18, 24, 35, 50, 85, 100, 135, 200].map(fl => (
                       <button
                         key={fl}
                         onClick={() => setCustomFocalLength(fl)}
-                        className={`py-1.5 text-xs font-bold rounded-lg border transition ${
+                        className={`px-1.5 py-0.5 text-[10px] font-mono font-bold rounded transition ${
                           customFocalLength === fl
-                            ? 'bg-purple-600 border-purple-500 text-white'
-                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                            ? 'bg-purple-600 text-white'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
                         }`}
                       >
-                        {fl}mm
+                        {fl}
                       </button>
                     ))}
                   </div>
@@ -1845,22 +1882,37 @@ export const ScriptStudio: React.FC = () => {
 
                 {/* Aperture Selector */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <Aperture className="w-3.5 h-3.5 text-purple-400" />
+                      <Aperture className="w-3.5 h-3.5 text-blue-400" />
                       Lens Aperture &amp; Depth of Field
                     </label>
-                    <span className="text-xs font-mono font-bold text-purple-300">{customAperture}</span>
+                    <span className="text-xs font-mono font-bold text-blue-300">
+                      T{parseStop(customAperture).toFixed(1).replace(/\.0$/, '')}
+                    </span>
                   </div>
-                  <div className="grid grid-cols-6 gap-1.5">
-                    {['T1.3', 'T1.4', 'T2.0', 'T2.8', 'T4.0', 'T5.6', 'T8.0', 'T11'].map(ap => (
+                  <input
+                    type="range"
+                    min={Math.log2(1.0)}
+                    max={Math.log2(22.0)}
+                    step="0.01"
+                    value={Math.log2(parseStop(customAperture))}
+                    onChange={e => {
+                      const val = Math.pow(2, Number(e.target.value));
+                      const valStr = val >= 10 ? Math.round(val).toString() : val.toFixed(1);
+                      setCustomAperture('T' + valStr);
+                    }}
+                    className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  />
+                  <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                    {['T1.0', 'T1.4', 'T2.0', 'T2.8', 'T4.0', 'T5.6', 'T8.0', 'T11', 'T16', 'T22'].map(ap => (
                       <button
                         key={ap}
                         onClick={() => setCustomAperture(ap)}
-                        className={`py-1.5 text-xs font-bold rounded-lg border transition ${
-                          customAperture === ap
-                            ? 'bg-purple-600 border-purple-500 text-white'
-                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        className={`px-1.5 py-0.5 text-[10px] font-mono font-bold rounded transition ${
+                          Math.abs(parseStop(customAperture) - parseStop(ap)) < 0.1
+                            ? 'bg-blue-600 text-white'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
                         }`}
                       >
                         {ap}
@@ -2132,6 +2184,17 @@ export const ScriptStudio: React.FC = () => {
                   }%) brightness(${
                     customLightingRatio === '16:1' ? 85 : customLightingRatio === '8:1' ? 92 : 100
                   }%)`
+                }}
+              />
+
+              {/* CSS Masked Blur DoF Simulator */}
+              <div
+                className="absolute inset-0 pointer-events-none transition-all duration-100 ease-out"
+                style={{
+                  backdropFilter: `blur(${visualBlurRadius}px)`,
+                  WebkitBackdropFilter: `blur(${visualBlurRadius}px)`,
+                  maskImage: 'radial-gradient(circle at 50% 45%, transparent 25%, black 75%)',
+                  WebkitMaskImage: 'radial-gradient(circle at 50% 45%, transparent 25%, black 75%)',
                 }}
               />
 
