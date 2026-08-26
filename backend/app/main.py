@@ -1,6 +1,11 @@
 """
 CineSpine FastAPI Application Gateway.
 """
+from dotenv import load_dotenv
+
+# Load local environment variables from .env if present
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.app.api.routes import router

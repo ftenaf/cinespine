@@ -6,6 +6,7 @@ from the right places, that a model response is parsed and validated safely, and
 that every failure path leaves the screenplay usable rather than raising.
 """
 import asyncio
+import json
 
 import pytest
 
@@ -120,6 +121,169 @@ def test_applies_only_to_matching_characters(screenplay):
     assert daniel.role != "Lead" or daniel.facial_features != "Angular face, grey eyes"
 
 
+GOOD_ACTOR_REF = "Early 30s woman, wiry build, dark cropped hair, restless bearing"
+GOOD_COSTUME = (
+    "Navy quilted donkey jacket with cracked shoulder patches, oil-darkened cuffs, "
+    "fingerless wool gloves, steel-toed boots worn white at the caps"
+)
+GOOD_FACE = (
+    "Broad flat cheekbones, deep-set brown eyes under heavy lids, wind-chapped skin, "
+    "a white scar through the left eyebrow"
+)
+
+
+@pytest.mark.parametrize("field,text", [
+    ("actor_reference", "Late 40s woman with a distinctive, expressive screen presence"),
+    ("actor_reference", "A striking, memorable figure"),
+    ("look_and_costume", "Practical workwear suited to the dockside setting"),
+    ("facial_features", "Striking features with cinematic catchlights"),
+    ("facial_features", "Distinguishing facial features to be defined"),
+    ("look_and_costume", "Wardrobe for Maya, consistent across 2 scene(s); refine to lock continuity"),
+    ("actor_reference", ""),
+    ("actor_reference", "   "),
+])
+def test_vague_descriptions_are_rejected(field, text):
+    assert character_ai.is_vague(field, text) is True
+
+
+@pytest.mark.parametrize("field,text", [
+    ("actor_reference", GOOD_ACTOR_REF),
+    ("actor_reference", "Late 40s, 5'6\", thickset shoulders, grey-streaked black hair in a short tail"),
+    ("look_and_costume", GOOD_COSTUME),
+    ("facial_features", GOOD_FACE),
+    # role has no minimum: a short archetype is legitimate.
+    ("role", "Lead / Reluctant Operator"),
+])
+def test_specific_descriptions_are_accepted(field, text):
+    assert character_ai.is_vague(field, text) is False
+
+
+def test_weak_characters_are_identified_per_field():
+    weak = character_ai.find_vague_characters({
+        "MAYA": {
+            "actor_reference": GOOD_ACTOR_REF,
+            "look_and_costume": "Practical clothing",
+            "facial_features": GOOD_FACE,
+        },
+        "DANIEL": {
+            "actor_reference": GOOD_ACTOR_REF,
+            "look_and_costume": GOOD_COSTUME,
+            "facial_features": GOOD_FACE,
+        },
+    })
+    assert weak == {"MAYA": ["look_and_costume"]}
+    assert "MAYA: look_and_costume" in character_ai.build_retry_feedback(weak)
+
+
+def test_vague_output_triggers_one_targeted_retry(screenplay, monkeypatch):
+    """A generic first response must be challenged, not accepted."""
+    monkeypatch.delenv("CINESPINE_DISABLE_AI_CHARACTER_INFERENCE", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    calls = []
+
+    def responder(prompt):
+        calls.append(prompt)
+        if len(calls) == 1:
+            return json.dumps([{
+                "name": "MAYA",
+                "actor_reference": "A striking, mysterious presence",
+                "look_and_costume": "Suitable attire",
+                "facial_features": "Expressive features",
+            }])
+        return json.dumps([{
+            "name": "MAYA",
+            "actor_reference": GOOD_ACTOR_REF,
+            "look_and_costume": GOOD_COSTUME,
+            "facial_features": GOOD_FACE,
+        }])
+
+    monkeypatch.setattr(character_ai, "_call_gemini", responder)
+    result = asyncio.run(character_ai.enrich_screenplay_characters(screenplay))
+
+    assert len(calls) == 2, "a vague first response should be retried once"
+    assert "CORRECTION REQUIRED" in calls[1]
+    assert "MAYA" in calls[1]
+
+    maya = next(c for c in result.characters if c.name == "MAYA")
+    assert maya.look_and_costume == GOOD_COSTUME
+    assert maya.facial_features == GOOD_FACE
+
+
+def test_specific_output_is_not_retried(screenplay, monkeypatch):
+    """A good first response must not cost a second call."""
+    monkeypatch.delenv("CINESPINE_DISABLE_AI_CHARACTER_INFERENCE", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    calls = []
+
+    def responder(prompt):
+        calls.append(prompt)
+        return json.dumps([
+            {"name": name, "actor_reference": GOOD_ACTOR_REF,
+             "look_and_costume": GOOD_COSTUME, "facial_features": GOOD_FACE}
+            for name in ("MAYA", "DANIEL")
+        ])
+
+    monkeypatch.setattr(character_ai, "_call_gemini", responder)
+    result = asyncio.run(character_ai.enrich_screenplay_characters(screenplay))
+
+    assert len(calls) == 1
+    assert result.parse_warnings == []
+
+
+def test_a_still_vague_retry_is_reported_not_silently_accepted(screenplay, monkeypatch):
+    monkeypatch.delenv("CINESPINE_DISABLE_AI_CHARACTER_INFERENCE", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    monkeypatch.setattr(
+        character_ai,
+        "_call_gemini",
+        lambda _p: json.dumps([{
+            "name": "MAYA",
+            "actor_reference": "A striking presence",
+            "look_and_costume": "Suitable attire",
+            "facial_features": "Expressive features",
+        }]),
+    )
+    result = asyncio.run(character_ai.enrich_screenplay_characters(screenplay))
+
+    assert any("stayed generic" in w and "MAYA" in w for w in result.parse_warnings)
+
+
+def test_retry_failure_keeps_the_first_pass(screenplay, monkeypatch):
+    """If the retry call blows up, the original answer is still used."""
+    monkeypatch.delenv("CINESPINE_DISABLE_AI_CHARACTER_INFERENCE", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    calls = []
+
+    def responder(prompt):
+        calls.append(prompt)
+        if len(calls) == 1:
+            return json.dumps([{
+                "name": "MAYA",
+                "role": "Lead / Operator",
+                "actor_reference": "A striking presence",
+            }])
+        raise RuntimeError("model unavailable")
+
+    monkeypatch.setattr(character_ai, "_call_gemini", responder)
+    result = asyncio.run(character_ai.enrich_screenplay_characters(screenplay))
+
+    maya = next(c for c in result.characters if c.name == "MAYA")
+    assert maya.role == "Lead / Operator"
+
+
+def test_prompt_states_the_specificity_contract(screenplay):
+    prompt = character_ai.build_prompt(screenplay)
+    assert "Banned words" in prompt
+    assert "cinematic" in prompt
+    # A worked example is the strongest lever on output quality.
+    assert "TOO VAGUE" in prompt and "CORRECT" in prompt
+    assert "Differentiate the cast" in prompt
+
+
 def test_disabled_inference_leaves_profiles_intact_and_says_so(screenplay, monkeypatch):
     monkeypatch.setenv("CINESPINE_DISABLE_AI_CHARACTER_INFERENCE", "1")
     before = screenplay.characters[0].actor_reference
@@ -151,28 +315,31 @@ def test_successful_inference_fills_the_four_profile_fields(screenplay, monkeypa
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
     def fake(_prompt):
-        return """[
-          {"name": "MAYA", "role": "Lead / Reluctant Operator",
-           "actor_reference": "Early 30s woman, wiry build",
-           "look_and_costume": "Oil-stained field jacket",
-           "facial_features": "Angular face, grey eyes",
-           "personality_traits": ["Tenacious", "Wry"]},
-          {"name": "DANIEL", "role": "Ally / Field Contact",
-           "actor_reference": "Late 30s man, broad shoulders",
-           "look_and_costume": "Soaked canvas parka",
-           "facial_features": "Heavy brow, three-day stubble",
-           "personality_traits": ["Loyal"]}
-        ]"""
+        return json.dumps([
+            {"name": "MAYA", "role": "Lead / Reluctant Operator",
+             "actor_reference": GOOD_ACTOR_REF,
+             "look_and_costume": GOOD_COSTUME,
+             "facial_features": GOOD_FACE,
+             "personality_traits": ["Tenacious", "Wry"]},
+            {"name": "DANIEL", "role": "Ally / Field Contact",
+             "actor_reference": "Late 30s man, broad through the shoulders, close-cropped ginger hair",
+             "look_and_costume": "Soaked olive canvas parka with a torn hood seam, "
+                                 "grey wool scarf doubled at the throat, cracked leather gloves",
+             "facial_features": "Heavy brow, three-day stubble, chapped lips, pale blue eyes "
+                                "set close together, a nose broken and badly reset",
+             "personality_traits": ["Loyal"]},
+        ])
 
     monkeypatch.setattr(character_ai, "_call_gemini", fake)
     result = asyncio.run(character_ai.enrich_screenplay_characters(screenplay))
 
     maya = next(c for c in result.characters if c.name == "MAYA")
     assert maya.role == "Lead / Reluctant Operator"
-    assert maya.actor_reference == "Early 30s woman, wiry build"
-    assert maya.look_and_costume == "Oil-stained field jacket"
-    assert maya.facial_features == "Angular face, grey eyes"
+    assert maya.actor_reference == GOOD_ACTOR_REF
+    assert maya.look_and_costume == GOOD_COSTUME
+    assert maya.facial_features == GOOD_FACE
     assert maya.personality_traits == ["Tenacious", "Wry"]
+    # Specific enough on the first pass: no retry, no warnings.
     assert result.parse_warnings == []
 
 

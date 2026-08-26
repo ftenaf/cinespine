@@ -20,6 +20,7 @@ must never be the reason an upload fails.
 import asyncio
 import json
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 from backend.app.script.parser import Screenplay, ScreenplayScene
@@ -82,37 +83,90 @@ def collect_character_evidence(
     }
 
 
-def build_prompt(screenplay: Screenplay) -> str:
-    """Builds a single grounded prompt covering the whole cast."""
+WORKED_EXAMPLE = """EXAMPLE OF THE REQUIRED STANDARD
+
+Evidence: "ELENA VASS, 40s, hauls a crate across the dock. Her hands are raw."
+Dialogue: "Third shipment this month. Someone's counting."
+
+TOO VAGUE - never write anything like this:
+  "actor_reference": "40s woman with a distinctive, expressive screen presence"
+  "look_and_costume": "Practical workwear suited to the dockside setting"
+  "facial_features": "Striking, characterful features with cinematic catchlights"
+
+CORRECT - this level of specificity is required:
+  "actor_reference": "Late 40s, 5'6\\", thickset through the shoulders from manual work,
+    grey-streaked black hair scraped into a short tail, stands squared and still"
+  "look_and_costume": "Navy quilted donkey jacket with cracked PVC shoulder patches,
+    oil-darkened cuffs, fingerless wool gloves, steel-toed boots worn white at the caps,
+    brass tally counter on a lanyard"
+  "facial_features": "Broad flat cheekbones, deep-set brown eyes under heavy lids,
+    wind-chapped skin, a white scar through the left eyebrow, mouth set flat"
+"""
+
+
+def build_prompt(screenplay: Screenplay, retry_feedback: Optional[str] = None) -> str:
+    """
+    Builds a single grounded prompt covering the whole cast.
+
+    `retry_feedback` names characters whose first response was too vague, so the
+    correction is targeted rather than a blind re-ask.
+    """
     cast = [
         collect_character_evidence(profile.name, screenplay.scenes)
         for profile in screenplay.characters
     ]
+    settings = [scene.heading for scene in screenplay.scenes][:12]
 
-    return (
-        "You are a film production's casting director, costume designer and "
-        "director of photography working from a screenplay.\n\n"
+    prompt = (
+        "You are a casting director, costume designer and director of photography "
+        "preparing a lookbook from a screenplay.\n\n"
         f"TITLE: {screenplay.title}\n"
-        f"AUTHOR: {screenplay.author or 'unknown'}\n\n"
-        "For each character below, infer a production profile from the evidence "
-        "given. Base every claim on the dialogue, action lines and settings "
-        "provided. Where the screenplay does not state something, choose a "
-        "specific option that is consistent with the character's role, the "
-        "period and the setting, rather than being vague.\n\n"
-        "These descriptions are fed directly to a photorealistic image model, so "
-        "they must be concrete and visual. Do not mention the screenplay, the "
-        "camera, or the fact that anything was inferred.\n\n"
+        f"AUTHOR: {screenplay.author or 'unknown'}\n"
+        f"SETTINGS: {'; '.join(settings) or 'unspecified'}\n\n"
+        "Write a production profile for each character below.\n\n"
+        "These descriptions are fed verbatim to a photorealistic image model. It "
+        "cannot render an abstraction. Every clause must name something a camera "
+        "could photograph: a garment, a fabric, a colour, a measurement, a mark on "
+        "skin, a way of standing.\n\n"
+        "RULES\n"
+        "1. Ground every choice in the evidence. What a character says, how they "
+        "say it, what they do and where they are all constrain how they look.\n"
+        "2. Where the screenplay is silent, decide. Commit to one specific "
+        "option consistent with the role, period and setting. Never hedge, never "
+        "offer alternatives, never say a detail is unknown or to be determined.\n"
+        "3. Banned words, because they describe nothing: cinematic, expressive, "
+        "distinctive, striking, mysterious, intense, rugged, appropriate, "
+        "suitable, typical, generic, various, certain, undefined, presence.\n"
+        "4. actor_reference must give age, height or build, hair, and bearing.\n"
+        "5. look_and_costume must name at least three specific garments or props, "
+        "with fabric, colour and condition. Say how the clothes are worn or "
+        "damaged, not just what they are.\n"
+        "6. facial_features must give face shape, eye colour, complexion, and at "
+        "least one distinguishing mark or habitual expression.\n"
+        "7. Differentiate the cast. No two characters may share a description.\n"
+        "8. Never mention the screenplay, the script, the camera, or that you "
+        "inferred anything. Write as settled fact.\n\n"
+        f"{WORKED_EXAMPLE}\n"
         "Return ONLY a JSON array. One object per character, with exactly these keys:\n"
         '  "name": the character name exactly as given\n'
         '  "role": role and narrative archetype, at most 8 words\n'
-        '  "actor_reference": age, build, height, hair, bearing and screen presence\n'
-        '  "look_and_costume": specific garments, fabrics, colours, wear and props\n'
-        '  "facial_features": face shape, eyes, complexion, distinguishing marks, '
-        "typical expression\n"
-        '  "personality_traits": array of 3 to 5 single-word traits\n\n'
-        "CHARACTERS:\n"
-        f"{json.dumps(cast, ensure_ascii=False, indent=1)}"
+        '  "actor_reference": one sentence, 15-40 words\n'
+        '  "look_and_costume": one sentence, 20-50 words\n'
+        '  "facial_features": one sentence, 15-40 words\n'
+        '  "personality_traits": array of 3 to 5 single-word traits, each specific '
+        "to this character\n\n"
     )
+
+    if retry_feedback:
+        prompt += (
+            "CORRECTION REQUIRED\n"
+            f"{retry_feedback}\n"
+            "Rewrite every character listed below to the standard shown above. "
+            "Replace vague phrasing with concrete, photographable detail.\n\n"
+        )
+
+    prompt += "CHARACTERS:\n" + json.dumps(cast, ensure_ascii=False, indent=1)
+    return prompt
 
 
 def _call_gemini(prompt: str) -> str:
@@ -181,6 +235,94 @@ def parse_ai_response(raw: str) -> Dict[str, Dict[str, Any]]:
     return parsed
 
 
+# Words that fill space without describing anything a camera could capture.
+# Matched case-insensitively on word boundaries.
+VAGUE_TERMS = frozenset({
+    "cinematic", "expressive", "distinctive", "distinguishing", "striking",
+    "mysterious", "intense", "rugged", "appropriate", "suitable", "typical",
+    "generic", "various", "certain", "undefined", "unspecified", "presence",
+    "characterful", "compelling", "memorable", "interesting", "unique",
+    "somewhat", "perhaps", "possibly", "likely", "maybe", "tbd",
+})
+
+# Concrete signals: something a camera could actually resolve. Colours,
+# materials, garments, anatomy, condition, and ages like "30s" or "5'6".
+CONCRETE_HINTS = re.compile(
+    r"(\b\d+s?\b|'\d|"
+    r"\b(black|white|grey|gray|brown|blue|green|red|amber|navy|olive|tan|blonde|"
+    r"charcoal|cream|rust|ochre|auburn|ginger|silver|gold|"
+    r"wool|cotton|linen|leather|denim|silk|canvas|tweed|velvet|corduroy|nylon|"
+    r"suede|rubber|brass|steel|plastic|fur|"
+    r"scar|freckle|stubble|mole|tattoo|beard|braid|ponytail|moustache|"
+    r"hair|eyes|eye|cheekbone|cheekbones|jaw|jawline|brow|chin|nose|lips|mouth|"
+    r"skin|complexion|shoulders|build|frame|hands|posture|"
+    r"collar|cuff|cuffs|button|buttons|zip|lapel|hem|seam|pocket|"
+    r"boot|boots|glove|gloves|coat|jacket|shirt|dress|trousers|skirt|vest|"
+    r"scarf|belt|hat|cap|apron|uniform|tie|watch|ring|chain|"
+    r"frayed|torn|patched|stained|faded|worn|creased|cracked|scuffed|bleached)\b)",
+    re.IGNORECASE,
+)
+
+# Phrases that admit the description is a placeholder rather than a decision.
+PLACEHOLDER_RE = re.compile(
+    r"(to be (defined|determined|decided)|not (described|specified|stated)|"
+    r"refine to lock|consistent across|set a reference|tbd|unknown|n/a|"
+    r"placeholder|lorem ipsum)",
+    re.IGNORECASE,
+)
+
+# Minimum words expected in each free-text field before it counts as described.
+MIN_WORDS = {
+    "actor_reference": 10,
+    "look_and_costume": 12,
+    "facial_features": 10,
+}
+
+
+def is_vague(field: str, text: str) -> bool:
+    """
+    True when a field is too generic to render.
+
+    Three independent failures: it uses a banned filler word, it is too short to
+    carry real detail, or it contains no concrete noun at all.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return True
+
+    words = set(re.findall(r"[a-z]+", text.lower()))
+    if words & VAGUE_TERMS:
+        return True
+    if PLACEHOLDER_RE.search(text):
+        return True
+    if len(text.split()) < MIN_WORDS.get(field, 0):
+        return True
+    if field in MIN_WORDS and not CONCRETE_HINTS.search(text):
+        return True
+    return False
+
+
+def find_vague_characters(inferred: Dict[str, Dict[str, Any]]) -> Dict[str, List[str]]:
+    """Returns {NAME: [weak field names]} for anything needing a rewrite."""
+    weak: Dict[str, List[str]] = {}
+    for name, fields in inferred.items():
+        bad = [
+            key for key in ("actor_reference", "look_and_costume", "facial_features")
+            if key in fields and is_vague(key, fields[key])
+        ]
+        if bad:
+            weak[name] = bad
+    return weak
+
+
+def build_retry_feedback(weak: Dict[str, List[str]]) -> str:
+    """Names exactly what was too vague, so the retry is targeted."""
+    lines = [
+        f"- {name}: {', '.join(fields)} " f"{'was' if len(fields) == 1 else 'were'} too vague."
+        for name, fields in sorted(weak.items())
+    ]
+    return "\n".join(lines)
+
+
 def apply_inferred_profiles(
     screenplay: Screenplay,
     inferred: Dict[str, Dict[str, Any]],
@@ -240,6 +382,40 @@ async def enrich_screenplay_characters(screenplay: Screenplay) -> Screenplay:
             "from the script text."
         )
         return screenplay
+
+    # A prompt cannot guarantee specificity, so check the output and ask once
+    # more for whatever came back too generic to render.
+    weak = find_vague_characters(inferred)
+    if weak:
+        try:
+            retry_raw = await asyncio.wait_for(
+                asyncio.to_thread(
+                    _call_gemini,
+                    build_prompt(screenplay, retry_feedback=build_retry_feedback(weak)),
+                ),
+                timeout=TIMEOUT_SECONDS,
+            )
+            retried = parse_ai_response(retry_raw)
+        except Exception as exc:  # noqa: BLE001 - the first pass is still usable
+            print(f"[Character AI] specificity retry failed: {exc}")
+            retried = {}
+
+        # Keep a retried field only when it is actually better than what it replaces.
+        for name, fields in retried.items():
+            if name not in inferred:
+                continue
+            for key in weak.get(name, []):
+                candidate = fields.get(key)
+                if candidate and not is_vague(key, candidate):
+                    inferred[name][key] = candidate
+
+        still_weak = find_vague_characters(inferred)
+        if still_weak:
+            screenplay.parse_warnings.append(
+                "AI descriptions for "
+                f"{', '.join(sorted(still_weak))} stayed generic; "
+                "edit those characters to lock a specific look."
+            )
 
     applied = apply_inferred_profiles(screenplay, inferred)
     missed = len(screenplay.characters) - applied
