@@ -14,3 +14,17 @@ def isolated_character_db(tmp_path, monkeypatch):
     """
     monkeypatch.setenv("CINESPINE_DB_PATH", str(tmp_path / "test_spine.db"))
     yield
+
+
+@pytest.fixture(autouse=True)
+def reset_gcs_availability_cache():
+    """
+    The GCS integration caches "no credentials" for the life of the process to
+    avoid a ~12s metadata-server probe per upload. Clear it between tests so one
+    test's failure does not short-circuit another's client.
+    """
+    from backend.app.integrations import google_cloud
+
+    google_cloud.reset_gcs_availability()
+    yield
+    google_cloud.reset_gcs_availability()

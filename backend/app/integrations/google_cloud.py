@@ -31,6 +31,29 @@ except ImportError:
     GCS_AVAILABLE = False
 
 
+# Set once a GCS client cannot be constructed. Building one performs credential
+# discovery, which on a machine without GCP credentials probes the GCE metadata
+# server and blocks for roughly twelve seconds before failing. Retrying that on
+# every upload made script ingestion feel broken, so the outcome is cached for
+# the life of the process.
+_GCS_FAILURE: Optional[str] = None
+
+
+def _gcs_unavailable() -> bool:
+    return _GCS_FAILURE is not None
+
+
+def _mark_gcs_unavailable(error: Exception) -> None:
+    global _GCS_FAILURE
+    _GCS_FAILURE = str(error)
+
+
+def reset_gcs_availability() -> None:
+    """Clears the cached failure. Used by tests, and after credentials change."""
+    global _GCS_FAILURE
+    _GCS_FAILURE = None
+
+
 class GoogleCloudStatus(BaseModel):
     genai_sdk_installed: bool
     gcs_sdk_installed: bool
@@ -124,7 +147,7 @@ def upload_media_to_google_cloud_storage(
     bucket_name = os.getenv("GCS_BUCKET_NAME", "cinespine-production-media")
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "cinespine-agentic-cinema")
 
-    if GCS_AVAILABLE:
+    if GCS_AVAILABLE and not _gcs_unavailable():
         try:
             # Check if GCP credentials or anonymous client is active
             client = gcs_storage.Client(project=project_id)
@@ -140,6 +163,10 @@ def upload_media_to_google_cloud_storage(
                 "storage_class": "STANDARD"
             }
         except Exception as e:
+            # Credential discovery probes the GCE metadata server and takes ~12s
+            # to fail on a machine with no GCP credentials. Remember that so
+            # every subsequent upload does not pay it again.
+            _mark_gcs_unavailable(e)
             print(f"[Google Cloud Storage] GCS upload notice: {e}")
 
     # Return structured GCS URI reference for audit logging

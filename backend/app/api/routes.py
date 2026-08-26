@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import uuid
@@ -1525,6 +1526,7 @@ from backend.app.script.parser import parse_fountain_screenplay, parse_screenpla
 from backend.app.script.dop_presets import DOP_MASTER_PRESETS, resolve_dop_specification
 from backend.app.script.breakdown_engine import breakdown_scene_to_shots, ShotProposal
 from backend.app.script.storyboard_generator import render_cinematic_storyboard_svg
+from backend.app.script.character_ai import enrich_screenplay_characters
 
 
 class ScriptParseRequest(BaseModel):
@@ -1676,11 +1678,14 @@ def _persist_screenplay(screenplay: Screenplay, filename: Optional[str] = None) 
 
 
 @router.post("/script/parse", response_model=Screenplay)
-def parse_script(req: ScriptParseRequest):
+async def parse_script(req: ScriptParseRequest):
     """
-    Parses raw Fountain / standard screenplay text into structured scenes.
+    Parses raw Fountain / standard screenplay text into structured scenes, then
+    infers each character's production profile with AI.
     """
-    return _persist_screenplay(parse_fountain_screenplay(req.script_text, req.title))
+    screenplay = parse_fountain_screenplay(req.script_text, req.title)
+    await enrich_screenplay_characters(screenplay)
+    return _persist_screenplay(screenplay)
 
 
 @router.post("/script/upload", response_model=Screenplay)
@@ -1694,14 +1699,21 @@ async def upload_script_file(file: UploadFile = File(...)):
     file_bytes = await file.read()
     filename = file.filename or "Screenplay"
 
-    # Archive original asset to Google Cloud Storage
-    gcs_result = upload_media_to_google_cloud_storage(
+    # Archive original asset to Google Cloud Storage. The SDK call is blocking,
+    # so keep it off the event loop rather than stalling every other request.
+    gcs_result = await asyncio.to_thread(
+        upload_media_to_google_cloud_storage,
         file_bytes=file_bytes,
         destination_blob_name=f"screenplays/{filename}",
-        content_type="application/pdf" if filename.lower().endswith(".pdf") else "text/plain"
+        content_type="application/pdf" if filename.lower().endswith(".pdf") else "text/plain",
     )
 
     screenplay = parse_screenplay_file(file_bytes=file_bytes, filename=filename)
+
+    # Infer appearance, wardrobe and facial detail before storing, so the merge
+    # in _persist_screenplay still lets any existing user edits win.
+    await enrich_screenplay_characters(screenplay)
+
     return _persist_screenplay(screenplay, filename=filename)
 
 
