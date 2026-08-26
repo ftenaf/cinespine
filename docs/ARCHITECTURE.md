@@ -191,9 +191,9 @@ flowchart LR
         C4["Grafana Telemetry & Sync Lag"]
     end
 
-    Producers -->|append_event| EventSpine
-    EventSpine -->|broadcast| Broker
-    Broker -->|Server-Sent Events| Consumers
+    Producers -->|"append_event"| EventSpine
+    EventSpine -->|"broadcast"| Broker
+    Broker -->|"Server-Sent Events"| Consumers
 ```
 
 ### Event System Guarantees:

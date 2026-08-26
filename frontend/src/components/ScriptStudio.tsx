@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Film,
   Camera,
@@ -21,6 +21,15 @@ import {
   Trash2,
   X
 } from 'lucide-react';
+import {
+  SENSOR_FORMATS,
+  DEFAULT_SENSOR_ID,
+  PROTECT_RATIOS,
+  REFERENCE_FOCAL_MM,
+  computeViewfinderGeometry,
+  parseAspectRatio,
+  protectFrameInset
+} from '../optics';
 
 export interface DialogueLine {
   character: string;
@@ -174,17 +183,31 @@ export const ScriptStudio: React.FC = () => {
   const [customAperture, setCustomAperture] = useState<string>('T2.8');
   const [customColorTemp, setCustomColorTemp] = useState<number>(5600);
   const [customLightingRatio, setCustomLightingRatio] = useState<string>('4:1');
-  const [customSensorFormat, setCustomSensorFormat] = useState<string>('Large Format 35mm');
+  const [customSensorFormat, setCustomSensorFormat] = useState<string>(DEFAULT_SENSOR_ID);
   const [customLutEmulation, setCustomLutEmulation] = useState<string>('Kodak 5219 Vision3');
   const [customMoodPrompt, setCustomMoodPrompt] = useState<string>('');
   const [dopTestRenderUrl, setDopTestRenderUrl] = useState<string | null>(null);
   const [isTestRenderingDoP, setIsTestRenderingDoP] = useState<boolean>(false);
   const [showViewfinderGrid, setShowViewfinderGrid] = useState<boolean>(true);
+  const [showSurround, setShowSurround] = useState<boolean>(true);
+  const [protectRatio, setProtectRatio] = useState<string>('16:9');
 
   // Presets Dictionary
   const [presetsDict, setPresetsDict] = useState<Record<string, any>>({});
   const [enlargedImage, setEnlargedImage] = useState<{ url: string; prompt: string; title: string } | null>(null);
   const [generatingCamMap, setGeneratingCamMap] = useState<Record<string, boolean>>({});
+
+  // Real-Time Viewfinder Geometry (sensor extraction, angle of view, framing scale)
+  const geometry = useMemo(
+    () => computeViewfinderGeometry(customSensorFormat, aspectRatio, customFocalLength),
+    [customSensorFormat, aspectRatio, customFocalLength]
+  );
+
+  // Protect frame lines drawn inside the delivery extraction
+  const protectInset = useMemo(
+    () => protectFrameInset(geometry.aspect, parseAspectRatio(protectRatio)),
+    [geometry.aspect, protectRatio]
+  );
 
   // Dynamic Real-Time DoP Prompt Compiler
   const compileDoPPromptPreview = (): string => {
@@ -641,6 +664,13 @@ export const ScriptStudio: React.FC = () => {
   const selectedShot = currentShots.find(s => s.id === selectedShotId) || currentShots[0];
   const selectedCam = selectedShot?.cameras?.find(c => c.camera_letter === activeCamLetter) || selectedShot?.cameras?.[0];
   const selectedCharacter = characters.find(c => c.id === selectedCharId) || characters[0];
+
+  // Geometry for the selected shot camera, which carries its own focal length
+  const selectedCamGeometry = computeViewfinderGeometry(
+    customSensorFormat,
+    aspectRatio,
+    selectedCam?.focal_length ?? customFocalLength
+  );
 
   // Script Upload State
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1386,12 +1416,16 @@ export const ScriptStudio: React.FC = () => {
                 </div>
 
                 {/* Main Previz Frame Display */}
-                <div className="relative rounded-xl overflow-hidden border border-slate-700 bg-slate-950 aspect-[2.39/1] shadow-2xl group">
+                <div
+                  className="relative rounded-xl overflow-hidden border border-slate-700 bg-slate-950 shadow-2xl group"
+                  style={{ aspectRatio: `${selectedCamGeometry.aspect}` }}
+                >
                   {selectedCam.image_url ? (
                     <img
                       src={selectedCam.image_url}
                       alt={selectedCam.prompt}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover origin-center transition-transform duration-200"
+                      style={{ transform: `scale(${selectedCamGeometry.framingScale.toFixed(4)})` }}
                     />
                   ) : (
                     <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs">
@@ -1807,10 +1841,11 @@ export const ScriptStudio: React.FC = () => {
                       onChange={e => setCustomSensorFormat(e.target.value)}
                       className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500"
                     >
-                      <option value="Large Format 35mm (ARRI ALEXA 35)">Large Format 35mm (ARRI ALEXA 35)</option>
-                      <option value="Full Frame 65mm (ARRI ALEXA 65)">Full Frame 65mm (ARRI ALEXA 65)</option>
-                      <option value="Super 35mm (Panavision Panaflex Gold)">Super 35mm (Panavision Panaflex)</option>
-                      <option value="RED V-Raptor 8K VV">RED V-Raptor 8K VV</option>
+                      {SENSOR_FORMATS.map(sf => (
+                        <option key={sf.id} value={sf.id}>
+                          {sf.label} — {sf.widthMm}×{sf.heightMm}mm
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -1903,14 +1938,25 @@ export const ScriptStudio: React.FC = () => {
               </button>
             </div>
 
-            {/* Simulated 35mm Optical Viewfinder Canvas */}
-            <div className="relative rounded-2xl overflow-hidden border-2 border-slate-700 bg-black aspect-[2.39/1] shadow-2xl group flex items-center justify-center">
-              {/* Underlying Master Still or Rendered Test */}
+            {/* Optical Viewfinder Canvas — open gate with delivery extraction */}
+            <div
+              className="relative rounded-2xl overflow-hidden border-2 border-slate-700 bg-black shadow-2xl group flex items-center justify-center"
+              style={{
+                // Open gate when the surround view is on, delivery ratio when off.
+                aspectRatio: showSurround
+                  ? `${geometry.sensor.widthMm} / ${geometry.sensor.heightMm}`
+                  : `${geometry.aspect}`
+              }}
+            >
+              {/* Underlying Master Still or Rendered Test.
+                  Scaled by the angle-of-view ratio so focal length changes actually
+                  reframe the plate. Magnification only — not perspective compression. */}
               <img
                 src={dopTestRenderUrl || '/previz/interior_cam_a.jpg'}
                 alt="DoP Optical Simulation"
-                className="w-full h-full object-cover"
+                className="absolute inset-0 w-full h-full object-cover origin-center transition-transform duration-200"
                 style={{
+                  transform: `scale(${geometry.framingScale.toFixed(4)})`,
                   filter: `contrast(${
                     customLightingRatio === '16:1' ? 145 : customLightingRatio === '8:1' ? 125 : customLightingRatio === '4:1' ? 110 : 100
                   }%) brightness(${
@@ -1940,10 +1986,43 @@ export const ScriptStudio: React.FC = () => {
                 <div className="absolute inset-0 pointer-events-none border-[16px] border-black/30 backdrop-blur-[2px] rounded-2xl" />
               )}
 
-              {/* Framing Grid & Crosshairs Overlay */}
-              {showViewfinderGrid && (
-                <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4">
-                  {/* Rule of Thirds Lines */}
+              {/* Delivery Extraction Window.
+                  When the surround is on, the container is the full open gate and this
+                  box is the recorded frame: everything outside it is dimmed, the way a
+                  director's viewfinder shows what is available outside the delivery ratio. */}
+              <div
+                className="absolute pointer-events-none"
+                style={{
+                  width: `${(geometry.frame.widthMm / geometry.sensor.widthMm) * 100}%`,
+                  height: `${(geometry.frame.heightMm / geometry.sensor.heightMm) * 100}%`,
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  boxShadow: showSurround ? '0 0 0 9999px rgba(2, 6, 23, 0.74)' : 'none',
+                  border: showSurround ? '1px solid rgba(168, 85, 247, 0.9)' : 'none',
+                  transition: 'width 200ms ease, height 200ms ease'
+                }}
+              >
+                {/* Protect / shoot-and-protect frame lines inside the delivery frame */}
+                {showViewfinderGrid && protectInset && (
+                  <div
+                    className="absolute border border-dashed border-amber-300/70"
+                    style={{
+                      width: `${protectInset.widthPct}%`,
+                      height: `${protectInset.heightPct}%`,
+                      left: '50%',
+                      top: '50%',
+                      transform: 'translate(-50%, -50%)'
+                    }}
+                  >
+                    <span className="absolute -top-4 left-0 text-[9px] font-mono font-bold text-amber-300/90">
+                      PROTECT {protectRatio}
+                    </span>
+                  </div>
+                )}
+
+                {/* Rule of Thirds Lines */}
+                {showViewfinderGrid && (
                   <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none opacity-25">
                     <div className="border-r border-b border-white" />
                     <div className="border-r border-b border-white" />
@@ -1955,15 +2034,17 @@ export const ScriptStudio: React.FC = () => {
                     <div className="border-r border-white" />
                     <div />
                   </div>
+                )}
 
-                  {/* Center Crosshairs */}
+                {/* Center Crosshairs */}
+                {showViewfinderGrid && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-40">
                     <div className="w-8 h-8 border border-white/60 rounded-full flex items-center justify-center">
                       <div className="w-2 h-2 bg-purple-400 rounded-full" />
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* On-Screen Display (OSD HUD) */}
               <div className="absolute inset-0 p-3 flex flex-col justify-between pointer-events-none font-mono text-[10px] text-emerald-400 select-none">
@@ -1974,7 +2055,7 @@ export const ScriptStudio: React.FC = () => {
                     <span className="text-slate-400">• ARRI RAW</span>
                   </div>
                   <div className="text-purple-300 font-bold">
-                    {aspectRatio} SCOPE • {customSensorFormat.split(' ')[0]}
+                    {aspectRatio} • {geometry.sensor.label}
                   </div>
                 </div>
 
@@ -1992,6 +2073,9 @@ export const ScriptStudio: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-3">
                     <span>
+                      HFOV: <strong className="text-purple-300">{geometry.hfovDeg.toFixed(1)}°</strong>
+                    </span>
+                    <span>
                       RATIO: <strong className="text-purple-300">{customLightingRatio}</strong>
                     </span>
                     <span className="text-slate-300">
@@ -2001,6 +2085,79 @@ export const ScriptStudio: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {/* Viewfinder Controls & Computed Geometry Readout */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-300">Surround (open gate)</span>
+                  <button
+                    onClick={() => setShowSurround(!showSurround)}
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded border transition ${
+                      showSurround
+                        ? 'bg-purple-600 text-white border-purple-500'
+                        : 'bg-slate-900 text-slate-400 border-slate-800'
+                    }`}
+                  >
+                    {showSurround ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Protect:</span>
+                  {PROTECT_RATIOS.map(pr => (
+                    <button
+                      key={pr}
+                      onClick={() => setProtectRatio(pr)}
+                      className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded transition ${
+                        protectRatio === pr
+                          ? 'bg-amber-500/90 text-slate-950'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                      }`}
+                    >
+                      {pr}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 font-mono text-[10px] text-slate-300 space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">EXTRACTION</span>
+                  <strong className="text-white">
+                    {geometry.frame.widthMm.toFixed(2)} × {geometry.frame.heightMm.toFixed(2)} mm
+                  </strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">GATE USED</span>
+                  <strong className="text-white">
+                    {(geometry.frame.sensorAreaUsed * 100).toFixed(1)}% ({geometry.frame.limitedBy}-limited)
+                  </strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">ANGLE OF VIEW</span>
+                  <strong className="text-white">
+                    {geometry.hfovDeg.toFixed(1)}° H × {geometry.vfovDeg.toFixed(1)}° V
+                  </strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">CROP FACTOR</span>
+                  <strong className="text-white">{geometry.cropFactor.toFixed(2)}× vs FF</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">PLATE SCALE</span>
+                  <strong className="text-white">
+                    {geometry.framingScale.toFixed(2)}× vs {REFERENCE_FOCAL_MM}mm
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-[10px] text-slate-500 leading-relaxed">
+              Framing is geometrically exact: angle of view and sensor extraction are computed from
+              the selected format's open-gate dimensions. The plate is magnified to match the chosen
+              focal length, but perspective compression cannot be recovered from a flat still — run a
+              test render to see true optical character.
+            </p>
 
             {/* Live Synthesized Generative Prompt */}
             <div>

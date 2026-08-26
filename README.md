@@ -152,11 +152,11 @@ Every department on a film set acts as an **independent witness**. When a user i
 ```mermaid
 flowchart LR
     subgraph Producers["1. Multi-Persona Event Producers"]
-        P1["Director / DoP<br/>(Screenplay & Previz)"]
-        P2["Script Supervisor<br/>(Lined Logs & Takes)"]
-        P3["Sound Mixer<br/>(ALE & Multi-Track)"]
-        P4["DIT / Lab<br/>(Silverstack Offloads)"]
-        P5["Editor / Post<br/>(Discrepancy Triage)"]
+        P1["Director / DoP<br/>Screenplay & Previz"]
+        P2["Script Supervisor<br/>Lined Logs & Takes"]
+        P3["Sound Mixer<br/>ALE & Multi-Track"]
+        P4["DIT / Lab<br/>Silverstack Offloads"]
+        P5["Editor / Post<br/>Discrepancy Triage"]
     end
 
     subgraph EventSpine["2. ClickHouse Event Spine (Immutable Append-Only)"]
@@ -176,16 +176,16 @@ flowchart LR
         B3["User Dispatch: @assistant_editor"]
     end
 
-    subgraph Consumers["4. Reactive Client State (Push < 5ms)"]
+    subgraph Consumers["4. Reactive Client State (Sub-5ms Push)"]
         C1["🎬 Previz Studio (3-Cam Concept Frames)"]
         C2["🎞️ Composed Master Sheet (Live Ledger)"]
         C3["🚨 3-Axis Discrepancy Matrix (Auto-Resolves)"]
         C4["📊 Grafana Telemetry & Sync Lag Monitors"]
     end
 
-    Producers -->|POST /api/events/publish| EventSpine
-    EventSpine -->|broadcast| Broker
-    Broker -->|Server-Sent Events (SSE)| Consumers
+    Producers -->|"POST /api/events/publish"| EventSpine
+    EventSpine -->|"broadcast"| Broker
+    Broker -->|"Server-Sent Events (SSE)"| Consumers
 ```
 
 ---
