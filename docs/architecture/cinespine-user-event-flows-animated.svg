@@ -1,0 +1,457 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1250 720" width="100%" height="100%" style="background:#080d1a; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <defs>
+    <!-- Background Gradients -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#070b14" />
+      <stop offset="50%" stop-color="#0c1324" />
+      <stop offset="100%" stop-color="#060911" />
+    </linearGradient>
+
+    <!-- Role Gradients -->
+    <linearGradient id="gradDirector" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#9333ea" />
+      <stop offset="100%" stop-color="#c084fc" />
+    </linearGradient>
+
+    <linearGradient id="gradScriptSup" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#d97706" />
+      <stop offset="100%" stop-color="#fde047" />
+    </linearGradient>
+
+    <linearGradient id="gradSound" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#38bdf8" />
+    </linearGradient>
+
+    <linearGradient id="gradDIT" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#34d399" />
+    </linearGradient>
+
+    <linearGradient id="gradEditorial" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#e11d48" />
+      <stop offset="100%" stop-color="#fb7185" />
+    </linearGradient>
+
+    <!-- Core Spine Gradient -->
+    <linearGradient id="gradSpine" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5" />
+      <stop offset="50%" stop-color="#7c3aed" />
+      <stop offset="100%" stop-color="#9333ea" />
+    </linearGradient>
+
+    <!-- Glow Filters -->
+    <filter id="glowPurple" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    <filter id="glowGold" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    <filter id="glowCyan" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    <filter id="glowEmerald" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    <filter id="glowRose" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <!-- Subtle Tech Grid -->
+    <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#1e293b" stroke-width="0.7" opacity="0.25" />
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1250" height="720" fill="url(#bgGrad)" />
+  <rect width="1250" height="720" fill="url(#grid)" />
+
+  <!-- ============================================================== -->
+  <!-- HEADER & SUBTITLE                                              -->
+  <!-- ============================================================== -->
+  <g transform="translate(60, 45)">
+    <rect x="-10" y="-18" width="4" height="36" fill="#a855f7" rx="2" />
+    <text x="6" y="0" font-size="20" font-weight="900" fill="#f8fafc" letter-spacing="1.2">
+      ⚡ MULTI-PERSONA PRODUCTION EVENT FLOWS &amp; IMMUTABLE EVENT SPINE
+    </text>
+    <text x="6" y="20" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="0.8">
+      HOW DIRECTORS, SCRIPT SUPERVISORS, SOUND MIXERS, DITS, AND EDITORS EMIT TYPED PRODUCTION EVENTS INTO CINESPINE
+    </text>
+  </g>
+
+  <!-- ============================================================== -->
+  <!-- SWIMLANE 1: DIRECTOR & DoP (CREATIVE INTENT)                    -->
+  <!-- ============================================================== -->
+  <g transform="translate(50, 90)">
+    <rect width="320" height="102" rx="10" fill="#0f172a" stroke="#9333ea" stroke-width="1.5" />
+    <rect width="320" height="26" rx="10" fill="#3b0764" opacity="0.6" />
+    <text x="12" y="17" font-size="10.5" font-weight="800" fill="#d8b4fe">🎬 1. DIRECTOR &amp; DoP (CREATIVE INTENT)</text>
+
+    <!-- Event 1 -->
+    <g transform="translate(10, 34)">
+      <rect width="140" height="28" rx="6" fill="#1e1b4b" stroke="#7e22ce" stroke-width="0.8" />
+      <text x="8" y="14" font-size="8.5" font-weight="700" fill="#c084fc">SCREENPLAY_PARSED</text>
+      <text x="8" y="23" font-size="7.5" font-family="monospace" fill="#94a3b8">Scene 1 &amp; 2 • 3 Cast Profiles</text>
+    </g>
+
+    <!-- Event 2 -->
+    <g transform="translate(160, 34)">
+      <rect width="150" height="28" rx="6" fill="#1e1b4b" stroke="#7e22ce" stroke-width="0.8" />
+      <text x="8" y="14" font-size="8.5" font-weight="700" fill="#c084fc">CHARACTER_LOOK_LOCKED</text>
+      <text x="8" y="23" font-size="7.5" font-family="monospace" fill="#94a3b8">LEAD • 35mm Headshot</text>
+    </g>
+
+    <!-- Event 3 -->
+    <g transform="translate(10, 67)">
+      <rect width="300" height="28" rx="6" fill="#2e1065" stroke="#9333ea" stroke-width="1" />
+      <circle cx="12" cy="14" r="3.5" fill="#c084fc" />
+      <text x="22" y="14" font-size="9" font-weight="800" fill="#f3e8ff">3CAM_PREVIZ_RENDERED</text>
+      <text x="22" y="23" font-size="7.5" font-family="monospace" fill="#d8b4fe">Setup 1 • Cam A (28mm), Cam B (50mm), Cam C (85mm)</text>
+    </g>
+  </g>
+
+  <!-- ============================================================== -->
+  <!-- SWIMLANE 2: SCRIPT SUPERVISOR (SET BELIEF)                     -->
+  <!-- ============================================================== -->
+  <g transform="translate(50, 205)">
+    <rect width="320" height="102" rx="10" fill="#0f172a" stroke="#d97706" stroke-width="1.5" />
+    <rect width="320" height="26" rx="10" fill="#451a03" opacity="0.6" />
+    <text x="12" y="17" font-size="10.5" font-weight="800" fill="#fde047">📝 2. SCRIPT SUPERVISOR (SET BELIEF)</text>
+
+    <!-- Event 1 -->
+    <g transform="translate(10, 34)">
+      <rect width="140" height="28" rx="6" fill="#271d0e" stroke="#b45309" stroke-width="0.8" />
+      <text x="8" y="14" font-size="8.5" font-weight="700" fill="#fcd34d">SCRIPT_REPORT_INGESTED</text>
+      <text x="8" y="23" font-size="7.5" font-family="monospace" fill="#94a3b8">Day 31 • PDF Lined Notes</text>
+    </g>
+
+    <!-- Event 2 -->
+    <g transform="translate(160, 34)">
+      <rect width="150" height="28" rx="6" fill="#271d0e" stroke="#b45309" stroke-width="0.8" />
+      <text x="8" y="14" font-size="8.5" font-weight="700" fill="#fcd34d">TAKE_LOGGED (CIRCLED)</text>
+      <text x="8" y="23" font-size="7.5" font-family="monospace" fill="#94a3b8">Scene 1 • Slate 101/1 • ⭐ Good</text>
+    </g>
+
+    <!-- Event 3 -->
+    <g transform="translate(10, 67)">
+      <rect width="300" height="28" rx="6" fill="#451a03" stroke="#d97706" stroke-width="1" />
+      <circle cx="12" cy="14" r="3.5" fill="#fbbf24" />
+      <text x="22" y="14" font-size="9" font-weight="800" fill="#fef3c7">FALSE_START_RECORDED</text>
+      <text x="22" y="23" font-size="7.5" font-family="monospace" fill="#fde047">Scene 1 • Slate 101/2 • 'Aborted on line 4'</text>
+    </g>
+  </g>
+
+  <!-- ============================================================== -->
+  <!-- SWIMLANE 3: SOUND MIXER (AUDIO LOGS & TIME CODES)             -->
+  <!-- ============================================================== -->
+  <g transform="translate(50, 320)">
+    <rect width="320" height="102" rx="10" fill="#0f172a" stroke="#0284c7" stroke-width="1.5" />
+    <rect width="320" height="26" rx="10" fill="#082f49" opacity="0.6" />
+    <text x="12" y="17" font-size="10.5" font-weight="800" fill="#7dd3fc">🎙️ 3. SOUND MIXER (AUDIO CAPTURE)</text>
+
+    <!-- Event 1 -->
+    <g transform="translate(10, 34)">
+      <rect width="140" height="28" rx="6" fill="#0c2340" stroke="#0369a1" stroke-width="0.8" />
+      <text x="8" y="14" font-size="8.5" font-weight="700" fill="#38bdf8">SOUND_ALE_INGESTED</text>
+      <text x="8" y="23" font-size="7.5" font-family="monospace" fill="#94a3b8">Sound Devices 8-Series Log</text>
+    </g>
+
+    <!-- Event 2 -->
+    <g transform="translate(160, 34)">
+      <rect width="150" height="28" rx="6" fill="#0c2340" stroke="#0369a1" stroke-width="0.8" />
+      <text x="8" y="14" font-size="8.5" font-weight="700" fill="#38bdf8">POLY_WAV_TRACKS_MAPPED</text>
+      <text x="8" y="23" font-size="7.5" font-family="monospace" fill="#94a3b8">Trk 1: Boom • Trk 2: LEAD</text>
+    </g>
+
+    <!-- Event 3 -->
+    <g transform="translate(10, 67)">
+      <rect width="300" height="28" rx="6" fill="#082f49" stroke="#0284c7" stroke-width="1" />
+      <circle cx="12" cy="14" r="3.5" fill="#38bdf8" />
+      <text x="22" y="14" font-size="9" font-weight="800" fill="#e0f2fe">WILD_TRACK_LOGGED</text>
+      <text x="22" y="23" font-size="7.5" font-family="monospace" fill="#7dd3fc">WT 104 • 'Great Hall Organ Echo Room Tone'</text>
+    </g>
+  </g>
+
+  <!-- ============================================================== -->
+  <!-- SWIMLANE 4: DIT / DATA MANAGER (PHYSICAL EXISTENCE)           -->
+  <!-- ============================================================== -->
+  <g transform="translate(50, 435)">
+    <rect width="320" height="102" rx="10" fill="#0f172a" stroke="#059669" stroke-width="1.5" />
+    <rect width="320" height="26" rx="10" fill="#064e3b" opacity="0.6" />
+    <text x="12" y="17" font-size="10.5" font-weight="800" fill="#6ee7b7">💾 4. DIT &amp; DATA MANAGER (EXISTENCE)</text>
+
+    <!-- Event 1 -->
+    <g transform="translate(10, 34)">
+      <rect width="140" height="28" rx="6" fill="#062e24" stroke="#047857" stroke-width="0.8" />
+      <text x="8" y="14" font-size="8.5" font-weight="700" fill="#34d399">CARD_OFFLOAD_VERIFIED</text>
+      <text x="8" y="23" font-size="7.5" font-family="monospace" fill="#94a3b8">Mag A031 • MD5 / XXHash64</text>
+    </g>
+
+    <!-- Event 2 -->
+    <g transform="translate(160, 34)">
+      <rect width="150" height="28" rx="6" fill="#062e24" stroke="#047857" stroke-width="0.8" />
+      <text x="8" y="14" font-size="8.5" font-weight="700" fill="#34d399">SILVERSTACK_MANIFEST</text>
+      <text x="8" y="23" font-size="7.5" font-family="monospace" fill="#94a3b8">XML Report • Clip Metadata</text>
+    </g>
+
+    <!-- Event 3 -->
+    <g transform="translate(10, 67)">
+      <rect width="300" height="28" rx="6" fill="#064e3b" stroke="#059669" stroke-width="1" />
+      <circle cx="12" cy="14" r="3.5" fill="#34d399" />
+      <text x="22" y="14" font-size="9" font-weight="800" fill="#ecfdf5">RAW_CLIP_REGISTERED</text>
+      <text x="22" y="23" font-size="7.5" font-family="monospace" fill="#a7f3d0">A031_C001_0826_001.MOV • 4.5K ProRes 4444</text>
+    </g>
+  </g>
+
+  <!-- ============================================================== -->
+  <!-- SWIMLANE 5: EDITORIAL & POST SUPERVISOR (RESOLUTION)           -->
+  <!-- ============================================================== -->
+  <g transform="translate(50, 550)">
+    <rect width="320" height="102" rx="10" fill="#0f172a" stroke="#e11d48" stroke-width="1.5" />
+    <rect width="320" height="26" rx="10" fill="#4c0519" opacity="0.6" />
+    <text x="12" y="17" font-size="10.5" font-weight="800" fill="#fda4af">✂️ 5. EDITORIAL &amp; POST (CONFORM &amp; RESOLVE)</text>
+
+    <!-- Event 1 -->
+    <g transform="translate(10, 34)">
+      <rect width="140" height="28" rx="6" fill="#310b17" stroke="#be123c" stroke-width="0.8" />
+      <text x="8" y="14" font-size="8.5" font-weight="700" fill="#fb7185">DISCREPANCY_INSPECTED</text>
+      <text x="8" y="23" font-size="7.5" font-family="monospace" fill="#94a3b8">Take Status Mismatch: False</text>
+    </g>
+
+    <!-- Event 2 -->
+    <g transform="translate(160, 34)">
+      <rect width="150" height="28" rx="6" fill="#310b17" stroke="#be123c" stroke-width="0.8" />
+      <text x="8" y="14" font-size="8.5" font-weight="700" fill="#fb7185">OVERRIDE_APPLIED</text>
+      <text x="8" y="23" font-size="7.5" font-family="monospace" fill="#94a3b8">Editorial Override with Note</text>
+    </g>
+
+    <!-- Event 3 -->
+    <g transform="translate(10, 67)">
+      <rect width="300" height="28" rx="6" fill="#4c0519" stroke="#e11d48" stroke-width="1" />
+      <circle cx="12" cy="14" r="3.5" fill="#f43f5e" />
+      <text x="22" y="14" font-size="9" font-weight="800" fill="#fff1f2">MASTER_CONFORM_LOCKED</text>
+      <text x="22" y="23" font-size="7.5" font-family="monospace" fill="#fecdd3">Sequences &amp; Take Ledger Locked for Cut</text>
+    </g>
+  </g>
+
+  <!-- ============================================================== -->
+  <!-- CONNECTING FLOW PATHS (USER LANES -> EVENT BUS -> SPINE)       -->
+  <!-- ============================================================== -->
+
+  <!-- Flow 1: Director -->
+  <path id="pathDirector" d="M 370 141 L 520 141 L 520 375 L 560 375" fill="none" stroke="#7e22ce" stroke-width="2" stroke-dasharray="6,4" opacity="0.6" />
+  <!-- Flow 2: Script Supervisor -->
+  <path id="pathScriptSup" d="M 370 256 L 500 256 L 500 385 L 560 385" fill="none" stroke="#b45309" stroke-width="2" stroke-dasharray="6,4" opacity="0.6" />
+  <!-- Flow 3: Sound Mixer -->
+  <path id="pathSound" d="M 370 371 L 560 371" fill="none" stroke="#0369a1" stroke-width="2" stroke-dasharray="6,4" opacity="0.6" />
+  <!-- Flow 4: DIT -->
+  <path id="pathDIT" d="M 370 486 L 500 486 L 500 405 L 560 405" fill="none" stroke="#047857" stroke-width="2" stroke-dasharray="6,4" opacity="0.6" />
+  <!-- Flow 5: Editorial -->
+  <path id="pathEditorial" d="M 370 601 L 520 601 L 520 415 L 560 415" fill="none" stroke="#be123c" stroke-width="2" stroke-dasharray="6,4" opacity="0.6" />
+
+  <!-- Animated Flying Event Packets -->
+  <circle r="5" fill="#c084fc" filter="url(#glowPurple)">
+    <animateMotion dur="3.2s" repeatCount="indefinite" path="M 370 141 L 520 141 L 520 375 L 560 375" />
+  </circle>
+  <circle r="5" fill="#fde047" filter="url(#glowGold)">
+    <animateMotion dur="2.8s" repeatCount="indefinite" begin="0.6s" path="M 370 256 L 500 256 L 500 385 L 560 385" />
+  </circle>
+  <circle r="5" fill="#38bdf8" filter="url(#glowCyan)">
+    <animateMotion dur="2.5s" repeatCount="indefinite" begin="1.2s" path="M 370 371 L 560 371" />
+  </circle>
+  <circle r="5" fill="#34d399" filter="url(#glowEmerald)">
+    <animateMotion dur="3.0s" repeatCount="indefinite" begin="0.3s" path="M 370 486 L 500 486 L 500 405 L 560 405" />
+  </circle>
+  <circle r="5" fill="#fb7185" filter="url(#glowRose)">
+    <animateMotion dur="3.4s" repeatCount="indefinite" begin="1.5s" path="M 370 601 L 520 601 L 520 415 L 560 415" />
+  </circle>
+
+  <!-- ============================================================== -->
+  <!-- CENTER CONTAINER: CINESPINE EVENT SPINE & RECON ENGINE         -->
+  <!-- ============================================================== -->
+  <g transform="translate(560, 90)">
+    <!-- Outer Card -->
+    <rect width="320" height="562" rx="16" fill="#0b1120" stroke="#4f46e5" stroke-width="2" />
+    <rect width="320" height="42" rx="16" fill="#1e1b4b" />
+    <text x="20" y="26" font-size="12" font-weight="900" fill="#e0e7ff" letter-spacing="1">
+      ⚡ CINESPINE CORE EVENT ENGINE
+    </text>
+
+    <!-- Component 1: Ingestion Gateway & Dispatcher -->
+    <g transform="translate(18, 55)">
+      <rect width="284" height="85" rx="10" fill="#111827" stroke="#3b82f6" stroke-width="1.2" />
+      <text x="14" y="20" font-size="10" font-weight="800" fill="#60a5fa">1. ASYNC EVENT DISPATCHER</text>
+      <text x="14" y="38" font-size="8" fill="#94a3b8">Validates schema, stamps UTC monotonic clock,</text>
+      <text x="14" y="50" font-size="8" fill="#94a3b8">and wraps payload in typed JSON Envelope.</text>
+      <rect x="14" y="60" width="256" height="16" rx="4" fill="#1e293b" />
+      <text x="20" y="72" font-size="7.5" font-family="monospace" fill="#38bdf8">{"event_id": "EVT_77A", "seq": 1042, "role": "..."}</text>
+    </g>
+
+    <!-- Component 2: Immutable Event Store (Spine) -->
+    <g transform="translate(18, 152)">
+      <rect width="284" height="100" rx="10" fill="#111827" stroke="#8b5cf6" stroke-width="1.2" />
+      <text x="14" y="20" font-size="10" font-weight="800" fill="#a78bfa">2. IMMUTABLE APPEND-ONLY SPINE</text>
+      <text x="14" y="38" font-size="8" fill="#94a3b8">SQLite (Local Edge) + ClickHouse Cloud (OLAP)</text>
+      <text x="14" y="50" font-size="8" fill="#cbd5e1">Never Mutates • Strict Provenance • Audit Trail</text>
+
+      <!-- Mini Event Blocks Animation -->
+      <g transform="translate(14, 62)">
+        <rect x="0" y="0" width="55" height="24" rx="4" fill="#312e81" stroke="#6366f1" stroke-width="0.8" />
+        <text x="5" y="15" font-size="7" font-family="monospace" fill="#c7d2fe">EVT #1040</text>
+        <rect x="62" y="0" width="55" height="24" rx="4" fill="#312e81" stroke="#6366f1" stroke-width="0.8" />
+        <text x="67" y="15" font-size="7" font-family="monospace" fill="#c7d2fe">EVT #1041</text>
+        <rect x="124" y="0" width="55" height="24" rx="4" fill="#4338ca" stroke="#818cf8" stroke-width="1" />
+        <text x="129" y="15" font-size="7" font-family="monospace" fill="#e0e7ff">EVT #1042</text>
+        <rect x="186" y="0" width="68" height="24" rx="4" fill="#2e1065" stroke="#a855f7" stroke-width="1" stroke-dasharray="3,2">
+          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="1.8s" repeatCount="indefinite" />
+        </rect>
+        <text x="191" y="15" font-size="7" font-family="monospace" fill="#d8b4fe">+ NEW APPEND</text>
+      </g>
+    </g>
+
+    <!-- Component 3: 3-Axis Reconciliation Engine -->
+    <g transform="translate(18, 264)">
+      <rect width="284" height="110" rx="10" fill="#111827" stroke="#f43f5e" stroke-width="1.2" />
+      <text x="14" y="20" font-size="10" font-weight="800" fill="#fb7185">3. 3-AXIS RECONCILIATION ENGINE</text>
+      <text x="14" y="38" font-size="8" fill="#94a3b8">Intent (Script) ⟷ Belief (Logs) ⟷ Existence (Files)</text>
+
+      <g transform="translate(14, 48)">
+        <rect x="0" y="0" width="80" height="22" rx="4" fill="#271d0e" stroke="#f59e0b" stroke-width="0.8" />
+        <text x="5" y="14" font-size="7" font-weight="700" fill="#fbbf24">Intent vs Belief</text>
+        <rect x="86" y="0" width="80" height="22" rx="4" fill="#0c2340" stroke="#0ea5e9" stroke-width="0.8" />
+        <text x="91" y="14" font-size="7" font-weight="700" fill="#38bdf8">Belief vs Exist</text>
+        <rect x="172" y="0" width="84" height="22" rx="4" fill="#310b17" stroke="#f43f5e" stroke-width="0.8" />
+        <text x="177" y="14" font-size="7" font-weight="700" fill="#fda4af">Intent vs Exist</text>
+      </g>
+      <text x="14" y="94" font-size="8" font-weight="700" fill="#fb7185">DISCREPANCY_FLAGGED on Conflict / Missing Asset</text>
+    </g>
+
+    <!-- Component 4: Non-Blocking SSE Event Fan-Out Broker -->
+    <g transform="translate(18, 386)">
+      <rect width="284" height="155" rx="10" fill="#111827" stroke="#10b981" stroke-width="1.2" />
+      <text x="14" y="20" font-size="10" font-weight="800" fill="#34d399">4. ZERO-POLLING SSE BROADCAST BROKER</text>
+      <text x="14" y="36" font-size="8" fill="#94a3b8">Scoped channels per Production &amp; Shoot Day</text>
+      <text x="14" y="48" font-size="8" fill="#94a3b8">Pushes diffs to all connected browsers in &lt; 5ms</text>
+
+      <!-- Live Broadcast Visualizer -->
+      <g transform="translate(14, 58)">
+        <rect width="256" height="85" rx="6" fill="#062e24" stroke="#059669" stroke-width="0.8" />
+        <text x="10" y="18" font-size="8.5" font-weight="800" fill="#6ee7b7">LIVE CLIENT PROJECTION CHANNEL</text>
+        <text x="10" y="34" font-size="7.5" font-family="monospace" fill="#a7f3d0">GET /api/events/subscribe?prod=DEMO_PRODUCTION</text>
+        
+        <g transform="translate(10, 44)">
+          <circle cx="6" cy="6" r="3" fill="#34d399">
+            <animate attributeName="opacity" values="1;0.2;1" dur="1s" repeatCount="indefinite" />
+          </circle>
+          <text x="16" y="10" font-size="7.5" font-family="monospace" fill="#6ee7b7">event: TAKE_STATUS_UPDATED</text>
+          <text x="16" y="22" font-size="7" font-family="monospace" fill="#94a3b8">data: {"slate": "101/1", "circled": true, "audio_ok": true}</text>
+          <text x="16" y="33" font-size="7" font-family="monospace" fill="#94a3b8">data: {"discrepancy_count": 0, "sync_lag_ms": 1.4}</text>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- ============================================================== -->
+  <!-- RIGHT CONTAINER: REAL-TIME COLLABORATIVE PROJECTION APPS       -->
+  <!-- ============================================================== -->
+
+  <!-- Flow Paths: Event Core -> Right Collaborative Views -->
+  <path d="M 880 435 L 940 435 L 940 180 L 980 180" fill="none" stroke="#6366f1" stroke-width="2" stroke-dasharray="5,4" opacity="0.7" />
+  <path d="M 880 465 L 980 465" fill="none" stroke="#10b981" stroke-width="2" stroke-dasharray="5,4" opacity="0.7" />
+  <path d="M 880 495 L 940 495 L 940 590 L 980 590" fill="none" stroke="#f43f5e" stroke-width="2" stroke-dasharray="5,4" opacity="0.7" />
+
+  <!-- Animated Flying Packets (Spine -> Clients) -->
+  <circle r="4.5" fill="#a78bfa" filter="url(#glowPurple)">
+    <animateMotion dur="2.2s" repeatCount="indefinite" path="M 880 435 L 940 435 L 940 180 L 980 180" />
+  </circle>
+  <circle r="4.5" fill="#34d399" filter="url(#glowEmerald)">
+    <animateMotion dur="2.0s" repeatCount="indefinite" begin="0.5s" path="M 880 465 L 980 465" />
+  </circle>
+  <circle r="4.5" fill="#fb7185" filter="url(#glowRose)">
+    <animateMotion dur="2.4s" repeatCount="indefinite" begin="1.0s" path="M 880 495 L 940 495 L 940 590 L 980 590" />
+  </circle>
+
+  <!-- Client 1: Screenplay & Previz Studio -->
+  <g transform="translate(980, 90)">
+    <rect width="220" height="170" rx="12" fill="#0f172a" stroke="#a855f7" stroke-width="1.5" />
+    <rect width="220" height="28" rx="12" fill="#3b0764" />
+    <text x="12" y="18" font-size="10" font-weight="800" fill="#f3e8ff">🎬 PREVIZ &amp; SCRIPT STUDIO</text>
+
+    <g transform="translate(10, 38)">
+      <rect width="200" height="50" rx="6" fill="#1e1b4b" stroke="#7e22ce" stroke-width="0.8" />
+      <text x="8" y="16" font-size="8" font-weight="700" fill="#c084fc">3-CAMERA PREVIZ HUD</text>
+      <text x="8" y="28" font-size="7.5" fill="#e0e7ff">• Cam A (28mm Master)</text>
+      <text x="8" y="40" font-size="7.5" fill="#e0e7ff">• Cam B (50mm) • Cam C (85mm)</text>
+    </g>
+
+    <g transform="translate(10, 96)">
+      <rect width="200" height="60" rx="6" fill="#1e293b" />
+      <text x="8" y="16" font-size="7.5" font-weight="700" fill="#94a3b8">REACTIVE CLIENT STATE</text>
+      <text x="8" y="28" font-size="7" fill="#cbd5e1">✓ Consistent Actor Prompts</text>
+      <text x="8" y="40" font-size="7" fill="#cbd5e1">✓ DoP 2.39:1 Scope Framing</text>
+      <text x="8" y="52" font-size="7" fill="#34d399">✓ 0-Polling Event Push</text>
+    </g>
+  </g>
+
+  <!-- Client 2: Master Editorial Ledger & Slate Matrix -->
+  <g transform="translate(980, 275)">
+    <rect width="220" height="200" rx="12" fill="#0f172a" stroke="#3b82f6" stroke-width="1.5" />
+    <rect width="220" height="28" rx="12" fill="#1e3a8a" />
+    <text x="12" y="18" font-size="10" font-weight="800" fill="#dbeafe">🎞️ SET &amp; EDITORIAL SPINE</text>
+
+    <g transform="translate(10, 38)">
+      <rect width="200" height="65" rx="6" fill="#0c2340" stroke="#0284c7" stroke-width="0.8" />
+      <text x="8" y="16" font-size="8" font-weight="700" fill="#38bdf8">COMPOSED MASTER SHEET</text>
+      <text x="8" y="28" font-size="7.5" fill="#bae6fd">Slate 101/1 • ⭐ Circled Take</text>
+      <text x="8" y="40" font-size="7.5" fill="#94a3b8">Sound: Good (101_1.WAV)</text>
+      <text x="8" y="52" font-size="7.5" fill="#94a3b8">Camera: A031_C001 (Match)</text>
+    </g>
+
+    <g transform="translate(10, 112)">
+      <rect width="200" height="74" rx="6" fill="#1e293b" />
+      <text x="8" y="16" font-size="7.5" font-weight="700" fill="#94a3b8">DEPARTMENT WITNESSES</text>
+      <text x="8" y="28" font-size="7" fill="#34d399">✓ Intent: Screenplay Scene 1</text>
+      <text x="8" y="40" font-size="7" fill="#34d399">✓ Belief: Script Supervisor Log</text>
+      <text x="8" y="52" font-size="7" fill="#34d399">✓ Sound: 8-Track PolyWAV</text>
+      <text x="8" y="64" font-size="7" fill="#34d399">✓ Existence: Silverstack Hash</text>
+    </g>
+  </g>
+
+  <!-- Client 3: Discrepancies & Alert Lighthouse -->
+  <g transform="translate(980, 490)">
+    <rect width="220" height="162" rx="12" fill="#0f172a" stroke="#f43f5e" stroke-width="1.5" />
+    <rect width="220" height="28" rx="12" fill="#4c0519" />
+    <text x="12" y="18" font-size="10" font-weight="800" fill="#ffe4e6">🚨 3-AXIS DISCREPANCY MATRIX</text>
+
+    <g transform="translate(10, 38)">
+      <rect width="200" height="50" rx="6" fill="#310b17" stroke="#e11d48" stroke-width="0.8" />
+      <text x="8" y="16" font-size="8" font-weight="700" fill="#fb7185">ACTIVE PRODUCTION ALERTS</text>
+      <text x="8" y="28" font-size="7.5" fill="#fecdd3">• 0 Missing Audio Files</text>
+      <text x="8" y="40" font-size="7.5" fill="#fecdd3">• 0 Unreconciled Slates</text>
+    </g>
+
+    <g transform="translate(10, 96)">
+      <rect width="200" height="54" rx="6" fill="#1e293b" />
+      <text x="8" y="16" font-size="7.5" font-weight="700" fill="#94a3b8">AUDIT PROVENANCE</text>
+      <text x="8" y="28" font-size="7" fill="#cbd5e1">100% Immutable Replay</text>
+      <text x="8" y="40" font-size="7" fill="#34d399">Production Truth Synchronized</text>
+    </g>
+  </g>
+
+  <!-- Footer Stats / Status Ribbon -->
+  <g transform="translate(60, 680)">
+    <rect x="-10" y="-12" width="1130" height="28" rx="6" fill="#0b132b" stroke="#1e293b" />
+    <circle cx="6" cy="2" r="4" fill="#22c55e">
+      <animate attributeName="opacity" values="1;0.4;1" dur="1s" repeatCount="indefinite" />
+    </circle>
+    <text x="18" y="6" font-size="9" font-weight="700" fill="#f8fafc">
+      CINESPINE EVENT BUS ACTIVE: <tspan fill="#38bdf8">5 User Personas Connected</tspan> • <tspan fill="#a855f7">Zero-Polling Server-Sent Events</tspan> • <tspan fill="#34d399">100% Append-Only Provenance</tspan> • <tspan fill="#fbbf24">3-Axis Conflict Detection</tspan>
+    </text>
+  </g>
+</svg>

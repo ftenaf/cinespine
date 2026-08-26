@@ -27,8 +27,12 @@ When a script supervisor notes a take as *False Start*, but the sound recordist 
 **CineSpine** solves this by enforcing a single immutable truth:  
 > *"A document is a witness. Witnesses disagree, and **the disagreement is the product**."*
 
-## 🏛️ Animated System Architecture & C4 Model
+### 🏛️ Animated System Architecture & C4 Model
 
+### 1. Multi-Persona User Event Flows & Append-Only Event Spine
+![CineSpine Multi-Persona User Event Flows](docs/architecture/cinespine-user-event-flows-animated.svg)
+
+### 2. End-to-End System Architecture (Production to Cloud)
 ![CineSpine Animated Architecture Diagram](docs/architecture/cinespine-architecture-animated.svg)
 
 > *See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for full C4 Level 1–4 diagrams and sequence flows.*
@@ -44,7 +48,7 @@ C4Context
   Person(camera_crew, "Camera Department", "Generates ZoeLog CSV reports and camera card manifests")
   Person(dit_crew, "DIT / Data Manager", "Offloads cards, computes checksums, and produces Silverstack reports")
   Person(editorial, "Editorial Team", "Assistant & Lead Editors cutting dailies and resolving discrepancies")
-  Person(director, "Director / DoP", "Decomposes screenplay, defines optics, reviews 3-camera AI previz")
+  Person(director, "Director / DoP", "Decomposes screenplay, defines optics, reviews multi-camera AI previz")
 
   System(cinespine, "CineSpine Platform", "Append-only event spine, 3-axis discrepancy reconciler, and multi-camera AI previz studio")
 
@@ -85,7 +89,7 @@ C4Container
     Container(dispatcher, "Ingestion & Dispatch Pipeline", "Python Async Event Bus", "Classifies documents, validates schemas, and routes to deterministic extractors")
     Container(parsers, "Deterministic & Screenplay Extractors", "Python, pdfplumber, pypdf, Fountain parser", "Normalizes slates, takes, rolls, timecodes, and screenplay scenes")
     Container(recon_engine, "3-Axis Reconciliation Engine", "Python Rule Engine", "Cross-references Intent, Belief, and Existence to flag conflicts")
-    Container(previz_engine, "AI Multi-Camera Previz Synthesizer", "google.genai SDK, DoP Matrix", "Compiles 3-camera setups (Cam A/B/C) and renders photorealistic stills")
+    Container(previz_engine, "AI Multi-Camera Previz Synthesizer", "google.genai SDK, DoP Matrix", "Compiles multi-camera setups (Cam A/B/C/D...) and renders photorealistic stills")
     ContainerDb(event_store, "Append-Only Event Spine", "SQLite / ClickHouse DB", "Immutable store for raw documents, parsed take facts, discrepancies, and audit trails")
   }
 
@@ -103,49 +107,41 @@ C4Container
 
 ---
 
-### Flow Architecture: The 3 Axes of Cinema Truth
+## ⚡ Multi-Persona Production Event Flows (By User Type)
 
-```mermaid
-flowchart TB
-    subgraph Axis1["1. INTENT (Office / Script)"]
-        A1["Screenplay (.pdf / .fountain)"]
-        A2["Planned Shots & Call Sheets"]
-        A3["DoP Cinematography Specs"]
-    end
+Every department on a film set acts as an **independent witness**. When a user interacts with CineSpine, their action is packaged into an **immutable, monotonically sequenced, typed event envelope**:
 
-    subgraph Axis2["2. BELIEF (Set / Crew)"]
-        B1["Script Supervisor Lined Pages"]
-        B2["Sound Department Reports (ALE/CSV)"]
-        B3["Camera Reports & False Takes"]
-    end
-
-    subgraph Axis3["3. EXISTENCE (Lab / DIT)"]
-        C1["Silverstack Checksum Manifests"]
-        C2["Camera RAW Video Cards (R1/R2)"]
-        C3["Multitrack BWF Poly-WAV Audio"]
-    end
-
-    Axis1 & Axis2 & Axis3 --> ENGINE["CineSpine Backend Gateway (FastAPI)"]
-
-    subgraph CorePlatform["CineSpine Intelligence Engines"]
-        ENGINE --> R1["3-Axis Reconciliation Engine"]
-        ENGINE --> E1["Append-Only Event Spine (ClickHouse)"]
-        ENGINE --> P1["AI Multi-Camera Previz Synthesizer"]
-    end
-
-    subgraph CloudEcosystem["Google Cloud & Partner Stack"]
-        P1 --> GEM["Google Cloud Gemini 2.0 & Imagen 3 (google.genai SDK)"]
-        E1 --> GCS["Google Cloud Storage (Media Archival)"]
-        ENGINE --> GF["Grafana Labs (Observability & Telemetry)"]
-    end
-
-    subgraph Frontend["React Studio Dashboard"]
-        R1 & E1 & P1 --> UI1["Live Production Overview"]
-        R1 & E1 & P1 --> UI2["3-Axis Discrepancy Matrix"]
-        R1 & E1 & P1 --> UI3["AI Script & Multi-Cam Previz Studio"]
-        R1 & E1 & P1 --> UI4["Real-Time Crew Notification Center"]
-    end
+```json
+{
+  "event_id": "EVT_99482_A",
+  "sequence_num": 1042,
+  "timestamp_utc": "2026-08-26T09:00:00.000Z",
+  "production_id": "DEMO_PRODUCTION",
+  "shoot_day": "Day 31",
+  "user_role": "SCRIPT_SUPERVISOR",
+  "user_id": "script_sup_1",
+  "event_type": "TAKE_LOGGED",
+  "payload": {
+    "scene_number": "1",
+    "slate": "101/1",
+    "take_number": 1,
+    "status": "GOOD",
+    "circled": true,
+    "director_notes": "Print it. Great emotional delivery from LEAD."
+  }
+}
 ```
+
+### Event Taxonomy Across Production Roles:
+
+| User Type / Role | Emitted Event Types | Description & Semantic Payload | Target Subsystems |
+| :--- | :--- | :--- | :--- |
+| **🎬 Director & DoP** | `SCREENPLAY_PARSED`<br/>`CHARACTER_LOOK_LOCKED`<br/>`3CAM_PREVIZ_RENDERED`<br/>`CAMERA_ANGLE_ADDED`<br/>`CAMERA_ANGLE_DELETED`<br/>`DOP_OPTICS_CONFIGURED` | Uploads script (`.fountain`, `.md`, `.pdf`), extracts cast profiles, adjusts optical framing ($2.39:1$), spawns extra angles (Crane Cam D, Macro Cam E), and renders FLUX.1/Imagen 3 concept stills. | Screenplay Previz Studio, Cast Profiler, Optical Viewfinder |
+| **📝 Script Supervisor** | `SCRIPT_REPORT_INGESTED`<br/>`TAKE_LOGGED`<br/>`CIRCLED_TAKE_FLAGGED`<br/>`FALSE_START_RECORDED`<br/>`DIRECTOR_NOTE_APPENDED` | Logs lined pages, continuity notes, False Starts, and circled takes on set. Asserts the "Set Belief" axis. | 3-Axis Reconciliation Engine, Composed Master Sheet |
+| **🎙️ Sound Mixer** | `SOUND_ALE_INGESTED`<br/>`POLY_WAV_TRACKS_MAPPED`<br/>`WILD_TRACK_LOGGED`<br/>`TIMECODE_SYNC_ASSERTED` | Ingests Sound Devices 8-Series BEXT logs, maps ISO tracks (Boom, Lav 1, Lav 2), logs Wild Tracks (`WT 104`), asserts audio existence. | Card & Roll Map, Sequences Matrix, Audio Verifier |
+| **💾 DIT & Data Manager** | `CARD_OFFLOAD_VERIFIED`<br/>`SILVERSTACK_MANIFEST_INGESTED`<br/>`CHECKSUM_VALIDATED`<br/>`RAW_CLIP_REGISTERED` | Offloads camera magazines ($A031$), computes MD5/XXHash64 checksums, parses Silverstack XML manifests, asserts "Physical Existence" axis. | Master Sheet, Roll Map, Storage Verifier |
+| **✂️ Editor & Post Supervisor** | `DISCREPANCY_INSPECTED`<br/>`OVERRIDE_APPLIED`<br/>`CONSENSUS_REACHED`<br/>`MASTER_CONFORM_LOCKED` | Inspects 3-Axis conflicts (e.g. False Start vs Good, missing audio roll), overrides with editorial audit rationale, and locks master conform ledger. | Discrepancy Hub, Master Sheet, Editorial Export |
+| **🤖 Autonomous Sentinel (Lighthouse)** | `3AXIS_SCAN_COMPLETED`<br/>`SYNC_LAG_ALERTED`<br/>`TELEMETRY_EMITTED` | Background event loop continuously scanning Intent ⟷ Belief ⟷ Existence for silent omissions and pushes lag telemetry to Grafana Labs. | Grafana Dashboards, Crew Alert Notifications |
 
 ---
 
@@ -155,67 +151,67 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    subgraph Producers["1. Event Producers"]
-        P1["Document Parser"]
-        P2["3-Axis Reconciliation"]
-        P3["Consensus Hub"]
-        P4["Previz Studio"]
+    subgraph Producers["1. Multi-Persona Event Producers"]
+        P1["Director / DoP<br/>(Screenplay & Previz)"]
+        P2["Script Supervisor<br/>(Lined Logs & Takes)"]
+        P3["Sound Mixer<br/>(ALE & Multi-Track)"]
+        P4["DIT / Lab<br/>(Silverstack Offloads)"]
+        P5["Editor / Post<br/>(Discrepancy Triage)"]
     end
 
-    subgraph EventSpine["2. ClickHouse Event Spine (Immutable)"]
+    subgraph EventSpine["2. ClickHouse Event Spine (Immutable Append-Only)"]
         direction TB
-        E1["#8492 [TAKE_EXTRACTED]<br/>Slate 27/3 • Take 3"]
-        E2["#8493 [DISCREPANCY_FLAGGED]<br/>False Start vs Good"]
-        E3["#8494 [PREVIZ_GENERATED]<br/>Cam C 85mm T1.4"]
-        E4["#8495 [DISCREPANCY_RESOLVED]<br/>Consensus Recorded"]
-        E1 --> E2 --> E3 --> E4
+        E1["#1040 [SCREENPLAY_PARSED] Scene 1 & 2 • 3 Cast"]
+        E2["#1041 [TAKE_LOGGED] Slate 101/1 • ⭐ Circled"]
+        E3["#1042 [FALSE_START_RECORDED] Slate 101/2 • 'Aborted'"]
+        E4["#1043 [DISCREPANCY_FLAGGED] Take 2 Belief vs Sound"]
+        E5["#1044 [CAMERA_ANGLE_ADDED] Setup 1 • Cam D Crane"]
+        E6["#1045 [DISCREPANCY_RESOLVED] Consensus Recorded"]
+        E1 --> E2 --> E3 --> E4 --> E5 --> E6
     end
 
-    subgraph Broker["3. LiveEventBroker (SSE)"]
-        B1["/api/events/subscribe"]
+    subgraph Broker["3. LiveEventBroker (Zero-Polling SSE)"]
+        B1["/api/events/subscribe?prod=DEMO_PRODUCTION"]
         B2["Role Filter: SOUND / CAMERA / EDITORIAL"]
-        B3["User Dispatch: @director"]
+        B3["User Dispatch: @assistant_editor"]
     end
 
-    subgraph Consumers["4. Reactive Client State"]
-        C1["Discrepancy Matrix (Auto-Updates)"]
-        C2["Previz Canvas (Real-Time Render)"]
-        C3["Toast Notifications (@director)"]
-        C4["Grafana Telemetry & Sync Lag"]
+    subgraph Consumers["4. Reactive Client State (Push < 5ms)"]
+        C1["🎬 Previz Studio (3-Cam Concept Frames)"]
+        C2["🎞️ Composed Master Sheet (Live Ledger)"]
+        C3["🚨 3-Axis Discrepancy Matrix (Auto-Resolves)"]
+        C4["📊 Grafana Telemetry & Sync Lag Monitors"]
     end
 
-    Producers -->|append_event| EventSpine
+    Producers -->|POST /api/events/publish| EventSpine
     EventSpine -->|broadcast| Broker
-    Broker -->|Server-Sent Events| Consumers
+    Broker -->|Server-Sent Events (SSE)| Consumers
 ```
 
 ---
 
 ## ✨ Core Innovations & Capabilities
 
-### 1. 🔍 3-Axis Discrepancy Reconciliation Engine
+### 1. 🎬 Dual-Pillar Architectural Experience
+CineSpine decouples filmmaking operations into two distinct, distraction-free hero workspaces:
+* **Pillar 1: 🎬 Screenplay & Previz Studio**: A pristine creative cockpit for Directors, Screenwriters, and Cinematographers to decompose scripts, profile actors, configure optics, and generate multi-angle camera concepts.
+* **Pillar 2: 🎞️ Set & Editorial Spine**: An analytical operational hub for DITs, Script Supervisors, Sound Recordists, and Assistant Editors featuring the Composed Master Sheet, Sequences Log Matrix, Card & Roll Map, Active Discrepancies Hub, and DIT search engine.
+
+### 2. 🎥 Multi-Camera Previz & Master DoP Studio
+* **Multi-Format Screenplay Ingestion:** Parses `.fountain`, `.md` (Markdown), `.txt` (Plaintext), `.pdf`, and `.fdx` (Final Draft) scripts.
+* **Autonomous & Dynamic Multi-Camera Rig Management:**
+  * Generates synchronized **Camera A** ($28\text{mm}$ Wide Master), **Camera B** ($50\text{mm}$ Medium / OTS), and **Camera C** ($85\text{mm}$ Profile / Macro).
+  * **Add & Remove Cameras Dynamically:** Add **Camera D (Crane / Wide POV)**, **Camera E (Extreme Close-Up Macro)**, or **Camera F (Steadicam)** per scene, or remove unneeded cameras with automatic re-focusing.
+  * **1-Click Batch Render:** Render concepts for all cameras ($A, B, C, D\dots$) simultaneously in parallel.
+* **DoP Framing & Master Optical Controls:**
+  * **Aspect Ratio Selector ($2.39:1$ Scope, $1.85:1$ Flat, $16:9$ UHD, $4:3$ Academy)** located inside the DoP Studio.
+  * Real-time optical tuners: Lens focal lengths ($18\text{mm}–135\text{mm}$), Apertures ($T1.3–T11$), Color temperatures ($2800\text{K}–7500\text{K}$), Key-to-fill lighting ratios ($1:1$ to $16:1$), and film stock LUT emulations.
+* **Persistent Character Consistency:** Locks character physical traits and headshot profiles so all generated camera concepts enforce consistent actor appearance.
+
+### 3. 🔍 3-Axis Discrepancy Reconciliation Engine
 * Reconciles Intent (Planned), Belief (Logged on set), and Existence (Stored on disk) with sub-millisecond precision.
 * Catches silent false starts, unlinked audio tracks, timecode drift, roll name collisions, and missing coverage.
 * Features an interactive **Consensus & Resolution Triage Hub** for Assistant Editors, DITs, and Post Supervisors.
-
-### 2. 🎭 Cast Profiling & Character Consistency Studio
-* **Automatic Cast Detection:** Extracts all characters, speech cues, dialogue line counts, and scene presence across the entire screenplay.
-* **Rich Character Visual Customizer:** Polish each actor's physical build, hair, wardrobe, props, facial features, lighting catchlights, and personality traits.
-* **Persistent Visual Consistency in Gen-AI:** Every photorealistic still rendered for Camera A, B, or C automatically enforces the locked character visual profiles for characters present in that setup.
-
-### 3. 🎥 AI Multi-Camera Previz & Master DoP Studio
-* **Multi-Format Screenplay Ingestion:** Ingests `.fountain`, `.md` (Markdown), `.txt` (Plaintext), `.pdf`, and `.fdx` (Final Draft) scripts.
-* **Autonomous 3-Camera Rig Coverage (Cameras A, B, C):**
-  * **Camera A (Master Wide):** $24\text{mm}–35\text{mm}$, spatial architecture, blocking, motivated master lighting.
-  * **Camera B (Medium / OTS):** $50\text{mm}–75\text{mm}$, character emotional reaction, dialogue depth, over-the-shoulder framing.
-  * **Camera C (Tactile Macro / Dutch Angle):** $85\text{mm}–100\text{mm}$, shallow depth of field, high-tension inserts, eye catchlights.
-* **Master DoP Cinematography Matrix:**
-  * Curated master styles: *Roger Deakins, David Fincher, Greig Fraser, Gordon Willis, Emmanuel Lubezki, Wes Anderson*.
-  * Technical controls: Color temperatures ($3200\text{K}–6500\text{K}$), Key-to-Fill lighting contrast ratios ($1:1$ to $16:1$), and 35mm film stock LUT emulations (*Kodak Vision3 500T 5219, Fujifilm Eterna, Bleach Bypass*).
-* **Interactive Prompt Console & Real-Time AI Generation:**
-  * Two-way editable prompt editor with keyboard shortcuts (`Ctrl + Enter`).
-  * One-click cinematic modifier chips (`+ Volumetric Haze`, `+ Chiaroscuro Rim Light`, `+ Anamorphic Streak Flare`, `+ Close-Up Eye Catchlights`).
-  * Instant photorealistic image generation via **Google Imagen 3 (`imagen-3.0-generate-002`)** and cloud **FLUX.1 Diffusion**.
 
 ### 4. 📡 Append-Only Event Spine & Real-Time SSE Bus
 * Backed by **ClickHouse** and SQLite for zero-data-loss event streaming.

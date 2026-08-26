@@ -4,9 +4,16 @@
 
 ---
 
-## 🎬 Animated System Architecture (SMIL SVG)
+## 🎬 Animated System Architecture & User Event Flows (SMIL SVG)
 
+### 1. Multi-Persona User Event Flows & Append-Only Event Spine
+![CineSpine Multi-Persona User Event Flows](architecture/cinespine-user-event-flows-animated.svg)
+
+### 2. End-to-End System Architecture (Production to Cloud)
 ![CineSpine Animated Architecture Diagram](architecture/cinespine-architecture-animated.svg)
+
+### 3. Event System & Real-Time SSE Broker
+![CineSpine Event System Animated](architecture/cinespine-event-system-animated.svg)
 
 ---
 
