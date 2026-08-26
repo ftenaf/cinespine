@@ -325,13 +325,6 @@ export const ScriptStudio: React.FC = () => {
     }
   };
 
-  // Run AI Breakdown on Current Active Scene
-  const handleBreakdownCurrentScene = async () => {
-    const activeSc = parsedScenes[selectedSceneIndex];
-    if (activeSc) {
-      await handleBreakdownScene(activeSc, selectedSceneIndex);
-    }
-  };
 
   // Synthesize Character Visual Details String for Active Scene
   const getActiveCharacterDetails = (sceneChars?: string[]): string => {
@@ -612,7 +605,7 @@ export const ScriptStudio: React.FC = () => {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isUploading}
-            className="px-3 py-1.5 text-xs font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-200 rounded-md border border-purple-500/40 transition flex items-center gap-1.5 shadow-sm"
+            className="px-3.5 py-1.5 text-xs font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-200 rounded-md border border-purple-500/40 transition flex items-center gap-1.5 shadow-sm"
           >
             <Upload className={`w-3.5 h-3.5 text-purple-400 ${isUploading ? 'animate-bounce' : ''}`} />
             {isUploading ? 'Uploading & Parsing...' : 'Upload Script (.fountain / .md / .txt / .pdf)'}
@@ -623,49 +616,11 @@ export const ScriptStudio: React.FC = () => {
               setUploadedFileName(null);
               handleParseScript(DEMO_FOUNTAIN_SCRIPT);
             }}
-            className="px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md border border-slate-700 transition flex items-center gap-1.5"
+            className="px-3.5 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md border border-slate-700 transition flex items-center gap-1.5"
           >
             <FileText className="w-3.5 h-3.5 text-slate-400" />
             Load Demo Script
           </button>
-
-          {/* Aspect Ratio Selector */}
-          <div className="flex items-center bg-slate-900 border border-slate-700 rounded-md p-0.5">
-            {['2.39:1', '1.85:1', '16:9', '4:3'].map(ar => (
-              <button
-                key={ar}
-                onClick={() => setAspectRatio(ar)}
-                className={`px-2 py-1 text-[11px] font-semibold rounded transition ${
-                  aspectRatio === ar
-                    ? 'bg-purple-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {ar}
-              </button>
-            ))}
-          </div>
-
-          {/* Active Scene Breakdown Button */}
-          {currentScene && (
-            <button
-              onClick={handleBreakdownCurrentScene}
-              disabled={breakingDownSceneMap[currentScene.scene_number]}
-              className="px-4 py-1.5 text-xs font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-md shadow-lg shadow-purple-600/30 transition flex items-center gap-1.5 disabled:opacity-50"
-            >
-              {breakingDownSceneMap[currentScene.scene_number] ? (
-                <>
-                  <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                  Breaking Down Scene {currentScene.scene_number}...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3.5 h-3.5" />
-                  {shotsMap[currentScene.scene_number] ? `Re-Run Breakdown (Sc ${currentScene.scene_number})` : `Breakdown Scene ${currentScene.scene_number}`}
-                </>
-              )}
-            </button>
-          )}
         </div>
       </div>
 
@@ -1366,6 +1321,24 @@ export const ScriptStudio: React.FC = () => {
                   <p className="text-xs text-slate-400 mt-0.5">
                     Define cinematography via Master Presets, Manual Optics Matrix, or Natural Language.
                   </p>
+                </div>
+
+                {/* DoP Aspect Ratio Framing Selector */}
+                <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider px-1.5">Ratio:</span>
+                  {['2.39:1', '1.85:1', '16:9', '4:3'].map(ar => (
+                    <button
+                      key={ar}
+                      onClick={() => setAspectRatio(ar)}
+                      className={`px-2.5 py-1 text-xs font-mono font-bold rounded-lg transition ${
+                        aspectRatio === ar
+                          ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                      }`}
+                    >
+                      {ar}
+                    </button>
+                  ))}
                 </div>
               </div>
 
