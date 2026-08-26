@@ -88,15 +88,16 @@ export default function App() {
   const [reqFilterCategory, setReqFilterCategory] = useState<string>('ALL');
   const [reqSearchQuery, setReqSearchQuery] = useState<string>('');
 
-  // Active View & Filters
-  const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents' | 'requirements' | 'script_studio'>('master');
+  // Top-Level Pillar Navigation: Pre-Production Studio vs Set & Editorial Spine
+  const [currentPillar, setCurrentPillar] = useState<'studio' | 'spine'>('studio');
+
+  // Active View & Filters for Set & Editorial Spine
+  const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents' | 'requirements'>('master');
   const [masterLayout, setMasterLayout] = useState<'grid' | 'slate'>('grid');
   const [focusTakeIndex, setFocusTakeIndex] = useState<number>(0);
   const [selectedSceneFilter, setSelectedSceneFilter] = useState<string>('ALL');
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [selectedCameraAngle, setSelectedCameraAngle] = useState<Record<string, string>>({});
-
-
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCircledOnly, setFilterCircledOnly] = useState(false);
@@ -268,7 +269,8 @@ export default function App() {
     setSearchQuery('');
     setSelectedSceneFilter('ALL');
 
-    // 3. Switch to Master View & Slate Navigator layout
+    // 3. Switch to Set & Editorial Spine Pillar & Master View
+    setCurrentPillar('spine');
     setActiveTab('master');
     setMasterLayout('slate');
 
@@ -709,64 +711,51 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
 
       {/* Top Navigation Bar */}
-      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md px-6 py-3 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-20">
+      <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-6 py-3 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-20">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-3">
-            <div className="bg-blue-600/20 p-2 rounded-xl border border-blue-500/30 text-blue-400">
+            <div className="bg-gradient-to-tr from-purple-600 to-blue-600 p-2 rounded-xl border border-purple-500/30 text-white shadow-lg shadow-purple-500/20">
               <Film className="w-5 h-5" />
             </div>
             <div>
               <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
                 CineSpine
-                <span className="text-[10px] bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono px-1.5 py-0.2 rounded">v0.2</span>
+                <span className="text-[10px] bg-purple-500/20 border border-purple-500/40 text-purple-300 font-mono px-1.5 py-0.2 rounded font-bold">v0.2</span>
               </h1>
               <p className="text-[10px] text-slate-400">
-                {activeProduction.name} — Assistant Editor Card & Discrepancy Hub
+                {currentPillar === 'studio'
+                  ? 'AI Screenplay Breakdown, Cast Profiler & Tri-Modal DoP Previz'
+                  : `${activeProduction.name} — Assistant Editor Card & Discrepancy Hub`}
               </p>
             </div>
           </div>
+        </div>
 
-          {/* Production Selector */}
-          <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-xl p-1 px-2.5">
-            <Clapperboard className="w-4 h-4 text-blue-400" />
-            <select
-              value={selectedProductionId}
-              onChange={e => setSelectedProductionId(e.target.value)}
-              className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer pr-4"
-            >
-              {productions.map(p => (
-                <option key={p.production_id} value={p.production_id} className="bg-slate-900 text-white">
-                  {p.name} ({p.production_id})
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* Center: Top-Level Pillar Navigation Switcher (Hero Toggle) */}
+        <div className="flex items-center bg-slate-950 p-1 rounded-2xl border border-slate-800 shadow-inner">
+          <button
+            onClick={() => setCurrentPillar('studio')}
+            className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold transition shadow-sm ${
+              currentPillar === 'studio'
+                ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 text-white shadow-lg shadow-purple-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-300" />
+            🎬 Screenplay &amp; Previz Studio
+          </button>
 
-          {/* Shoot Day Selector */}
-          <div className="flex items-center gap-1 bg-slate-900/80 border border-slate-800 rounded-xl p-1 px-2">
-            <Calendar className="w-3.5 h-3.5 text-slate-400 mr-1" />
-            <span className="text-xs text-slate-400 font-semibold">Day:</span>
-            {['31', '39'].map(day => (
-              <button
-                key={day}
-                onClick={() => setSelectedDay(day)}
-                className={`px-2 py-0.5 rounded-lg text-xs font-mono font-medium transition ${
-                  selectedDay === day 
-                    ? 'bg-blue-600 text-white shadow-sm' 
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                Day {day}
-              </button>
-            ))}
-            <input
-              type="text"
-              placeholder="Other"
-              value={selectedDay !== '31' && selectedDay !== '39' ? selectedDay : ''}
-              onChange={e => e.target.value && setSelectedDay(e.target.value)}
-              className="w-12 bg-slate-950 border border-slate-700 text-xs px-1.5 py-0.5 rounded text-white font-mono text-center focus:outline-none focus:border-blue-500"
-            />
-          </div>
+          <button
+            onClick={() => setCurrentPillar('spine')}
+            className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold transition shadow-sm ${
+              currentPillar === 'spine'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <Clapperboard className="w-4 h-4 text-blue-300" />
+            🎞️ Set &amp; Editorial Spine
+          </button>
         </div>
 
         <div className="flex items-center gap-2.5">
@@ -786,31 +775,6 @@ export default function App() {
               {liveSyncStatus === 'connected' ? 'Live Sync' : liveSyncStatus === 'connecting' ? 'Connecting...' : 'Offline'}
             </span>
           </div>
-
-          <button 
-            onClick={loadSpineData}
-            className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition"
-            title="Refresh Spine"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-
-          <button 
-            onClick={() => handleSeedDemoDay(selectedDay)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-medium transition"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Seed Day {selectedDay}
-          </button>
-
-          <button 
-            onClick={() => { setIsUploadOpen(true); setUploadFeedback(null); }}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/20 transition"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            Drop Paperwork
-          </button>
-
 
           {/* Notifications Bell */}
           <div className="relative">
@@ -972,161 +936,233 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className={`flex-1 ${activeTab === 'sequences' ? 'w-full max-w-[100%] px-3 sm:px-5 lg:px-6 py-4' : 'max-w-7xl w-full mx-auto p-6'} space-y-5 transition-all duration-150`}>
-        {/* Navigation Tabs & Quick Status */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-3">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveTab('master')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-                activeTab === 'master'
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
-              }`}
-            >
-              <LayoutGrid className="w-4 h-4" />
-              Composed Master Sheet ({takes.length})
-            </button>
+      {/* ===================================================================== */}
+      {/* PILLAR 1: SCREENPLAY & PREVIZ STUDIO (CLEAN, DISTRACTION-FREE WORKSPACE) */}
+      {/* ===================================================================== */}
+      {currentPillar === 'studio' && (
+        <main className="flex-1 w-full h-[calc(100vh-65px)] overflow-hidden bg-[#090D16]">
+          <ScriptStudio />
+        </main>
+      )}
 
-            <button
-              onClick={() => setActiveTab('sequences')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-                activeTab === 'sequences'
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
-              }`}
-            >
-              <Film className="w-4 h-4 text-cyan-400" />
-              Sequences Log Matrix ({sequences.length})
-            </button>
+      {/* ===================================================================== */}
+      {/* PILLAR 2: SET & EDITORIAL SPINE (DIT / POST ASSISTANT EDITOR HUB)      */}
+      {/* ===================================================================== */}
+      {currentPillar === 'spine' && (
+        <main className={`flex-1 ${activeTab === 'sequences' ? 'w-full max-w-[100%] px-3 sm:px-5 lg:px-6 py-4' : 'max-w-7xl w-full mx-auto p-6'} space-y-5 transition-all duration-150`}>
+          {/* Spine Toolbar: Production, Shoot Day & Ingest Controls */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
+            <div className="flex items-center gap-3">
+              {/* Production Selector */}
+              <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-xl p-1 px-3">
+                <Clapperboard className="w-4 h-4 text-blue-400" />
+                <select
+                  value={selectedProductionId}
+                  onChange={e => setSelectedProductionId(e.target.value)}
+                  className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer pr-4"
+                >
+                  {productions.map(p => (
+                    <option key={p.production_id} value={p.production_id} className="bg-slate-900 text-white">
+                      {p.name} ({p.production_id})
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <button
-              onClick={() => setActiveTab('scenes')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-                activeTab === 'scenes'
-                  ? 'bg-blue-600/20 text-blue-300 border border-blue-500/40'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
-              }`}
-            >
-              <Layers className="w-4 h-4" />
-              Card & Roll Map
-            </button>
-
-            <button
-              onClick={() => setActiveTab('discrepancies')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-                activeTab === 'discrepancies'
-                  ? 'bg-red-600/20 text-red-300 border border-red-500/40'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
-              }`}
-            >
-              <AlertTriangle className="w-4 h-4 text-red-400" />
-              Active Discrepancies ({discrepancies.length})
-            </button>
-
-            <button
-              onClick={() => setActiveTab('documents')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-                activeTab === 'documents'
-                  ? 'bg-purple-600/20 text-purple-300 border border-purple-500/40'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
-              }`}
-            >
-              <FileCode className="w-4 h-4" />
-              Source Documents ({documents.length})
-            </button>
-
-            <button
-              onClick={() => setActiveTab('requirements')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-                activeTab === 'requirements'
-                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
-              }`}
-            >
-              <ListTodo className="w-4 h-4 text-purple-400" />
-              Requirements & Alerts ({allRequirements.length})
-              {reqMetrics.open > 0 && (
-                <span className="bg-purple-500/30 text-purple-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-purple-500/40">
-                  {reqMetrics.open} open
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('script_studio')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-                activeTab === 'script_studio'
-                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-600/30 ring-1 ring-purple-400/50'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
-              }`}
-            >
-              <Sparkles className="w-4 h-4 text-amber-300" />
-              Script &amp; Previz Studio
-            </button>
-          </div>
-
-
-          {/* Quick Search & Filters */}
-          <div className="flex items-center gap-2.5">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search scene, slate, card (A120), clip..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="bg-slate-900 border border-slate-700 text-xs pl-8 pr-3 py-1.5 rounded-lg text-white font-mono w-64 focus:outline-none focus:border-blue-500"
-              />
+              {/* Shoot Day Selector */}
+              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1 px-2.5">
+                <Calendar className="w-3.5 h-3.5 text-slate-400 mr-1" />
+                <span className="text-xs text-slate-400 font-semibold">Day:</span>
+                {['31', '39'].map(day => (
+                  <button
+                    key={day}
+                    onClick={() => setSelectedDay(day)}
+                    className={`px-2 py-0.5 rounded-lg text-xs font-mono font-medium transition ${
+                      selectedDay === day 
+                        ? 'bg-blue-600 text-white shadow-sm' 
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    Day {day}
+                  </button>
+                ))}
+                <input
+                  type="text"
+                  placeholder="Other"
+                  value={selectedDay !== '31' && selectedDay !== '39' ? selectedDay : ''}
+                  onChange={e => e.target.value && setSelectedDay(e.target.value)}
+                  className="w-12 bg-slate-900 border border-slate-700 text-xs px-1.5 py-0.5 rounded text-white font-mono text-center focus:outline-none focus:border-blue-500"
+                />
+              </div>
             </div>
 
-            <button
-              onClick={() => setFilterCircledOnly(!filterCircledOnly)}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition flex items-center gap-1 ${
-                filterCircledOnly 
-                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-300' 
-                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              ⭐ Circled
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={loadSpineData}
+                className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition"
+                title="Refresh Spine"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
 
-            <button
-              onClick={() => setFilterWildTracksOnly(!filterWildTracksOnly)}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition flex items-center gap-1 ${
-                filterWildTracksOnly 
-                  ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' 
-                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              🎙️ WT
-            </button>
+              <button 
+                onClick={() => handleSeedDemoDay(selectedDay)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-medium transition"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Seed Day {selectedDay}
+              </button>
 
-            <button
-              onClick={() => setFilterVfxOnly(!filterVfxOnly)}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition flex items-center gap-1 ${
-                filterVfxOnly 
-                  ? 'bg-purple-500/20 border-purple-500/50 text-purple-300' 
-                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              ✨ VFX
-            </button>
-
-            <button
-              onClick={() => setFilterDiscrepancyOnly(!filterDiscrepancyOnly)}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition flex items-center gap-1 ${
-                filterDiscrepancyOnly 
-                  ? 'bg-red-500/20 border-red-500/50 text-red-300' 
-                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              <AlertCircle className="w-3.5 h-3.5" />
-              Discrepancies Only
-            </button>
+              <button 
+                onClick={() => { setIsUploadOpen(true); setUploadFeedback(null); }}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/20 transition"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Drop Paperwork
+              </button>
+            </div>
           </div>
-        </div>
+
+          {/* Spine Sub-Navigation Tabs & Search Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setActiveTab('master')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  activeTab === 'master'
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+                }`}
+              >
+                <LayoutGrid className="w-4 h-4" />
+                Composed Master Sheet ({takes.length})
+              </button>
+
+              <button
+                onClick={() => setActiveTab('sequences')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  activeTab === 'sequences'
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+                }`}
+              >
+                <Film className="w-4 h-4 text-cyan-400" />
+                Sequences Log Matrix ({sequences.length})
+              </button>
+
+              <button
+                onClick={() => setActiveTab('scenes')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  activeTab === 'scenes'
+                    ? 'bg-blue-600/20 text-blue-300 border border-blue-500/40'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+                }`}
+              >
+                <Layers className="w-4 h-4" />
+                Card &amp; Roll Map
+              </button>
+
+              <button
+                onClick={() => setActiveTab('discrepancies')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  activeTab === 'discrepancies'
+                    ? 'bg-red-600/20 text-red-300 border border-red-500/40'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+                }`}
+              >
+                <AlertTriangle className="w-4 h-4 text-red-400" />
+                Active Discrepancies ({discrepancies.length})
+              </button>
+
+              <button
+                onClick={() => setActiveTab('documents')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  activeTab === 'documents'
+                    ? 'bg-purple-600/20 text-purple-300 border border-purple-500/40'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+                }`}
+              >
+                <FileCode className="w-4 h-4" />
+                Source Documents ({documents.length})
+              </button>
+
+              <button
+                onClick={() => setActiveTab('requirements')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  activeTab === 'requirements'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+                }`}
+              >
+                <ListTodo className="w-4 h-4 text-purple-400" />
+                Requirements &amp; Alerts ({allRequirements.length})
+                {reqMetrics.open > 0 && (
+                  <span className="bg-purple-500/30 text-purple-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-purple-500/40">
+                    {reqMetrics.open} open
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Set & Editorial Quick Search & Filters */}
+            <div className="flex items-center gap-2.5">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search scene, slate, card (A120), clip..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 text-xs pl-8 pr-3 py-1.5 rounded-lg text-white font-mono w-64 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <button
+                onClick={() => setFilterCircledOnly(!filterCircledOnly)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition flex items-center gap-1 ${
+                  filterCircledOnly 
+                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-300' 
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                ⭐ Circled
+              </button>
+
+              <button
+                onClick={() => setFilterWildTracksOnly(!filterWildTracksOnly)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition flex items-center gap-1 ${
+                  filterWildTracksOnly 
+                    ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' 
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                🎙️ WT
+              </button>
+
+              <button
+                onClick={() => setFilterVfxOnly(!filterVfxOnly)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition flex items-center gap-1 ${
+                  filterVfxOnly 
+                    ? 'bg-purple-500/20 border-purple-500/50 text-purple-300' 
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                ✨ VFX
+              </button>
+
+              <button
+                onClick={() => setFilterDiscrepancyOnly(!filterDiscrepancyOnly)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition flex items-center gap-1 ${
+                  filterDiscrepancyOnly 
+                    ? 'bg-red-500/20 border-red-500/50 text-red-300' 
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                <AlertCircle className="w-3.5 h-3.5" />
+                Discrepancies Only
+              </button>
+            </div>
+          </div>
 
         {/* TAB 0: COMPOSED MASTER SHEET (ALL DATA + VISUAL THUMBNAILS) */}
         {activeTab === 'master' && (
@@ -3008,14 +3044,8 @@ export default function App() {
             )}
           </section>
         )}
-
-        {/* TAB 6: SCRIPT BREAKDOWN & PREVIZ STUDIO VIEW */}
-        {activeTab === 'script_studio' && (
-          <section className="h-[calc(100vh-145px)] -mx-6 -mb-6 mt-1 overflow-hidden border border-slate-800 shadow-2xl rounded-xl">
-            <ScriptStudio />
-          </section>
-        )}
       </main>
+      )}
 
 
       {/* DETAILED 3-AXIS WITNESS & CARD LOCATOR DRAWER */}
