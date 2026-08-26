@@ -1554,6 +1554,15 @@ class GenerateStoryboardRequest(BaseModel):
     aspect_ratio: str = "2.39:1"
 
 
+@router.get("/integrations/google-cloud")
+def get_google_cloud_status():
+    """
+    Returns live Google Cloud & Gemini Enterprise Agent Platform runtime integration telemetry.
+    """
+    from backend.app.integrations.google_cloud import get_google_cloud_runtime_status
+    return get_google_cloud_runtime_status()
+
+
 @router.post("/script/parse", response_model=Screenplay)
 def parse_script(req: ScriptParseRequest):
     """
@@ -1565,10 +1574,23 @@ def parse_script(req: ScriptParseRequest):
 @router.post("/script/upload", response_model=Screenplay)
 async def upload_script_file(file: UploadFile = File(...)):
     """
-    Uploads and parses a screenplay file (.fountain, .txt, .pdf, .fdx) into structured scenes.
+    Uploads and parses a screenplay file (.fountain, .txt, .pdf, .fdx) into structured scenes,
+    and archives the source document to Google Cloud Storage.
     """
+    from backend.app.integrations.google_cloud import upload_media_to_google_cloud_storage
+
     file_bytes = await file.read()
-    return parse_screenplay_file(file_bytes=file_bytes, filename=file.filename or "Screenplay")
+    filename = file.filename or "Screenplay"
+
+    # Archive original asset to Google Cloud Storage
+    gcs_result = upload_media_to_google_cloud_storage(
+        file_bytes=file_bytes,
+        destination_blob_name=f"screenplays/{filename}",
+        content_type="application/pdf" if filename.lower().endswith(".pdf") else "text/plain"
+    )
+
+    screenplay = parse_screenplay_file(file_bytes=file_bytes, filename=filename)
+    return screenplay
 
 
 @router.get("/script/presets")

@@ -142,35 +142,56 @@ async def generate_ai_cinematic_image(
         except Exception as e:
             print(f"[AI Image Service] OpenAI DALL-E 3 error: {e}")
 
-    # 3. Check for Google Gemini API Key
+    # 3. Check for Google Gemini API Key via google.genai SDK
     gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if gemini_key:
         try:
-            # Try Google Imagen 3 API
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key={gemini_key}"
-                res = await client.post(
-                    url,
-                    headers={"Content-Type": "application/json"},
-                    json={
-                        "instances": [{"prompt": compiled_prompt[:950]}],
-                        "parameters": {
-                            "sampleCount": 1,
-                            "aspectRatio": "16:9" if aspect_ratio in ["2.39:1", "16:9", "1.85:1"] else "4:3",
-                            "personGeneration": "ALLOW_ADULT"
-                        }
-                    }
+            from google import genai
+            client = genai.Client(api_key=gemini_key)
+            result = client.models.generate_images(
+                model="imagen-3.0-generate-002",
+                prompt=compiled_prompt[:950],
+                config=dict(
+                    number_of_images=1,
+                    aspect_ratio="16:9" if aspect_ratio in ["2.39:1", "16:9", "1.85:1"] else "4:3",
+                    person_generation="ALLOW_ADULT"
                 )
-                if res.status_code == 200:
-                    data = res.json()
-                    b64_img = data["predictions"][0]["bytesBase64Encoded"]
-                    return {
-                        "image_url": f"data:image/jpeg;base64,{b64_img}",
-                        "compiled_prompt": compiled_prompt,
-                        "provider": "Google Imagen 3 (Gemini)"
-                    }
+            )
+            if result.generated_images:
+                img_bytes = result.generated_images[0].image.image_bytes
+                b64_img = base64.b64encode(img_bytes).decode("utf-8")
+                return {
+                    "image_url": f"data:image/jpeg;base64,{b64_img}",
+                    "compiled_prompt": compiled_prompt,
+                    "provider": "Google Cloud Imagen 3 (google.genai SDK)"
+                }
         except Exception as e:
-            print(f"[AI Image Service] Google Imagen 3 error: {e}")
+            print(f"[AI Image Service] google.genai Imagen 3 SDK error (falling back to REST): {e}")
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key={gemini_key}"
+                    res = await client.post(
+                        url,
+                        headers={"Content-Type": "application/json"},
+                        json={
+                            "instances": [{"prompt": compiled_prompt[:950]}],
+                            "parameters": {
+                                "sampleCount": 1,
+                                "aspectRatio": "16:9" if aspect_ratio in ["2.39:1", "16:9", "1.85:1"] else "4:3",
+                                "personGeneration": "ALLOW_ADULT"
+                            }
+                        }
+                    )
+                    if res.status_code == 200:
+                        data = res.json()
+                        b64_img = data["predictions"][0]["bytesBase64Encoded"]
+                        return {
+                            "image_url": f"data:image/jpeg;base64,{b64_img}",
+                            "compiled_prompt": compiled_prompt,
+                            "provider": "Google Cloud Imagen 3 (Gemini Enterprise)"
+                        }
+            except Exception as e2:
+                print(f"[AI Image Service] Google Imagen 3 REST error: {e2}")
 
     # 4. Real-Time Cloud Flux.1 / SD Engine (High-Performance Zero-Key Cloud Endpoint)
     try:
