@@ -27,9 +27,83 @@ When a script supervisor notes a take as *False Start*, but the sound recordist 
 **CineSpine** solves this by enforcing a single immutable truth:  
 > *"A document is a witness. Witnesses disagree, and **the disagreement is the product**."*
 
+## 🏛️ Animated System Architecture & C4 Model
+
+![CineSpine Animated Architecture Diagram](docs/architecture/cinespine-architecture-animated.svg)
+
+> *See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for full C4 Level 1–4 diagrams and sequence flows.*
+
+### Level 1: System Context Diagram
+
+```mermaid
+C4Context
+  title System Context Diagram - CineSpine Production Intelligence
+
+  Person(script_sup, "Script Supervisor", "Logs takes, slates, lined pages, and circled takes on set")
+  Person(sound_mixer, "Sound Mixer", "Records multi-track poly-WAVs and exports Sound ALE / CSV logs")
+  Person(camera_crew, "Camera Department", "Generates ZoeLog CSV reports and camera card manifests")
+  Person(dit_crew, "DIT / Data Manager", "Offloads cards, computes checksums, and produces Silverstack reports")
+  Person(editorial, "Editorial Team", "Assistant & Lead Editors cutting dailies and resolving discrepancies")
+  Person(director, "Director / DoP", "Decomposes screenplay, defines optics, reviews 3-camera AI previz")
+
+  System(cinespine, "CineSpine Platform", "Append-only event spine, 3-axis discrepancy reconciler, and multi-camera AI previz studio")
+
+  System_Ext(sound_dev, "Sound Devices 664 / 8-Series", "Generates BEXT timecoded poly-WAVs and Sound Reports")
+  System_Ext(silverstack, "Pomfort Silverstack Lab", "Generates offload volume XMLs and thumbnail contact sheets")
+  System_Ext(gemini_api, "Google Cloud Gemini 2.0 & Imagen 3", "Extracts semantic narrative tension & synthesizes 35mm concept stills")
+  System_Ext(gcs_bucket, "Google Cloud Storage (GCS)", "Archives screenplay PDFs and verified production media assets")
+  System_Ext(clickhouse_cloud, "ClickHouse Cloud", "Analytical OLAP storage for historical event replays & audit logs")
+  System_Ext(grafana_cloud, "Grafana Cloud Lighthouse", "Real-time production sync lag and telemetry dashboards")
+
+  Rel(script_sup, cinespine, "Uploads Daily Timecode Logs & Lined Pages", "PDF/Text")
+  Rel(sound_mixer, cinespine, "Uploads Sound ALE Reports & Day Logs", "CSV/ALE")
+  Rel(camera_crew, cinespine, "Uploads ZoeLog Camera Reports", "CSV")
+  Rel(dit_crew, cinespine, "Uploads Silverstack Volume & Thumbnail Reports", "XML/PDF")
+  Rel(editorial, cinespine, "Inspects takes, tracks requirements, resolves discrepancies", "HTTPS / SSE")
+  Rel(director, cinespine, "Uploads screenplay, selects DoP styles, edits camera prompts", "HTTPS / UI")
+
+  Rel(cinespine, gemini_api, "Executes semantic breakdown & Imagen 3 synthesis", "google.genai SDK")
+  Rel(cinespine, gcs_bucket, "Archives source scripts & media bytes", "google.cloud.storage SDK")
+  Rel(cinespine, clickhouse_cloud, "Appends immutable production events", "Native / HTTPS")
+  Rel(cinespine, grafana_cloud, "Pushes operational telemetry & lag metrics", "Prometheus / OTLP")
+```
+
 ---
 
-## 🏛️ System Architecture: The 3 Axes of Cinema Truth
+### Level 2: Container Diagram
+
+```mermaid
+C4Container
+  title Container Diagram - CineSpine Technical Architecture
+
+  Person(user, "Production Crew & Directors", "Interacts via web browser")
+
+  Container_Boundary(cinespine_app, "CineSpine Platform") {
+    Container(spa, "CineSpine Frontend Studio", "React 18, Vite, Tailwind CSS, Lucide Icons", "Single-Page App offering Script Studio, Slate Navigator, Discrepancy Matrix, and Previz Lightbox")
+    Container(api_gateway, "FastAPI Backend Gateway", "FastAPI, Python 3.11/3.14, Uvicorn", "Provides REST endpoints for takes, sequences, discrepancies, documents, and script breakdown")
+    Container(sse_broker, "Live Event Broker", "Async Server-Sent Events (SSE)", "Maintains push connections scoped by production/day/user with zero-polling sync")
+    Container(dispatcher, "Ingestion & Dispatch Pipeline", "Python Async Event Bus", "Classifies documents, validates schemas, and routes to deterministic extractors")
+    Container(parsers, "Deterministic & Screenplay Extractors", "Python, pdfplumber, pypdf, Fountain parser", "Normalizes slates, takes, rolls, timecodes, and screenplay scenes")
+    Container(recon_engine, "3-Axis Reconciliation Engine", "Python Rule Engine", "Cross-references Intent, Belief, and Existence to flag conflicts")
+    Container(previz_engine, "AI Multi-Camera Previz Synthesizer", "google.genai SDK, DoP Matrix", "Compiles 3-camera setups (Cam A/B/C) and renders photorealistic stills")
+    ContainerDb(event_store, "Append-Only Event Spine", "SQLite / ClickHouse DB", "Immutable store for raw documents, parsed take facts, discrepancies, and audit trails")
+  }
+
+  Rel(user, spa, "Edits camera prompts, views dailies, resolves conflicts", "HTTPS")
+  Rel(spa, api_gateway, "Queries takes, sequences, requirements, script breakdown", "JSON / HTTPS")
+  Rel(spa, sse_broker, "Subscribes to live event stream (/api/events/subscribe)", "text/event-stream")
+  Rel(api_gateway, sse_broker, "Publishes lifecycle events (Ingest, Resolve, Alert)")
+  Rel(api_gateway, dispatcher, "Dispatches uploaded documents")
+  Rel(dispatcher, parsers, "Executes parsing & normalization")
+  Rel(parsers, event_store, "Appends normalized take and document facts")
+  Rel(recon_engine, event_store, "Scans multi-witness facts, appends discrepancies")
+  Rel(api_gateway, previz_engine, "Dispatches multi-camera breakdown & image generation")
+  Rel(previz_engine, event_store, "Persists generated camera coverage packs")
+```
+
+---
+
+### Flow Architecture: The 3 Axes of Cinema Truth
 
 ```mermaid
 flowchart TB
