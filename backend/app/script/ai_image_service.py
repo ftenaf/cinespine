@@ -248,3 +248,53 @@ async def generate_ai_cinematic_image(
         "compiled_prompt": compiled_prompt,
         "provider": "CineSpine Photorealistic Master Stills (Fallback)"
     }
+
+
+async def generate_character_portrait_image(
+    character_name: str,
+    actor_reference: str,
+    look_and_costume: str,
+    facial_features: str,
+    role: str = "Key Character",
+    dop_preset: str = "Roger Deakins",
+    lighting_ratio: str = "4:1",
+    color_temp_k: int = 5600,
+    lut_emulation: str = "Kodak Vision3 500T 5219",
+    custom_mood: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Generates a high-fidelity 35mm motion picture character portrait / headshot
+    locking the actor appearance, facial features, costume, and DoP portrait lighting.
+    """
+    tokens = [
+        f"Cinematic 35mm motion picture character portrait headshot of {character_name}",
+        f"Role: {role}",
+        f"Actor Screen Reference: {actor_reference}",
+        f"Costume and Wardrobe: {look_and_costume}",
+        f"Facial Features and Catchlights: {facial_features}",
+        f"85mm portrait prime lens at T1.4 aperture, creamy bokeh background",
+        f"Cinematography Style: {dop_preset} portrait lighting",
+        f"Color Temperature: {color_temp_k}K, {lighting_ratio} lighting contrast ratio",
+        f"{lut_emulation} film stock grade",
+        f"8k resolution, eye catchlights, authentic 35mm film grain, masterpiece cinema lookbook portrait still"
+    ]
+    if custom_mood:
+        tokens.append(f"Mood: {custom_mood}")
+
+    raw_portrait_prompt = ", ".join(t.strip() for t in tokens if t.strip())
+
+    return await generate_ai_cinematic_image(
+        prompt=raw_portrait_prompt,
+        scene_number="PORTRAIT",
+        shot_number="1",
+        shot_size="CU",
+        focal_length=85,
+        aperture="T1.4",
+        dop_preset=dop_preset,
+        camera_letter="C",
+        lighting_ratio=lighting_ratio,
+        color_temp_k=color_temp_k,
+        lut_emulation=lut_emulation,
+        aspect_ratio="16:9",
+        character_details=f"{character_name} ({actor_reference}, {look_and_costume}, {facial_features})"
+    )

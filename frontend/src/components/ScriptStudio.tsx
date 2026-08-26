@@ -20,6 +20,14 @@ export interface DialogueLine {
   line: string;
 }
 
+export interface CharacterRelationship {
+  target_character: string;
+  relationship_type: string;
+  dynamic_description: string;
+  shared_scenes: string[];
+  interaction_count: number;
+}
+
 export interface CharacterProfile {
   id: string;
   name: string;
@@ -28,9 +36,11 @@ export interface CharacterProfile {
   look_and_costume: string;
   facial_features: string;
   personality_traits: string[];
+  relationships?: CharacterRelationship[];
   dialogue_count: number;
   scenes_present: string[];
   avatar_url?: string;
+  portrait_prompt?: string;
 }
 
 export interface ScreenplayScene {
@@ -347,6 +357,39 @@ export const ScriptStudio: React.FC = () => {
     const current = selectedCam.prompt.trim();
     const updated = current ? `${current}, ${modifier}` : modifier;
     handleUpdateActivePrompt(updated);
+  };
+
+  // Generate Photorealistic 35mm Character Portrait
+  const [generatingPortraitMap, setGeneratingPortraitMap] = useState<Record<string, boolean>>({});
+
+  const handleGenerateCharacterPortrait = async (char: CharacterProfile) => {
+    setGeneratingPortraitMap(prev => ({ ...prev, [char.id]: true }));
+    try {
+      const res = await fetch('/api/script/characters/generate-portrait', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          character_id: char.id,
+          character_name: char.name,
+          actor_reference: char.actor_reference,
+          look_and_costume: char.look_and_costume,
+          facial_features: char.facial_features,
+          role: char.role,
+          dop_preset: selectedPreset
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const updatedChar = { ...char, avatar_url: data.image_url, portrait_prompt: data.compiled_prompt };
+        setCharacters(prev => prev.map(c => (c.id === char.id ? updatedChar : c)));
+        setCharSaveSuccess(char.id);
+        setTimeout(() => setCharSaveSuccess(null), 3000);
+      }
+    } catch (err) {
+      console.error('Failed to generate portrait:', err);
+    } finally {
+      setGeneratingPortraitMap(prev => ({ ...prev, [char.id]: false }));
+    }
   };
 
   // Update Character Profile Handler
@@ -669,6 +712,66 @@ export const ScriptStudio: React.FC = () => {
                   </div>
                 )}
 
+                {/* Portrait Showcase Card & Generation */}
+                <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-2xl flex items-center justify-between gap-6 shadow-xl">
+                  <div className="flex items-center gap-5">
+                    <div className="relative w-28 h-28 rounded-xl overflow-hidden border-2 border-purple-500/50 bg-black shrink-0 shadow-lg group">
+                      {selectedCharacter.avatar_url ? (
+                        <img
+                          src={selectedCharacter.avatar_url}
+                          alt={selectedCharacter.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-purple-900 to-indigo-900 font-black text-3xl text-purple-200">
+                          {selectedCharacter.name.charAt(0)}
+                        </div>
+                      )}
+                      {selectedCharacter.avatar_url && (
+                        <button
+                          onClick={() =>
+                            setEnlargedImage({
+                              url: selectedCharacter.avatar_url!,
+                              prompt: selectedCharacter.portrait_prompt || `Photorealistic portrait of ${selectedCharacter.name}`,
+                              title: `${selectedCharacter.name} - 35mm Master Headshot`
+                            })
+                          }
+                          className="absolute top-1.5 right-1.5 p-1 bg-black/80 hover:bg-black text-white rounded opacity-0 group-hover:opacity-100 transition"
+                        >
+                          <Maximize2 className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-full">
+                        35mm Cinematic Character Still
+                      </span>
+                      <h3 className="text-sm font-bold text-white mt-1.5">Photorealistic Portrait &amp; Lookbook Headshot</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Generates a dedicated 85mm T1.4 portrait frame locking the actor's facial likeness and wardrobe for all camera coverage.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => handleGenerateCharacterPortrait(selectedCharacter)}
+                    disabled={generatingPortraitMap[selectedCharacter.id]}
+                    className="px-4 py-2.5 text-xs font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-xl shadow-lg shadow-purple-600/30 transition flex items-center gap-2 shrink-0 disabled:opacity-50"
+                  >
+                    {generatingPortraitMap[selectedCharacter.id] ? (
+                      <>
+                        <RotateCw className="w-4 h-4 animate-spin" />
+                        Rendering 35mm Portrait...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        Generate AI Portrait Still
+                      </>
+                    )}
+                  </button>
+                </div>
+
                 {/* Form Fields */}
                 <div className="space-y-4">
                   <div>
@@ -687,7 +790,7 @@ export const ScriptStudio: React.FC = () => {
                   <div>
                     <label className="block text-xs font-bold text-slate-300 mb-1">Actor Screen Reference &amp; Physical Appearance</label>
                     <textarea
-                      rows={3}
+                      rows={2}
                       value={selectedCharacter.actor_reference}
                       onChange={e => {
                         const val = e.target.value;
@@ -742,6 +845,74 @@ export const ScriptStudio: React.FC = () => {
                       className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500"
                     />
                   </div>
+                </div>
+
+                {/* Character Relationship Network Section */}
+                <div className="pt-6 border-t border-slate-800 space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Users className="w-4 h-4 text-purple-400" />
+                        Dramatic Relationships &amp; Co-Occurrences ({selectedCharacter.relationships?.length || 0})
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        Tracks co-present scene blocks, dialogue interaction turns, and dramatic relational dynamics.
+                      </p>
+                    </div>
+                  </div>
+
+                  {selectedCharacter.relationships && selectedCharacter.relationships.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      {selectedCharacter.relationships.map((rel, rIdx) => {
+                        const targetObj = characters.find(c => c.name === rel.target_character);
+                        return (
+                          <div
+                            key={rIdx}
+                            className="p-3.5 bg-slate-900/70 border border-slate-800 rounded-xl space-y-2 hover:border-purple-500/50 transition"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-full bg-purple-950 border border-purple-500/40 flex items-center justify-center font-bold text-xs text-purple-200">
+                                  {rel.target_character.charAt(0)}
+                                </div>
+                                <h4 className="text-xs font-bold text-white">{rel.target_character}</h4>
+                              </div>
+                              {targetObj && (
+                                <button
+                                  onClick={() => setSelectedCharId(targetObj.id)}
+                                  className="text-[10px] font-bold text-purple-400 hover:text-purple-300 transition"
+                                >
+                                  Inspect →
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap gap-1">
+                              <span className="px-1.5 py-0.5 text-[9px] font-extrabold bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">
+                                {rel.relationship_type}
+                              </span>
+                              <span className="px-1.5 py-0.5 text-[9px] font-bold bg-slate-800 text-slate-300 rounded border border-slate-700">
+                                {rel.shared_scenes.length > 0 ? `Scenes: ${rel.shared_scenes.join(', ')}` : 'Shared Scene'}
+                              </span>
+                              {rel.interaction_count > 0 && (
+                                <span className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">
+                                  {rel.interaction_count} Dialogue Turns
+                                </span>
+                              )}
+                            </div>
+
+                            <p className="text-[11px] text-slate-300 line-clamp-2 leading-relaxed">
+                              {rel.dynamic_description}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-slate-900/40 border border-slate-800 rounded-xl text-center text-xs text-slate-400">
+                      No direct multi-character interactions detected in script for {selectedCharacter.name}.
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (

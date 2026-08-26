@@ -1,10 +1,10 @@
 """
 Screenplay & Fountain Parser Module for CineSpine.
 Parses standard Screenplay formatting, Markdown (.md), Plaintext (.txt), and Fountain syntax into structured scenes,
-headings, action blocks, dialogues, and automatically extracts detailed Character Profiles.
+headings, action blocks, dialogues, Character Profiles, and Character Relationship networks.
 """
 import re
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Set
 from pydantic import BaseModel, Field
 
 
@@ -12,6 +12,14 @@ class DialogueLine(BaseModel):
     character: str
     parenthetical: Optional[str] = None
     line: str
+
+
+class CharacterRelationship(BaseModel):
+    target_character: str
+    relationship_type: str = "Key Dynamic"
+    dynamic_description: str = "Shared dramatic arc and scene interaction"
+    shared_scenes: List[str] = Field(default_factory=list)
+    interaction_count: int = 0
 
 
 class CharacterProfile(BaseModel):
@@ -22,9 +30,11 @@ class CharacterProfile(BaseModel):
     look_and_costume: str = "Production wardrobe matching scene setting"
     facial_features: str = "Expressive cinematic facial features"
     personality_traits: List[str] = Field(default_factory=list)
+    relationships: List[CharacterRelationship] = Field(default_factory=list)
     dialogue_count: int = 0
     scenes_present: List[str] = Field(default_factory=list)
     avatar_url: Optional[str] = None
+    portrait_prompt: Optional[str] = None
 
 
 class ScreenplayScene(BaseModel):
@@ -94,6 +104,30 @@ CHARACTER_ARCHETYPES = {
     }
 }
 
+# Curated Relationship Dynamics for known cinema fixtures
+CURATED_RELATIONSHIPS = {
+    ("LEAD", "SUPPORT"): {
+        "type": "Key Ally & Protector",
+        "description": "Deep intellectual and emotional bond. SUPPORT attempts to save LEAD from his self-destructive obsession with the sanctuary organ."
+    },
+    ("LEAD", "COMMANDER VANCE"): {
+        "type": "Hostile Pursuer vs Defiant Subject",
+        "description": "Tactical siege dynamic; Vance enforces the shutdown order while LEAD refuses to cease his performance."
+    },
+    ("SUPPORT", "COMMANDER VANCE"): {
+        "type": "Diplomatic Intermediary",
+        "description": "SUPPORT attempts to negotiate terms with Vance to stall the tactical breach."
+    },
+    ("DECKARD", "RACHAEL"): {
+        "type": "Enigmatic Romantic Counterpart",
+        "description": "Investigator and subject whose encounter tests the boundaries of artificial memory and human emotion."
+    },
+    ("DECKARD", "ROY BATTY"): {
+        "type": "Mortal Adversaries",
+        "description": "Relentless cat-and-mouse pursuit culminating in a transcendent philosophical reckoning on mortality."
+    }
+}
+
 VALID_TOD = {"DAY", "NIGHT", "DUSK", "DAWN", "MAGIC HOUR", "MAGIC_HOUR", "CONTINUOUS", "LATER", "SAME TIME", "MORNING", "EVENING", "AFTERNOON"}
 
 
@@ -138,10 +172,71 @@ def clean_character_name(raw_name: str) -> str:
     return cleaned.strip().upper()
 
 
+def extract_character_relationships(
+    char_name: str,
+    all_chars: Set[str],
+    scenes: List[ScreenplayScene]
+) -> List[CharacterRelationship]:
+    """
+    Computes direct relationship ties, shared scenes, and dialogue interaction turns
+    between char_name and every other character in the screenplay.
+    """
+    relationships: List[CharacterRelationship] = []
+
+    for other_name in all_chars:
+        if other_name == char_name:
+            continue
+
+        shared_scenes: List[str] = []
+        interaction_turns = 0
+
+        for sc in scenes:
+            scene_chars = sc.characters or []
+            if char_name in scene_chars and other_name in scene_chars:
+                shared_scenes.append(sc.scene_number)
+
+            # Count dialogue turn adjacency in this scene
+            last_speaker = None
+            for d in sc.dialogues:
+                speaker = clean_character_name(d.character)
+                if (speaker == char_name and last_speaker == other_name) or (speaker == other_name and last_speaker == char_name):
+                    interaction_turns += 1
+                last_speaker = speaker
+
+        if shared_scenes or interaction_turns > 0:
+            # Check for curated relationship
+            pair_key = (char_name, other_name)
+            rev_key = (other_name, char_name)
+
+            if pair_key in CURATED_RELATIONSHIPS:
+                rel_type = CURATED_RELATIONSHIPS[pair_key]["type"]
+                dyn_desc = CURATED_RELATIONSHIPS[pair_key]["description"]
+            elif rev_key in CURATED_RELATIONSHIPS:
+                rel_type = CURATED_RELATIONSHIPS[rev_key]["type"]
+                dyn_desc = CURATED_RELATIONSHIPS[rev_key]["description"]
+            else:
+                rel_type = "Key Dialogue Counterpart" if interaction_turns > 0 else "Shared Scene Presence"
+                dyn_desc = f"Interacts in {len(shared_scenes)} scene(s) with {interaction_turns} direct dialogue turn(s)."
+
+            relationships.append(
+                CharacterRelationship(
+                    target_character=other_name,
+                    relationship_type=rel_type,
+                    dynamic_description=dyn_desc,
+                    shared_scenes=shared_scenes,
+                    interaction_count=interaction_turns
+                )
+            )
+
+    # Sort relationships by interaction frequency & shared scene count
+    relationships.sort(key=lambda r: (r.interaction_count, len(r.shared_scenes)), reverse=True)
+    return relationships
+
+
 def extract_character_profiles(scenes: List[ScreenplayScene], script_text: str) -> List[CharacterProfile]:
     """
     Extracts all characters from dialogue cues and action descriptions across the screenplay,
-    calculates dialogue counts, scene presence, and generates polished visual profiles.
+    calculates dialogue counts, scene presence, relationship matrices, and generates polished visual profiles.
     """
     char_stats: Dict[str, Dict[str, Any]] = {}
 
@@ -176,6 +271,7 @@ def extract_character_profiles(scenes: List[ScreenplayScene], script_text: str) 
                         sc.characters.append(word)
 
     profiles: List[CharacterProfile] = []
+    all_names = set(char_stats.keys())
     
     # Sort characters by dialogue frequency
     sorted_chars = sorted(char_stats.values(), key=lambda c: c["dialogue_count"], reverse=True)
@@ -184,6 +280,9 @@ def extract_character_profiles(scenes: List[ScreenplayScene], script_text: str) 
         name = c["name"]
         char_id = f"char_{name.lower().replace(' ', '_')}"
         scenes_list = sorted(list(c["scenes"]), key=lambda s: int(re.sub(r'\D', '', s) or '0'))
+
+        # Extract relationships with other cast members
+        relationships = extract_character_relationships(name, all_names, scenes)
 
         # Check if known archetype exists
         if name in CHARACTER_ARCHETYPES:
@@ -196,6 +295,7 @@ def extract_character_profiles(scenes: List[ScreenplayScene], script_text: str) 
                 look_and_costume=arch["look_and_costume"],
                 facial_features=arch["facial_features"],
                 personality_traits=arch["personality_traits"],
+                relationships=relationships,
                 dialogue_count=c["dialogue_count"],
                 scenes_present=scenes_list,
                 avatar_url=f"/avatars/{name.lower().replace(' ', '_')}.jpg"
@@ -211,6 +311,7 @@ def extract_character_profiles(scenes: List[ScreenplayScene], script_text: str) 
                 look_and_costume="Authentic production costume matching scene environment and era",
                 facial_features="Sharp facial features with motivated cinematic lighting catchlights",
                 personality_traits=["Determined", "Expressive", "Dramatic"],
+                relationships=relationships,
                 dialogue_count=c["dialogue_count"],
                 scenes_present=scenes_list,
                 avatar_url=None
@@ -269,7 +370,7 @@ def parse_fountain_screenplay(script_text: str, title: str = "Screenplay") -> Sc
             current_scene.action_blocks = [a for a in current_actions if a.strip()]
             current_scene.dialogues = list(current_dialogues)
             current_scene.raw_content = "\n".join(current_raw_lines).strip()
-            # Only append scene if it contains actions, dialogues, or valid content
+            # Only append scene if it contains actions or dialogues
             if current_scene.action_blocks or current_scene.dialogues:
                 scenes.append(current_scene)
             current_actions = []
@@ -355,7 +456,7 @@ def parse_fountain_screenplay(script_text: str, title: str = "Screenplay") -> Sc
     # Save final scene
     save_current_scene()
 
-    # Extract & Profile all Characters
+    # Extract & Profile all Characters and their relationships
     characters = extract_character_profiles(scenes, script_text)
 
     return Screenplay(

@@ -1566,6 +1566,16 @@ class UpdateCharacterRequest(BaseModel):
     personality_traits: List[str] = []
 
 
+class GeneratePortraitRequest(BaseModel):
+    character_id: str
+    character_name: str
+    actor_reference: str
+    look_and_costume: str
+    facial_features: str
+    role: str = "Key Character"
+    dop_preset: str = "Roger Deakins"
+
+
 @router.post("/script/characters/update")
 def update_character_profile(req: UpdateCharacterRequest):
     """
@@ -1574,6 +1584,31 @@ def update_character_profile(req: UpdateCharacterRequest):
     return {
         "status": "updated",
         "character": req.model_dump()
+    }
+
+
+@router.post("/script/characters/generate-portrait")
+async def generate_character_portrait(req: GeneratePortraitRequest):
+    """
+    Generates a photorealistic 35mm motion picture portrait / headshot for a character.
+    """
+    from backend.app.script.ai_image_service import generate_character_portrait_image
+
+    res = await generate_character_portrait_image(
+        character_name=req.character_name,
+        actor_reference=req.actor_reference,
+        look_and_costume=req.look_and_costume,
+        facial_features=req.facial_features,
+        role=req.role,
+        dop_preset=req.dop_preset
+    )
+
+    return {
+        "character_id": req.character_id,
+        "character_name": req.character_name,
+        "image_url": res["image_url"],
+        "compiled_prompt": res["compiled_prompt"],
+        "provider": res.get("provider", "AI Generative Engine")
     }
 
 

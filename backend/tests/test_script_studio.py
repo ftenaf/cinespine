@@ -259,3 +259,44 @@ def test_api_character_update_endpoint(client):
     assert data["character"]["role"] == "Haunted Great Hall Organist"
 
 
+def test_character_relationships_detection():
+    screenplay = parse_fountain_screenplay(SAMPLE_FOUNTAIN_SCRIPT, title="La DemoProduction")
+    assert len(screenplay.characters) >= 2
+    
+    lead = next(c for c in screenplay.characters if c.name == "LEAD")
+    support = next(c for c in screenplay.characters if c.name == "SUPPORT")
+    
+    # Verify relationships are extracted
+    assert len(lead.relationships) >= 1
+    rel_to_emily = next(r for r in lead.relationships if r.target_character == "SUPPORT")
+    assert "Ally" in rel_to_emily.relationship_type or "Key" in rel_to_emily.relationship_type
+    assert "1" in rel_to_emily.shared_scenes
+    assert rel_to_emily.interaction_count >= 1
+
+    # Check SUPPORT's inverse relationship to LEAD
+    rel_to_thomas = next(r for r in support.relationships if r.target_character == "LEAD")
+    assert rel_to_thomas.target_character == "LEAD"
+    assert "1" in rel_to_thomas.shared_scenes
+
+
+def test_api_generate_character_portrait_endpoint(client):
+    req = {
+        "character_id": "char_lead",
+        "character_name": "LEAD",
+        "actor_reference": "Late 30s man, intense sunken eyes, dark wavy hair, weathered features",
+        "look_and_costume": "Drenched dark linen shirt with rolled-up sleeves, charcoal wool vest",
+        "facial_features": "Sharp cheekbones, subtle 5 o'clock shadow, piercing hazel eyes",
+        "role": "Haunted Great Hall Organist",
+        "dop_preset": "Roger Deakins"
+    }
+    res = client.post("/api/script/characters/generate-portrait", json=req)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["character_id"] == "char_lead"
+    assert data["character_name"] == "LEAD"
+    assert data["image_url"].startswith("data:image/") or data["image_url"].startswith("/previz/")
+    assert "LEAD" in data["compiled_prompt"]
+    assert "85mm" in data["compiled_prompt"] or "portrait" in data["compiled_prompt"].lower()
+
+
+
