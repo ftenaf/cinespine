@@ -11,7 +11,12 @@ import {
   CheckCircle2,
   Users,
   ShieldCheck,
-  Save
+  Save,
+  Sun,
+  Aperture,
+  Crosshair,
+  Terminal,
+  Palette
 } from 'lucide-react';
 
 export interface DialogueLine {
@@ -159,14 +164,73 @@ export const ScriptStudio: React.FC = () => {
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
   const [activeCamLetter, setActiveCamLetter] = useState<string>('A');
 
-  // DoP Cinematography Controls
+  // DoP Cinematography Controls & Real-Time Preview
+  const [dopMode, setDopMode] = useState<'preset' | 'matrix' | 'prompt'>('preset');
   const [selectedPreset, setSelectedPreset] = useState<string>('Roger Deakins');
   const [aspectRatio, setAspectRatio] = useState<string>('2.39:1');
+  const [customFocalLength, setCustomFocalLength] = useState<number>(35);
+  const [customAperture, setCustomAperture] = useState<string>('T2.8');
+  const [customColorTemp, setCustomColorTemp] = useState<number>(5600);
+  const [customLightingRatio, setCustomLightingRatio] = useState<string>('4:1');
+  const [customSensorFormat, setCustomSensorFormat] = useState<string>('Large Format 35mm');
+  const [customLutEmulation, setCustomLutEmulation] = useState<string>('Kodak 5219 Vision3');
+  const [customMoodPrompt, setCustomMoodPrompt] = useState<string>('');
+  const [dopTestRenderUrl, setDopTestRenderUrl] = useState<string | null>(null);
+  const [isTestRenderingDoP, setIsTestRenderingDoP] = useState<boolean>(false);
+  const [showViewfinderGrid, setShowViewfinderGrid] = useState<boolean>(true);
 
   // Presets Dictionary
   const [presetsDict, setPresetsDict] = useState<Record<string, any>>({});
   const [enlargedImage, setEnlargedImage] = useState<{ url: string; prompt: string; title: string } | null>(null);
   const [generatingCamMap, setGeneratingCamMap] = useState<Record<string, boolean>>({});
+
+  // Dynamic Real-Time DoP Prompt Compiler
+  const compileDoPPromptPreview = (): string => {
+    if (dopMode === 'prompt' && customMoodPrompt.trim()) {
+      return `Cinematic master film still, ${customMoodPrompt.trim()}, ${customFocalLength}mm lens at ${customAperture}, ${customColorTemp}K color temperature, ${customLightingRatio} lighting ratio, ${customLutEmulation} LUT, 8k resolution, authentic 35mm grain`;
+    }
+    if (dopMode === 'matrix') {
+      return `Cinematic master film still, captured on ${customSensorFormat}, ${customFocalLength}mm prime lens at ${customAperture} aperture, ${customColorTemp}K color temperature, ${customLightingRatio} key-to-fill lighting ratio, ${customLutEmulation} film stock emulsion grade, 8k resolution, photorealistic master cinema frame`;
+    }
+    const preset = presetsDict[selectedPreset];
+    return preset?.prompt_style_tag || `Cinematic master film still in the style of ${selectedPreset}, natural lighting, master prime clarity, 8k photorealistic film still`;
+  };
+
+  // Execute DoP Live Frame Test Render
+  const handleExecuteDoPTestRender = async () => {
+    setIsTestRenderingDoP(true);
+    const activePrompt = compileDoPPromptPreview();
+    try {
+      const res = await fetch('/api/script/generate-storyboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shot_id: 'DOP_TEST',
+          camera_letter: 'A',
+          prompt: activePrompt,
+          scene_number: 'DOP_CALIB',
+          shot_number: '1',
+          shot_size: 'WS',
+          focal_length: customFocalLength,
+          aperture: customAperture,
+          dop_preset: selectedPreset,
+          lighting_ratio: customLightingRatio,
+          color_temp_k: customColorTemp,
+          lut_emulation: customLutEmulation,
+          aspect_ratio: aspectRatio,
+          character_details: characters.length > 0 ? `${characters[0].name} (${characters[0].actor_reference})` : undefined
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDopTestRenderUrl(data.image_url);
+      }
+    } catch (err) {
+      console.error('Failed to run DoP test render:', err);
+    } finally {
+      setIsTestRenderingDoP(false);
+    }
+  };
 
   // Fetch presets on mount and parse default demo
   useEffect(() => {
@@ -211,12 +275,24 @@ export const ScriptStudio: React.FC = () => {
 
     setIsBreakingDown(true);
     try {
+      const overrides: Record<string, any> = {};
+      if (dopMode === 'matrix') {
+        overrides.focal_length = customFocalLength;
+        overrides.aperture = customAperture;
+        overrides.color_temperature_k = customColorTemp;
+        overrides.lighting_ratio = customLightingRatio;
+        overrides.sensor_format = customSensorFormat;
+        overrides.lut_emulation = customLutEmulation;
+      }
+
       const res = await fetch('/api/script/breakdown', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scene: currentScene,
           dop_preset: selectedPreset,
+          dop_overrides: Object.keys(overrides).length > 0 ? overrides : null,
+          custom_prompt: dopMode === 'prompt' ? customMoodPrompt : null,
           aspect_ratio: aspectRatio,
           character_profiles: characters
         })
@@ -1178,39 +1254,453 @@ export const ScriptStudio: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* VIEW 3: DOP CINEMATOGRAPHY MATRIX                                        */}
+      {/* VIEW 3: DOP CINEMATOGRAPHY MATRIX & REAL-TIME OPTICAL VIEWFINDER          */}
       {/* ========================================================================= */}
       {studioSubTab === 'dop' && (
-        <div className="flex-1 overflow-y-auto p-6 bg-[#090D16]">
-          <div className="max-w-4xl space-y-6">
+        <div className="flex-1 grid grid-cols-12 gap-0 overflow-hidden">
+          {/* Left Column: DoP Mode Controls & Parameters */}
+          <div className="col-span-6 bg-[#0F172A]/80 border-r border-slate-800 flex flex-col overflow-y-auto p-6 space-y-6">
             <div>
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-purple-400" />
-                Director of Photography Optical &amp; Lighting Matrix
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Configure master cinematographer presets, color temperature Kelvin, lighting contrast ratio, and film stock LUT emulation.
-              </p>
-            </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-white flex items-center gap-2">
+                    <Sliders className="w-4 h-4 text-purple-400" />
+                    Director of Photography (DoP) Studio
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Define cinematography via Master Presets, Manual Optics Matrix, or Natural Language.
+                  </p>
+                </div>
+              </div>
 
-            {/* Presets Grid */}
-            <div className="grid grid-cols-3 gap-3">
-              {Object.entries(presetsDict).map(([presetName, presetData]: [string, any]) => (
-                <div
-                  key={presetName}
-                  onClick={() => setSelectedPreset(presetName)}
-                  className={`p-3.5 rounded-xl border transition cursor-pointer ${
-                    selectedPreset === presetName
-                      ? 'bg-purple-950/60 border-purple-500 shadow-lg shadow-purple-500/20'
-                      : 'bg-slate-900/50 border-slate-800 hover:border-slate-700'
+              {/* Mode Switcher Tabs */}
+              <div className="grid grid-cols-3 gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800 mt-4">
+                <button
+                  onClick={() => setDopMode('preset')}
+                  className={`py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                    dopMode === 'preset'
+                      ? 'bg-purple-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  <h4 className="text-xs font-bold text-white">{presetData.name || presetName}</h4>
-                  <p className="text-[10px] text-purple-300 mt-0.5">{presetData.tagline}</p>
-                  <p className="text-[11px] text-slate-400 line-clamp-3 mt-2">{presetData.description}</p>
-                </div>
-              ))}
+                  <Palette className="w-3.5 h-3.5" />
+                  Master Presets
+                </button>
+                <button
+                  onClick={() => setDopMode('matrix')}
+                  className={`py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                    dopMode === 'matrix'
+                      ? 'bg-purple-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Aperture className="w-3.5 h-3.5" />
+                  Manual Matrix
+                </button>
+                <button
+                  onClick={() => setDopMode('prompt')}
+                  className={`py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                    dopMode === 'prompt'
+                      ? 'bg-purple-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Terminal className="w-3.5 h-3.5" />
+                  Natural Language
+                </button>
+              </div>
             </div>
+
+            {/* MODE 1: MASTER PRESETS */}
+            {dopMode === 'preset' && (
+              <div className="space-y-3">
+                <h3 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider">
+                  Curated Cinematographer Masters
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {Object.entries(presetsDict).map(([presetName, presetData]: [string, any]) => (
+                    <div
+                      key={presetName}
+                      onClick={() => {
+                        setSelectedPreset(presetName);
+                        if (presetData.focal_length) setCustomFocalLength(presetData.focal_length);
+                        if (presetData.aperture) setCustomAperture(presetData.aperture);
+                        if (presetData.color_temperature_k) setCustomColorTemp(presetData.color_temperature_k);
+                        if (presetData.lighting_ratio) setCustomLightingRatio(presetData.lighting_ratio);
+                        if (presetData.lut_emulation) setCustomLutEmulation(presetData.lut_emulation);
+                      }}
+                      className={`p-3.5 rounded-xl border transition cursor-pointer ${
+                        selectedPreset === presetName
+                          ? 'bg-purple-950/60 border-purple-500 shadow-lg shadow-purple-500/20'
+                          : 'bg-slate-900/50 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      <h4 className="text-xs font-bold text-white">{presetData.name || presetName}</h4>
+                      <p className="text-[10px] text-purple-300 mt-0.5">{presetData.tagline}</p>
+                      <p className="text-[11px] text-slate-400 line-clamp-2 mt-1.5 leading-relaxed">{presetData.description}</p>
+                      <div className="flex flex-wrap gap-1 mt-2.5">
+                        <span className="px-1.5 py-0.5 text-[9px] bg-slate-800 text-slate-300 rounded">
+                          {presetData.focal_length || 35}mm
+                        </span>
+                        <span className="px-1.5 py-0.5 text-[9px] bg-slate-800 text-slate-300 rounded">
+                          {presetData.aperture || 'T2.8'}
+                        </span>
+                        <span className="px-1.5 py-0.5 text-[9px] bg-slate-800 text-slate-300 rounded">
+                          {presetData.color_temperature_k || 5600}K
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* MODE 2: MANUAL OPTICS & LIGHTING MATRIX */}
+            {dopMode === 'matrix' && (
+              <div className="space-y-5">
+                {/* Focal Length Selector */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <Camera className="w-3.5 h-3.5 text-purple-400" />
+                      Lens Focal Length
+                    </label>
+                    <span className="text-xs font-mono font-bold text-purple-300">{customFocalLength}mm</span>
+                  </div>
+                  <div className="grid grid-cols-6 gap-1.5">
+                    {[18, 24, 35, 50, 85, 135].map(fl => (
+                      <button
+                        key={fl}
+                        onClick={() => setCustomFocalLength(fl)}
+                        className={`py-1.5 text-xs font-bold rounded-lg border transition ${
+                          customFocalLength === fl
+                            ? 'bg-purple-600 border-purple-500 text-white'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {fl}mm
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Aperture Selector */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <Aperture className="w-3.5 h-3.5 text-purple-400" />
+                      Lens Aperture &amp; Depth of Field
+                    </label>
+                    <span className="text-xs font-mono font-bold text-purple-300">{customAperture}</span>
+                  </div>
+                  <div className="grid grid-cols-6 gap-1.5">
+                    {['T1.3', 'T1.4', 'T2.0', 'T2.8', 'T4.0', 'T5.6', 'T8.0', 'T11'].map(ap => (
+                      <button
+                        key={ap}
+                        onClick={() => setCustomAperture(ap)}
+                        className={`py-1.5 text-xs font-bold rounded-lg border transition ${
+                          customAperture === ap
+                            ? 'bg-purple-600 border-purple-500 text-white'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {ap}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Color Temperature Kelvin Slider */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <Sun className="w-3.5 h-3.5 text-amber-400" />
+                      Color Temperature (Kelvin)
+                    </label>
+                    <span className="text-xs font-mono font-bold text-amber-300">{customColorTemp}K</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="2800"
+                    max="7500"
+                    step="100"
+                    value={customColorTemp}
+                    onChange={e => setCustomColorTemp(Number(e.target.value))}
+                    className="w-full h-2 bg-gradient-to-r from-amber-500 via-slate-200 to-cyan-500 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1">
+                    <span>2800K (Warm Tungsten)</span>
+                    <span>5600K (Daylight)</span>
+                    <span>7500K (Cool Blue Hour)</span>
+                  </div>
+                </div>
+
+                {/* Lighting Ratio Selector */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold text-slate-300">
+                      Key-to-Fill Lighting Contrast Ratio
+                    </label>
+                    <span className="text-xs font-mono font-bold text-purple-300">{customLightingRatio}</span>
+                  </div>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {[
+                      { label: '1:1 (Flat)', val: '1:1' },
+                      { label: '2:1 (Soft)', val: '2:1' },
+                      { label: '4:1 (Dramatic)', val: '4:1' },
+                      { label: '8:1 (Noir)', val: '8:1' },
+                      { label: '16:1 (Silhouette)', val: '16:1' }
+                    ].map(r => (
+                      <button
+                        key={r.val}
+                        onClick={() => setCustomLightingRatio(r.val)}
+                        className={`py-1.5 px-2 text-[11px] font-bold rounded-lg border transition ${
+                          customLightingRatio === r.val
+                            ? 'bg-purple-600 border-purple-500 text-white'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sensor & Camera Body */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Camera Body / Sensor Format</label>
+                    <select
+                      value={customSensorFormat}
+                      onChange={e => setCustomSensorFormat(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500"
+                    >
+                      <option value="Large Format 35mm (ARRI ALEXA 35)">Large Format 35mm (ARRI ALEXA 35)</option>
+                      <option value="Full Frame 65mm (ARRI ALEXA 65)">Full Frame 65mm (ARRI ALEXA 65)</option>
+                      <option value="Super 35mm (Panavision Panaflex Gold)">Super 35mm (Panavision Panaflex)</option>
+                      <option value="RED V-Raptor 8K VV">RED V-Raptor 8K VV</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Film Stock / LUT Emulation</label>
+                    <select
+                      value={customLutEmulation}
+                      onChange={e => setCustomLutEmulation(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500"
+                    >
+                      <option value="Kodak 5219 Vision3 500T">Kodak 5219 Vision3 500T</option>
+                      <option value="Kodak 5207 Vision3 250D">Kodak 5207 Vision3 250D</option>
+                      <option value="Fujifilm Eterna 500">Fujifilm Eterna 500</option>
+                      <option value="Bleach Bypass Custom LUT">Bleach Bypass Custom LUT</option>
+                      <option value="Film Print Kodak 2383">Film Print Kodak 2383</option>
+                      <option value="Technicolor 3-Strip Vintage">Technicolor 3-Strip Vintage</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* MODE 3: NATURAL LANGUAGE PROMPT DIRECTOR */}
+            {dopMode === 'prompt' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    Natural Language Cinematography Instructions
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={customMoodPrompt}
+                    onChange={e => setCustomMoodPrompt(e.target.value)}
+                    placeholder="e.g. Rain-slicked gothic great_hall square, pierced by harsh halogen searchlights, deep amber sodium vapor streetlamps, heavy volumetric water droplets, anamorphic horizontal streak flares, high-contrast dark copper shadows..."
+                    className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500 font-sans leading-relaxed"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Describe atmospheric textures, weather, motivated lighting directions, and palette nuances in plain English.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                    Quick Cinematography Modifiers
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      '+ Volumetric Haze',
+                      '+ Anamorphic Oval Bokeh',
+                      '+ Chiaroscuro Rim Light',
+                      '+ Eye Catchlights Glow',
+                      '+ Bleach Bypass Contrast',
+                      '+ Kodak 5219 Grain',
+                      '+ Symmetrical 1-Point Framing',
+                      '+ Rain Reflections on Cobblestones'
+                    ].map(mod => (
+                      <button
+                        key={mod}
+                        onClick={() => {
+                          const cur = customMoodPrompt.trim();
+                          setCustomMoodPrompt(cur ? `${cur}, ${mod}` : mod);
+                        }}
+                        className="px-2.5 py-1 text-[10px] font-semibold bg-slate-900 hover:bg-purple-950 text-slate-300 hover:text-purple-200 border border-slate-800 hover:border-purple-500/40 rounded-lg transition"
+                      >
+                        {mod}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right Column: Real-Time Optical Viewfinder & HUD Preview Canvas */}
+          <div className="col-span-6 bg-[#090D16] flex flex-col overflow-y-auto p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Crosshair className="w-4 h-4 text-purple-400" />
+                <h3 className="text-sm font-bold text-white">Real-Time Optical Viewfinder Simulation</h3>
+              </div>
+              <button
+                onClick={() => setShowViewfinderGrid(!showViewfinderGrid)}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded border transition ${
+                  showViewfinderGrid
+                    ? 'bg-purple-600 text-white border-purple-500'
+                    : 'bg-slate-900 text-slate-400 border-slate-800'
+                }`}
+              >
+                Grid &amp; Crosshairs: {showViewfinderGrid ? 'ON' : 'OFF'}
+              </button>
+            </div>
+
+            {/* Simulated 35mm Optical Viewfinder Canvas */}
+            <div className="relative rounded-2xl overflow-hidden border-2 border-slate-700 bg-black aspect-[2.39/1] shadow-2xl group flex items-center justify-center">
+              {/* Underlying Master Still or Rendered Test */}
+              <img
+                src={dopTestRenderUrl || '/previz/interior_cam_a.jpg'}
+                alt="DoP Optical Simulation"
+                className="w-full h-full object-cover"
+                style={{
+                  filter: `contrast(${
+                    customLightingRatio === '16:1' ? 145 : customLightingRatio === '8:1' ? 125 : customLightingRatio === '4:1' ? 110 : 100
+                  }%) brightness(${
+                    customLightingRatio === '16:1' ? 85 : customLightingRatio === '8:1' ? 92 : 100
+                  }%)`
+                }}
+              />
+
+              {/* Dynamic Kelvin Color Tint Layer */}
+              <div
+                className="absolute inset-0 pointer-events-none transition-colors duration-300"
+                style={{
+                  backgroundColor:
+                    customColorTemp <= 3400
+                      ? 'rgba(245, 158, 11, 0.22)' // Warm Amber
+                      : customColorTemp <= 4500
+                      ? 'rgba(251, 191, 36, 0.12)' // Mild Golden
+                      : customColorTemp <= 5800
+                      ? 'rgba(255, 255, 255, 0.02)' // Neutral
+                      : 'rgba(6, 182, 212, 0.22)', // Cold Cyan
+                  mixBlendMode: 'color'
+                }}
+              />
+
+              {/* Shallow Depth of Field Blur Simulation (for wide apertures T1.3/T1.4/T2.0) */}
+              {['T1.3', 'T1.4', 'T1.8', 'T2.0'].includes(customAperture) && (
+                <div className="absolute inset-0 pointer-events-none border-[16px] border-black/30 backdrop-blur-[2px] rounded-2xl" />
+              )}
+
+              {/* Framing Grid & Crosshairs Overlay */}
+              {showViewfinderGrid && (
+                <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4">
+                  {/* Rule of Thirds Lines */}
+                  <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none opacity-25">
+                    <div className="border-r border-b border-white" />
+                    <div className="border-r border-b border-white" />
+                    <div className="border-b border-white" />
+                    <div className="border-r border-b border-white" />
+                    <div className="border-r border-b border-white" />
+                    <div className="border-b border-white" />
+                    <div className="border-r border-white" />
+                    <div className="border-r border-white" />
+                    <div />
+                  </div>
+
+                  {/* Center Crosshairs */}
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-40">
+                    <div className="w-8 h-8 border border-white/60 rounded-full flex items-center justify-center">
+                      <div className="w-2 h-2 bg-purple-400 rounded-full" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* On-Screen Display (OSD HUD) */}
+              <div className="absolute inset-0 p-3 flex flex-col justify-between pointer-events-none font-mono text-[10px] text-emerald-400 select-none">
+                <div className="flex items-center justify-between bg-black/50 backdrop-blur-sm px-2 py-1 rounded">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                    <span className="font-bold text-white">REC 24.0 FPS</span>
+                    <span className="text-slate-400">• ARRI RAW</span>
+                  </div>
+                  <div className="text-purple-300 font-bold">
+                    {aspectRatio} SCOPE • {customSensorFormat.split(' ')[0]}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between bg-black/60 backdrop-blur-sm px-2.5 py-1.5 rounded">
+                  <div className="flex items-center gap-3">
+                    <span>
+                      LENS: <strong className="text-white">{customFocalLength}mm</strong>
+                    </span>
+                    <span>
+                      IRIS: <strong className="text-white">{customAperture}</strong>
+                    </span>
+                    <span>
+                      CCT: <strong className="text-amber-300">{customColorTemp}K</strong>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span>
+                      RATIO: <strong className="text-purple-300">{customLightingRatio}</strong>
+                    </span>
+                    <span className="text-slate-300">
+                      LUT: <strong className="text-white">{customLutEmulation}</strong>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Live Synthesized Generative Prompt */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                  Live Compiled AI Generative Prompt
+                </label>
+              </div>
+              <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono text-purple-200 leading-relaxed max-h-28 overflow-y-auto">
+                {compileDoPPromptPreview()}
+              </div>
+            </div>
+
+            {/* Test Render Button */}
+            <button
+              onClick={handleExecuteDoPTestRender}
+              disabled={isTestRenderingDoP}
+              className="w-full py-3 text-xs font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-xl shadow-lg shadow-purple-600/30 transition flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isTestRenderingDoP ? (
+                <>
+                  <RotateCw className="w-4 h-4 animate-spin" />
+                  Rendering Live DoP Optical Frame...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  ⚡ Test Render Live DoP Optical Frame
+                </>
+              )}
+            </button>
           </div>
         </div>
       )}
