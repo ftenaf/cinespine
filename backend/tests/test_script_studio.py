@@ -1,9 +1,13 @@
 """
 Automated Test Suite for Script Breakdown, DoP Cinematography & Previz Storyboard Studio.
 """
+import pathlib
+
 import pytest
 from starlette.testclient import TestClient
 from backend.app.main import app
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 from backend.app.script.parser import parse_fountain_screenplay, ScreenplayScene
 from backend.app.script.dop_presets import DOP_MASTER_PRESETS, resolve_dop_specification
 from backend.app.script.breakdown_engine import breakdown_scene_to_shots, synthesize_cinematic_prompt
@@ -310,6 +314,65 @@ def test_api_character_update_persists_and_survives_reparse(client):
     assert maya_again["look_and_costume"] == "Red raincoat, silver locket, soaked boots"
     # Structural data is still refreshed from the new parse.
     assert maya_again["dialogue_count"] == maya["dialogue_count"]
+
+
+def test_character_profiles_survive_a_backend_restart(client, tmp_path, monkeypatch):
+    """
+    Character edits are authored by hand and drive image consistency, so they
+    must outlive the process. Simulates a restart by discarding every in-memory
+    object and rebuilding the app against the same database file.
+    """
+    files = {"file": ("plain.txt", PLAINTEXT_SCRIPT.encode("utf-8"), "text/plain")}
+    uploaded = client.post("/api/script/upload", files=files).json()
+    script_id = uploaded["script_id"]
+    maya = next(c for c in uploaded["characters"] if c["name"] == "MAYA")
+
+    client.post("/api/script/characters/update", json={
+        "id": maya["id"],
+        "name": "MAYA",
+        "script_id": script_id,
+        "look_and_costume": "Red raincoat, silver locket, soaked boots",
+    })
+
+    # A real restart means a real new process: boot the app in a fresh
+    # interpreter that shares nothing but the database file on disk.
+    import json
+    import os
+    import subprocess
+    import sys
+
+    probe = (
+        "import json;"
+        "from starlette.testclient import TestClient;"
+        "from backend.app.main import app;"
+        "c=TestClient(app);"
+        f"r=c.get('/api/script/{script_id}/characters');"
+        "print('RESULT:' + json.dumps({'status': r.status_code, 'body': r.json()}))"
+    )
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(REPO_ROOT),
+        "CINESPINE_DB_PATH": os.environ["CINESPINE_DB_PATH"],
+    }
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=env,
+        timeout=180,
+    )
+    assert completed.returncode == 0, completed.stderr[-2000:]
+
+    payload = next(
+        json.loads(line[len("RESULT:"):])
+        for line in completed.stdout.splitlines()
+        if line.startswith("RESULT:")
+    )
+    assert payload["status"] == 200, "screenplay should still be known after restart"
+    revived = next(c for c in payload["body"]["characters"] if c["name"] == "MAYA")
+    assert revived["look_and_costume"] == "Red raincoat, silver locket, soaked boots"
+    assert revived["_edited"] is True
 
 
 def test_api_character_update_rejects_unknown_character(client):

@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
+from backend.app.spine import character_store
 from backend.app.streaming.models import DEFAULT_TEAM_USERS
 
 logger = logging.getLogger(__name__)
@@ -47,26 +48,14 @@ class SpineWriter:
         self._team_users: Dict[str, Dict[str, Any]] = {k: dict(v) for k, v in DEFAULT_TEAM_USERS.items()}
         self._requirements: Dict[str, Dict[str, Any]] = {}
         self._notifications: Dict[str, Dict[str, Any]] = {}
-        # script_id -> screenplay metadata
-        self._screenplays: Dict[str, Dict[str, Any]] = {}
-        # script_id -> {character_id: profile dict}
-        self._character_profiles: Dict[str, Dict[str, Dict[str, Any]]] = {}
 
     # ------------------------------------------------------------------ #
     # Screenplay & character profiles
+    #
+    # Backed by SQLite rather than process memory: these profiles are authored
+    # by hand and drive character consistency across generated frames, so they
+    # must survive a backend restart. See spine/character_store.py.
     # ------------------------------------------------------------------ #
-
-    # Fields the user owns once they have edited a character. Re-parsing the
-    # same screenplay refreshes structural data but must never clobber these.
-    USER_OWNED_CHARACTER_FIELDS = (
-        "role",
-        "actor_reference",
-        "look_and_costume",
-        "facial_features",
-        "personality_traits",
-        "avatar_url",
-        "portrait_prompt",
-    )
 
     def store_screenplay(
         self,
@@ -76,57 +65,22 @@ class SpineWriter:
         profiles: List[Dict[str, Any]],
         author: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """
-        Registers a screenplay and its characters, merging over any previously
-        saved profiles for the same script.
-
-        Structural fields (dialogue counts, scene presence, relationships) always
-        come from the fresh parse. Fields the user has edited are preserved, so
-        re-uploading a script does not silently discard their work.
-        """
-        self._screenplays[script_id] = {
-            "script_id": script_id,
-            "title": title,
-            "author": author,
-            "filename": filename,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-
-        existing = self._character_profiles.get(script_id, {})
-        merged: Dict[str, Dict[str, Any]] = {}
-
-        for profile in profiles:
-            char_id = profile.get("id")
-            if not char_id:
-                continue
-            record = dict(profile)
-            prior = existing.get(char_id)
-            if prior and prior.get("_edited"):
-                for field in self.USER_OWNED_CHARACTER_FIELDS:
-                    if field in prior:
-                        record[field] = prior[field]
-                record["_edited"] = True
-            merged[char_id] = record
-
-        # Keep edited characters that no longer appear in the latest parse rather
-        # than dropping the user's work on the floor.
-        for char_id, prior in existing.items():
-            if char_id not in merged and prior.get("_edited"):
-                orphan = dict(prior)
-                orphan["absent_from_latest_parse"] = True
-                merged[char_id] = orphan
-
-        self._character_profiles[script_id] = merged
-        return list(merged.values())
+        return character_store.store_screenplay(
+            script_id=script_id,
+            title=title,
+            filename=filename,
+            profiles=profiles,
+            author=author,
+        )
 
     def get_screenplay(self, script_id: str) -> Optional[Dict[str, Any]]:
-        return self._screenplays.get(script_id)
+        return character_store.get_screenplay(script_id)
 
     def get_character_profiles(self, script_id: str) -> List[Dict[str, Any]]:
-        return list(self._character_profiles.get(script_id, {}).values())
+        return character_store.get_character_profiles(script_id)
 
     def get_character_profile(self, script_id: str, character_id: str) -> Optional[Dict[str, Any]]:
-        return self._character_profiles.get(script_id, {}).get(character_id)
+        return character_store.get_character_profile(script_id, character_id)
 
     def update_character_profile(
         self,
@@ -134,24 +88,7 @@ class SpineWriter:
         character_id: str,
         updates: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
-        """
-        Applies a partial update to a stored character. Returns None when the
-        script or character is unknown, so the caller can answer 404 instead of
-        reporting a success that never happened.
-        """
-        chars = self._character_profiles.get(script_id)
-        if not chars or character_id not in chars:
-            return None
-
-        record = chars[character_id]
-        for field in self.USER_OWNED_CHARACTER_FIELDS:
-            if field in updates and updates[field] is not None:
-                record[field] = updates[field]
-
-        record["_edited"] = True
-        record["updated_at"] = datetime.now(timezone.utc).isoformat()
-        chars[character_id] = record
-        return record
+        return character_store.update_character_profile(script_id, character_id, updates)
 
     def store_document(
         self,
