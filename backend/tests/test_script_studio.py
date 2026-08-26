@@ -206,4 +206,56 @@ def test_api_script_upload_endpoint(client):
     assert data["title"] == "La DemoProduction"
     assert data["scenes_count"] == 2
     assert len(data["scenes"]) == 2
+    assert len(data["characters"]) >= 2
+    assert data["characters"][0]["name"] in ["LEAD", "SUPPORT"]
+
+
+def test_markdown_and_txt_script_parsing():
+    md_script = """# Title: Blade Runner Noir
+
+### Scene 1: INT. TYRELL HEADQUARTERS - NIGHT
+
+Massive pyramids pierce the smoggy Los Angeles sky.
+
+DECKARD
+Tell me about the test.
+
+RACHAEL
+Do you like our owl?
+"""
+    screenplay = parse_fountain_screenplay(md_script, title="Blade Runner Noir")
+    assert screenplay.title == "Blade Runner Noir"
+    assert screenplay.scenes_count == 1
+    assert screenplay.scenes[0].environment == "INT"
+    assert "TYRELL HEADQUARTERS" in screenplay.scenes[0].location
+    assert screenplay.scenes[0].time_of_day == "NIGHT"
+    
+    # Check Character Profiles
+    assert len(screenplay.characters) >= 2
+    char_names = [c.name for c in screenplay.characters]
+    assert "DECKARD" in char_names
+    assert "RACHAEL" in char_names
+    
+    deckard_profile = next(c for c in screenplay.characters if c.name == "DECKARD")
+    assert "trench coat" in deckard_profile.look_and_costume.lower()
+    assert "Detective" in deckard_profile.role or "Blade Runner" in deckard_profile.role
+
+
+def test_api_character_update_endpoint(client):
+    req = {
+        "id": "char_lead",
+        "name": "LEAD",
+        "role": "Haunted Great Hall Organist",
+        "actor_reference": "Late 30s man, intense sunken eyes, dark wavy hair, weathered features",
+        "look_and_costume": "Drenched dark linen shirt with rolled-up sleeves, charcoal wool vest",
+        "facial_features": "Sharp cheekbones, subtle 5 o'clock shadow, piercing hazel eyes",
+        "personality_traits": ["Obsessive", "Perfectionist", "Haunted"]
+    }
+    res = client.post("/api/script/characters/update", json=req)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "updated"
+    assert data["character"]["name"] == "LEAD"
+    assert data["character"]["role"] == "Haunted Great Hall Organist"
+
 

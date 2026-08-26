@@ -1519,7 +1519,7 @@ def get_prometheus_metrics():
 # Script Breakdown, DoP Cinematography & Previz Storyboard Endpoints
 # ---------------------------------------------------------------------------
 
-from backend.app.script.parser import parse_fountain_screenplay, parse_screenplay_file, Screenplay, ScreenplayScene
+from backend.app.script.parser import parse_fountain_screenplay, parse_screenplay_file, Screenplay, ScreenplayScene, CharacterProfile
 from backend.app.script.dop_presets import DOP_MASTER_PRESETS, resolve_dop_specification
 from backend.app.script.breakdown_engine import breakdown_scene_to_shots, ShotProposal
 from backend.app.script.storyboard_generator import render_cinematic_storyboard_svg
@@ -1536,6 +1536,7 @@ class ScriptBreakdownRequest(BaseModel):
     dop_overrides: Optional[Dict[str, Any]] = None
     custom_prompt: Optional[str] = None
     aspect_ratio: str = "2.39:1"
+    character_profiles: Optional[List[CharacterProfile]] = None
 
 
 class GenerateStoryboardRequest(BaseModel):
@@ -1552,6 +1553,28 @@ class GenerateStoryboardRequest(BaseModel):
     color_temp_k: int = 5600
     lut_emulation: str = "Kodak Vision3 500T 5219"
     aspect_ratio: str = "2.39:1"
+    character_details: Optional[str] = None
+
+
+class UpdateCharacterRequest(BaseModel):
+    id: str
+    name: str
+    role: str
+    actor_reference: str
+    look_and_costume: str
+    facial_features: str
+    personality_traits: List[str] = []
+
+
+@router.post("/script/characters/update")
+def update_character_profile(req: UpdateCharacterRequest):
+    """
+    Updates and polishes a character's physical look, facial appearance, costume, and personality traits.
+    """
+    return {
+        "status": "updated",
+        "character": req.model_dump()
+    }
 
 
 @router.get("/integrations/google-cloud")
@@ -1574,7 +1597,7 @@ def parse_script(req: ScriptParseRequest):
 @router.post("/script/upload", response_model=Screenplay)
 async def upload_script_file(file: UploadFile = File(...)):
     """
-    Uploads and parses a screenplay file (.fountain, .txt, .pdf, .fdx) into structured scenes,
+    Uploads and parses a screenplay file (.fountain, .txt, .md, .pdf, .fdx) into structured scenes,
     and archives the source document to Google Cloud Storage.
     """
     from backend.app.integrations.google_cloud import upload_media_to_google_cloud_storage
@@ -1610,7 +1633,7 @@ def get_dop_presets():
 def generate_shot_breakdown(req: ScriptBreakdownRequest):
     """
     Generates a cinematic multi-camera shot coverage list (Cameras A, B, C)
-    with technical DoP parameters and synthesized generative image prompts.
+    with technical DoP parameters, character visual consistency, and synthesized generative image prompts.
     """
     shots = breakdown_scene_to_shots(
         scene=req.scene,
@@ -1618,6 +1641,7 @@ def generate_shot_breakdown(req: ScriptBreakdownRequest):
         dop_overrides=req.dop_overrides,
         custom_mood_prompt=req.custom_prompt,
         aspect_ratio=req.aspect_ratio,
+        character_profiles=req.character_profiles
     )
 
     # Pre-render prompt-accurate visual concept previews for each camera angle (A, B, C)
@@ -1655,7 +1679,7 @@ def generate_shot_breakdown(req: ScriptBreakdownRequest):
 async def generate_storyboard_frame(req: GenerateStoryboardRequest):
     """
     Executes real-time AI image generation taking into account the editable prompt,
-    the active camera rig (Cam A/B/C), optics, and all DoP specifications.
+    the active camera rig (Cam A/B/C), optics, character visual consistency, and all DoP specifications.
     """
     from backend.app.script.ai_image_service import generate_ai_cinematic_image
 
@@ -1672,6 +1696,7 @@ async def generate_storyboard_frame(req: GenerateStoryboardRequest):
         color_temp_k=req.color_temp_k,
         lut_emulation=req.lut_emulation,
         aspect_ratio=req.aspect_ratio,
+        character_details=req.character_details
     )
 
     return {

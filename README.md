@@ -198,21 +198,26 @@ flowchart LR
 * Catches silent false starts, unlinked audio tracks, timecode drift, roll name collisions, and missing coverage.
 * Features an interactive **Consensus & Resolution Triage Hub** for Assistant Editors, DITs, and Post Supervisors.
 
-### 2. 🎥 AI Script & Multi-Camera Previz Studio
-* **Multi-Format Screenplay Ingestion:** Drag-and-drop parsing for `.fountain`, `.pdf`, `.fdx`, and `.txt` scripts.
+### 2. 🎭 Cast Profiling & Character Consistency Studio
+* **Automatic Cast Detection:** Extracts all characters, speech cues, dialogue line counts, and scene presence across the entire screenplay.
+* **Rich Character Visual Customizer:** Polish each actor's physical build, hair, wardrobe, props, facial features, lighting catchlights, and personality traits.
+* **Persistent Visual Consistency in Gen-AI:** Every photorealistic still rendered for Camera A, B, or C automatically enforces the locked character visual profiles for characters present in that setup.
+
+### 3. 🎥 AI Multi-Camera Previz & Master DoP Studio
+* **Multi-Format Screenplay Ingestion:** Ingests `.fountain`, `.md` (Markdown), `.txt` (Plaintext), `.pdf`, and `.fdx` (Final Draft) scripts.
 * **Autonomous 3-Camera Rig Coverage (Cameras A, B, C):**
   * **Camera A (Master Wide):** $24\text{mm}–35\text{mm}$, spatial architecture, blocking, motivated master lighting.
-  * **Camera B (Medium / OTS):** $50\text{mm}–75\text{mm}$, character emotional reaction, dialogue depth.
-  * **Camera C (Tactile Macro / Dutch Angle):** $85\text{mm}–100\text{mm}$, shallow depth of field, high-tension inserts.
+  * **Camera B (Medium / OTS):** $50\text{mm}–75\text{mm}$, character emotional reaction, dialogue depth, over-the-shoulder framing.
+  * **Camera C (Tactile Macro / Dutch Angle):** $85\text{mm}–100\text{mm}$, shallow depth of field, high-tension inserts, eye catchlights.
 * **Master DoP Cinematography Matrix:**
   * Curated master styles: *Roger Deakins, David Fincher, Greig Fraser, Gordon Willis, Emmanuel Lubezki, Wes Anderson*.
   * Technical controls: Color temperatures ($3200\text{K}–6500\text{K}$), Key-to-Fill lighting contrast ratios ($1:1$ to $16:1$), and 35mm film stock LUT emulations (*Kodak Vision3 500T 5219, Fujifilm Eterna, Bleach Bypass*).
 * **Interactive Prompt Console & Real-Time AI Generation:**
   * Two-way editable prompt editor with keyboard shortcuts (`Ctrl + Enter`).
-  * One-click cinematic modifier chips (`+ Volumetric Haze`, `+ Anamorphic Flare`, `+ Close-Up Eyes`, `+ Rain Reflections`).
+  * One-click cinematic modifier chips (`+ Volumetric Haze`, `+ Chiaroscuro Rim Light`, `+ Anamorphic Streak Flare`, `+ Close-Up Eye Catchlights`).
   * Instant photorealistic image generation via **Google Imagen 3 (`imagen-3.0-generate-002`)** and cloud **FLUX.1 Diffusion**.
 
-### 3. 📡 Append-Only Event Spine & Real-Time SSE Bus
+### 4. 📡 Append-Only Event Spine & Real-Time SSE Bus
 * Backed by **ClickHouse** and SQLite for zero-data-loss event streaming.
 * Real-time Server-Sent Events (SSE) dispatching live updates to crew members based on department handle (`@director`, Sound, Camera, Editorial).
 

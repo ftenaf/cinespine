@@ -3,22 +3,34 @@ import {
   Film,
   Camera,
   Sparkles,
-  Layers,
   Sliders,
   RotateCw,
-  Download,
   Maximize2,
   FileText,
-  LayoutGrid,
-  Monitor,
   Upload,
-  CheckCircle2
+  CheckCircle2,
+  Users,
+  ShieldCheck,
+  Save
 } from 'lucide-react';
 
 export interface DialogueLine {
   character: string;
   parenthetical?: string;
   line: string;
+}
+
+export interface CharacterProfile {
+  id: string;
+  name: string;
+  role: string;
+  actor_reference: string;
+  look_and_costume: string;
+  facial_features: string;
+  personality_traits: string[];
+  dialogue_count: number;
+  scenes_present: string[];
+  avatar_url?: string;
 }
 
 export interface ScreenplayScene {
@@ -29,6 +41,7 @@ export interface ScreenplayScene {
   time_of_day: string;
   action_blocks: string[];
   dialogues: DialogueLine[];
+  characters?: string[];
   raw_content?: string;
 }
 
@@ -80,6 +93,7 @@ export interface ShotProposal {
   camera_movement: string;
   dramatic_beat: string;
   subject_description: string;
+  characters?: string[];
   dop_spec: DoPSpecification;
   cameras: CameraAngleProposal[];
   active_camera: string;
@@ -120,28 +134,24 @@ COMMANDER VANCE steps out into the downpour, pointing a high-power spotlight at 
 
 export const ScriptStudio: React.FC = () => {
   // Screenplay Editor State
-  const [scriptText, setScriptText] = useState<string>(DEMO_FOUNTAIN_SCRIPT);
   const [scriptTitle, setScriptTitle] = useState<string>('La Cathédrale');
   const [parsedScenes, setParsedScenes] = useState<ScreenplayScene[]>([]);
+  const [characters, setCharacters] = useState<CharacterProfile[]>([]);
+  const [selectedCharId, setSelectedCharId] = useState<string | null>(null);
   const [selectedSceneIndex, setSelectedSceneIndex] = useState<number>(0);
-  const [isParsingScript, setIsParsingScript] = useState<boolean>(false);
+  const [studioSubTab, setStudioSubTab] = useState<'previz' | 'cast' | 'dop'>('previz');
+  const [savingCharId, setSavingCharId] = useState<string | null>(null);
+  const [charSaveSuccess, setCharSaveSuccess] = useState<string | null>(null);
 
   // Breakdown & Multi-Cam Shots State
   const [shotsMap, setShotsMap] = useState<Record<string, ShotProposal[]>>({});
   const [isBreakingDown, setIsBreakingDown] = useState<boolean>(false);
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
   const [activeCamLetter, setActiveCamLetter] = useState<string>('A');
-  const [viewMode, setViewMode] = useState<'single' | 'multicam'>('single');
 
   // DoP Cinematography Controls
-  const [dopMode, setDopMode] = useState<'preset' | 'matrix' | 'prompt'>('preset');
   const [selectedPreset, setSelectedPreset] = useState<string>('Roger Deakins');
   const [aspectRatio, setAspectRatio] = useState<string>('2.39:1');
-  const [customFocalLength, setCustomFocalLength] = useState<number>(35);
-  const [customAperture, setCustomAperture] = useState<string>('T2.8');
-  const [customColorTemp, setCustomColorTemp] = useState<number>(5600);
-  const [customLightingRatio, setCustomLightingRatio] = useState<string>('4:1');
-  const [customMoodPrompt, setCustomMoodPrompt] = useState<string>('');
 
   // Presets Dictionary
   const [presetsDict, setPresetsDict] = useState<Record<string, any>>({});
@@ -162,7 +172,6 @@ export const ScriptStudio: React.FC = () => {
 
   // Parse Script Handler
   const handleParseScript = async (textToParse: string, title?: string) => {
-    setIsParsingScript(true);
     try {
       const activeTitle = title || scriptTitle;
       const res = await fetch('/api/script/parse', {
@@ -174,12 +183,14 @@ export const ScriptStudio: React.FC = () => {
         const data = await res.json();
         if (data.title) setScriptTitle(data.title);
         setParsedScenes(data.scenes || []);
+        setCharacters(data.characters || []);
+        if (data.characters && data.characters.length > 0) {
+          setSelectedCharId(data.characters[0].id);
+        }
         setSelectedSceneIndex(0);
       }
     } catch (err) {
       console.error('Failed to parse screenplay:', err);
-    } finally {
-      setIsParsingScript(false);
     }
   };
 
@@ -190,23 +201,14 @@ export const ScriptStudio: React.FC = () => {
 
     setIsBreakingDown(true);
     try {
-      const overrides: Record<string, any> = {};
-      if (dopMode === 'matrix') {
-        overrides.focal_length = customFocalLength;
-        overrides.aperture = customAperture;
-        overrides.color_temperature_k = customColorTemp;
-        overrides.lighting_ratio = customLightingRatio;
-      }
-
       const res = await fetch('/api/script/breakdown', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scene: currentScene,
           dop_preset: selectedPreset,
-          dop_overrides: Object.keys(overrides).length > 0 ? overrides : null,
-          custom_prompt: dopMode === 'prompt' ? customMoodPrompt : null,
-          aspect_ratio: aspectRatio
+          aspect_ratio: aspectRatio,
+          character_profiles: characters
         })
       });
 
@@ -229,10 +231,22 @@ export const ScriptStudio: React.FC = () => {
     }
   };
 
+  // Synthesize Character Visual Details String for Active Scene
+  const getActiveCharacterDetails = (sceneChars?: string[]): string => {
+    const targetNames = sceneChars || parsedScenes[selectedSceneIndex]?.characters || [];
+    if (!targetNames.length) return '';
+    return characters
+      .filter(c => targetNames.includes(c.name))
+      .map(c => `${c.name} (${c.actor_reference}, wearing ${c.look_and_costume}, facial features: ${c.facial_features})`)
+      .join('; ');
+  };
+
   // Regenerate Single Camera Frame
   const handleRegenerateCameraFrame = async (shot: ShotProposal, cam: CameraAngleProposal) => {
     const genKey = `${shot.id}_${cam.camera_letter}`;
     setGeneratingCamMap(prev => ({ ...prev, [genKey]: true }));
+
+    const charDetails = getActiveCharacterDetails(shot.characters);
 
     try {
       const res = await fetch('/api/script/generate-storyboard', {
@@ -251,7 +265,8 @@ export const ScriptStudio: React.FC = () => {
           lighting_ratio: shot.dop_spec.lighting_ratio,
           color_temp_k: shot.dop_spec.color_temperature_k,
           lut_emulation: shot.dop_spec.lut_emulation,
-          aspect_ratio: aspectRatio
+          aspect_ratio: aspectRatio,
+          character_details: charDetails
         })
       });
 
@@ -334,18 +349,39 @@ export const ScriptStudio: React.FC = () => {
     handleUpdateActivePrompt(updated);
   };
 
+  // Update Character Profile Handler
+  const handleUpdateCharacter = async (char: CharacterProfile) => {
+    setSavingCharId(char.id);
+    try {
+      const res = await fetch('/api/script/characters/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(char)
+      });
+      if (res.ok) {
+        setCharacters(prev => prev.map(c => (c.id === char.id ? char : c)));
+        setCharSaveSuccess(char.id);
+        setTimeout(() => setCharSaveSuccess(null), 3000);
+      }
+    } catch (err) {
+      console.error('Failed to update character profile:', err);
+    } finally {
+      setSavingCharId(null);
+    }
+  };
+
   const currentScene = parsedScenes[selectedSceneIndex];
   const currentShots = currentScene ? shotsMap[currentScene.scene_number] || [] : [];
   const selectedShot = currentShots.find(s => s.id === selectedShotId) || currentShots[0];
   const selectedCam = selectedShot?.cameras?.find(c => c.camera_letter === activeCamLetter) || selectedShot?.cameras?.[0];
+  const selectedCharacter = characters.find(c => c.id === selectedCharId) || characters[0];
 
   // Script Upload State
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
-  const [isDragging, setIsDragging] = useState<boolean>(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
 
-  // File Upload Handler (.fountain, .txt, .pdf, .fdx)
+  // File Upload Handler (.fountain, .txt, .md, .pdf, .fdx)
   const handleFileUpload = async (file: File) => {
     if (!file) return;
     setIsUploading(true);
@@ -362,31 +398,29 @@ export const ScriptStudio: React.FC = () => {
 
       if (res.ok) {
         const data = await res.json();
-        if (data.raw_text) setScriptText(data.raw_text);
         if (data.title) setScriptTitle(data.title);
         setParsedScenes(data.scenes || []);
+        setCharacters(data.characters || []);
+        if (data.characters && data.characters.length > 0) {
+          setSelectedCharId(data.characters[0].id);
+        }
         setSelectedSceneIndex(0);
         setShotsMap({});
         setSelectedShotId(null);
       } else {
-        // Fallback: read text directly in browser
         const text = await file.text();
-        setScriptText(text);
         handleParseScript(text, file.name.replace(/\.[^/.]+$/, ''));
       }
     } catch (err) {
-      console.error('File upload failed:', err);
-      // Fallback local reader
+      console.error('Screenplay upload failed, parsing locally:', err);
       try {
         const text = await file.text();
-        setScriptText(text);
         handleParseScript(text, file.name.replace(/\.[^/.]+$/, ''));
       } catch (readErr) {
         console.error('Local text read failed:', readErr);
       }
     } finally {
       setIsUploading(false);
-      setIsDragging(false);
     }
   };
 
@@ -396,7 +430,7 @@ export const ScriptStudio: React.FC = () => {
       <input
         type="file"
         ref={fileInputRef}
-        accept=".fountain,.txt,.pdf,.fdx"
+        accept=".fountain,.txt,.md,.pdf,.fdx"
         onChange={e => {
           const file = e.target.files?.[0];
           if (file) handleFileUpload(file);
@@ -424,7 +458,7 @@ export const ScriptStudio: React.FC = () => {
               )}
             </div>
             <p className="text-xs text-slate-400">
-              Fountain Screenplay Ingestion • AI Scene-to-Shot Multi-Cam Breakdown • Tri-Modal DoP Cinematography • Prompt-Driven Visual Previz
+              Multi-Format Screenplay Ingestion (.fountain / .md / .txt / .pdf) • Cast Character Profiler • Tri-Modal DoP Previz
             </p>
           </div>
         </div>
@@ -438,13 +472,12 @@ export const ScriptStudio: React.FC = () => {
             className="px-3 py-1.5 text-xs font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-200 rounded-md border border-purple-500/40 transition flex items-center gap-1.5 shadow-sm"
           >
             <Upload className={`w-3.5 h-3.5 text-purple-400 ${isUploading ? 'animate-bounce' : ''}`} />
-            {isUploading ? 'Uploading & Parsing...' : 'Upload Script (.fountain/.pdf)'}
+            {isUploading ? 'Uploading & Parsing...' : 'Upload Script (.fountain / .md / .txt / .pdf)'}
           </button>
 
           <button
             onClick={() => {
               setUploadedFileName(null);
-              setScriptText(DEMO_FOUNTAIN_SCRIPT);
               handleParseScript(DEMO_FOUNTAIN_SCRIPT);
             }}
             className="px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md border border-slate-700 transition flex items-center gap-1.5"
@@ -479,702 +512,549 @@ export const ScriptStudio: React.FC = () => {
             {isBreakingDown ? (
               <>
                 <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                Analyzing Scene Multi-Cam...
+                Breaking Down Scene...
               </>
             ) : (
               <>
-                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                Propose Multi-Cam Breakdown
+                <Sparkles className="w-3.5 h-3.5" />
+                Run AI 3-Cam Breakdown
               </>
             )}
           </button>
         </div>
       </div>
 
-      {/* 3-Column Studio Grid Layout */}
-      <div className="flex-1 grid grid-cols-12 gap-0 overflow-hidden divide-x divide-slate-800">
-        
-        {/* ======================================================== */}
-        {/* COLUMN 1: FOUNTAIN SCRIPT & SCENE NAVIGATOR (Width: 3/12) */}
-        {/* ======================================================== */}
-        <div className="col-span-3 flex flex-col h-full bg-[#0B0F19] overflow-hidden">
-          <div className="px-4 py-2.5 bg-slate-900/60 border-b border-slate-800 flex items-center justify-between shrink-0">
-            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-purple-400" />
-              1. Screenplay &amp; Scenes ({parsedScenes.length})
-            </span>
-            <button
-              onClick={() => handleParseScript(scriptText)}
-              disabled={isParsingScript}
-              className="text-[11px] font-semibold text-purple-400 hover:text-purple-300 transition flex items-center gap-1"
-            >
-              <RotateCw className={`w-3 h-3 ${isParsingScript ? 'animate-spin' : ''}`} />
-              Re-parse
-            </button>
-          </div>
-
-          {/* Scene Headings Quick Selector */}
-          <div className="p-3 border-b border-slate-800 bg-slate-950/40 space-y-1.5 shrink-0 max-h-48 overflow-y-auto">
-            {parsedScenes.map((sc, idx) => {
-              const isSelected = idx === selectedSceneIndex;
-              const hasShots = !!shotsMap[sc.scene_number]?.length;
-              return (
-                <button
-                  key={idx}
-                  onClick={() => setSelectedSceneIndex(idx)}
-                  className={`w-full text-left p-2 rounded-md border text-xs transition flex items-center justify-between ${
-                    isSelected
-                      ? 'bg-purple-950/40 border-purple-500/50 text-purple-100 shadow-sm'
-                      : 'bg-slate-900/40 border-slate-800 text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
-                  }`}
-                >
-                  <div className="truncate pr-2">
-                    <span className="font-mono font-bold text-amber-400 mr-1.5">SC {sc.scene_number}</span>
-                    <span className="font-semibold text-slate-200">{sc.location}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className={`px-1.5 py-0.2 text-[9px] font-bold rounded ${
-                      sc.environment === 'INT' ? 'bg-blue-500/20 text-blue-300' : 'bg-amber-500/20 text-amber-300'
-                    }`}>
-                      {sc.environment}
-                    </span>
-                    {hasShots && (
-                      <span className="px-1.5 py-0.2 text-[9px] font-bold bg-emerald-500/20 text-emerald-300 rounded">
-                        {shotsMap[sc.scene_number].length} setups (3-Cam)
-                      </span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Raw Fountain / Screenplay Text Editor & Drag-Drop Zone */}
-          <div
-            onDragOver={e => {
-              e.preventDefault();
-              setIsDragging(true);
-            }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={e => {
-              e.preventDefault();
-              setIsDragging(false);
-              const file = e.dataTransfer.files?.[0];
-              if (file) handleFileUpload(file);
-            }}
-            className="flex-1 flex flex-col overflow-hidden p-3 relative"
+      {/* Sub-Navigation Tabs Bar */}
+      <div className="flex items-center justify-between px-6 py-2 bg-[#0B132B] border-b border-slate-800 shrink-0">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setStudioSubTab('previz')}
+            className={`px-4 py-1.5 text-xs font-bold rounded-md flex items-center gap-2 transition ${
+              studioSubTab === 'previz'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+            }`}
           >
-            {/* Drag & Drop Active Overlay */}
-            {isDragging && (
-              <div className="absolute inset-3 z-30 bg-purple-950/95 border-2 border-dashed border-purple-400 rounded-lg flex flex-col items-center justify-center backdrop-blur-sm pointer-events-none p-4 text-center">
-                <Upload className="w-9 h-9 text-purple-300 animate-bounce mb-2" />
-                <span className="text-xs font-bold text-white">Drop Screenplay File to Parse</span>
-                <span className="text-[10px] text-purple-300 mt-0.5">Supports .fountain, .txt, .pdf, .fdx</span>
-              </div>
-            )}
+            <Camera className="w-3.5 h-3.5" />
+            3-Camera Previz &amp; Breakdown
+          </button>
 
-            <div className="flex items-center justify-between mb-1.5 shrink-0">
-              <label className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
-                <span>Fountain Editor</span>
-                {uploadedFileName && (
-                  <span className="text-[9px] font-mono text-emerald-400 truncate max-w-[120px]">
-                    ({uploadedFileName})
-                  </span>
-                )}
-              </label>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="text-[10px] text-purple-400 hover:text-purple-300 flex items-center gap-1 font-semibold"
-                >
-                  <Upload className="w-2.5 h-2.5" />
-                  Import file
-                </button>
-                <span className="text-[10px] text-slate-500">• Auto-format</span>
-              </div>
-            </div>
+          <button
+            onClick={() => setStudioSubTab('cast')}
+            className={`px-4 py-1.5 text-xs font-bold rounded-md flex items-center gap-2 transition ${
+              studioSubTab === 'cast'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            Cast &amp; Character Profiles
+            <span className="px-1.5 py-0.2 text-[10px] font-extrabold bg-purple-950 text-purple-300 rounded-full border border-purple-500/40">
+              {characters.length}
+            </span>
+          </button>
 
-            <textarea
-              value={scriptText}
-              onChange={e => setScriptText(e.target.value)}
-              className="flex-1 w-full bg-slate-950/80 border border-slate-800 rounded-md p-3 text-xs font-mono text-slate-300 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 resize-none leading-relaxed"
-              placeholder="Type, paste, or drop a screenplay file (.fountain, .pdf, .txt)..."
-            />
-          </div>
+          <button
+            onClick={() => setStudioSubTab('dop')}
+            className={`px-4 py-1.5 text-xs font-bold rounded-md flex items-center gap-2 transition ${
+              studioSubTab === 'dop'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+            }`}
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            DoP Optics &amp; Master Styles
+          </button>
         </div>
 
-        {/* ======================================================== */}
-        {/* COLUMN 2: SHOT BREAKDOWN & TIMELINE MATRIX (Width: 4/12) */}
-        {/* ======================================================== */}
-        <div className="col-span-4 flex flex-col h-full bg-[#0C101B] overflow-hidden">
-          <div className="px-4 py-2.5 bg-slate-900/60 border-b border-slate-800 flex items-center justify-between shrink-0">
-            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Camera className="w-3.5 h-3.5 text-indigo-400" />
-              2. Proposed Setups ({currentShots.length})
-            </span>
-            {currentScene && (
-              <span className="text-[11px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                SCENE {currentScene.scene_number} • {currentScene.time_of_day}
-              </span>
-            )}
+        {/* Character Consistency Indicator */}
+        <div className="flex items-center gap-2 px-3 py-1 bg-purple-950/40 border border-purple-500/30 rounded-md">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="text-[11px] font-semibold text-purple-200">
+            Character Visual Consistency: <strong className="text-emerald-400 font-bold">{characters.length} Profiles Active</strong>
+          </span>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* VIEW 1: CAST & CHARACTER PROFILES STUDIO                                 */}
+      {/* ========================================================================= */}
+      {studioSubTab === 'cast' && (
+        <div className="flex-1 grid grid-cols-12 gap-0 overflow-hidden">
+          {/* Left Column: Character List */}
+          <div className="col-span-4 bg-[#0F172A]/70 border-r border-slate-800 flex flex-col overflow-y-auto p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Users className="w-4 h-4 text-purple-400" />
+                  Detected Cast ({characters.length})
+                </h3>
+                <p className="text-[11px] text-slate-400">Click a character to polish physical look, wardrobe, and facial traits.</p>
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              {characters.map(char => (
+                <div
+                  key={char.id}
+                  onClick={() => setSelectedCharId(char.id)}
+                  className={`p-3.5 rounded-xl border transition cursor-pointer flex items-start gap-3.5 ${
+                    selectedCharacter?.id === char.id
+                      ? 'bg-purple-950/60 border-purple-500 shadow-lg shadow-purple-500/10'
+                      : 'bg-slate-900/60 border-slate-800 hover:border-slate-700 hover:bg-slate-900'
+                  }`}
+                >
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-purple-700 to-indigo-500 flex items-center justify-center font-black text-sm text-white shrink-0 shadow-md">
+                    {char.name.charAt(0)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-black text-white tracking-wider">{char.name}</h4>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-800 text-purple-300 rounded border border-purple-500/20">
+                        {char.dialogue_count} cues
+                      </span>
+                    </div>
+                    <p className="text-[11px] font-medium text-slate-300 truncate mt-0.5">{char.role}</p>
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {char.personality_traits.slice(0, 3).map((t, idx) => (
+                        <span key={idx} className="px-1.5 py-0.5 text-[9px] bg-slate-800/80 text-slate-300 rounded border border-slate-700">
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
-          {/* Scene Action Synopsis Card */}
-          {currentScene && (
-            <div className="p-3.5 border-b border-slate-800/80 bg-slate-900/30 shrink-0">
-              <div className="text-[11px] font-bold text-slate-300 mb-1">
-                {currentScene.heading}
-              </div>
-              <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
-                {currentScene.action_blocks.join(' ') || 'No action description.'}
-              </p>
-              {currentScene.dialogues.length > 0 && (
-                <div className="mt-2 flex items-center gap-1.5 text-[11px] text-purple-400 font-medium">
-                  <span>Characters:</span>
-                  {Array.from(new Set(currentScene.dialogues.map(d => d.character))).map(c => (
-                    <span key={c} className="px-1.5 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded text-[10px]">
-                      {c}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Right Column: Character Visual Polish Console */}
+          <div className="col-span-8 bg-[#090D16] flex flex-col overflow-y-auto p-6">
+            {selectedCharacter ? (
+              <div className="max-w-3xl space-y-6">
+                {/* Header Profile Bar */}
+                <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 flex items-center justify-center font-black text-xl text-white shadow-xl shadow-purple-600/30">
+                      {selectedCharacter.name.charAt(0)}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-lg font-black text-white tracking-wider">{selectedCharacter.name}</h2>
+                        <span className="px-2 py-0.5 text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full flex items-center gap-1">
+                          <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                          Visual Consistency Locked
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Dialogue Cues: <strong className="text-purple-300">{selectedCharacter.dialogue_count}</strong> • Scenes Present: <strong className="text-purple-300">{selectedCharacter.scenes_present.join(', ') || '1'}</strong>
+                      </p>
+                    </div>
+                  </div>
 
-          {/* Shot Cards List */}
-          <div className="flex-1 p-3 overflow-y-auto space-y-2.5">
-            {currentShots.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-6 border border-dashed border-slate-800 rounded-lg">
-                <div className="w-12 h-12 rounded-full bg-indigo-950/40 border border-indigo-800/50 flex items-center justify-center mb-3">
-                  <Sparkles className="w-6 h-6 text-indigo-400" />
+                  <button
+                    onClick={() => handleUpdateCharacter(selectedCharacter)}
+                    disabled={savingCharId === selectedCharacter.id}
+                    className="px-4 py-2 text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg shadow-lg shadow-emerald-600/20 transition flex items-center gap-2"
+                  >
+                    <Save className="w-4 h-4" />
+                    {savingCharId === selectedCharacter.id ? 'Saving...' : 'Save & Lock Appearance'}
+                  </button>
                 </div>
-                <h4 className="text-xs font-bold text-slate-200 mb-1">No Shots Proposed Yet</h4>
-                <p className="text-xs text-slate-500 mb-4 max-w-[240px]">
-                  Click &quot;Propose Multi-Cam Breakdown&quot; to divide Scene {currentScene?.scene_number || '1'} into 3-camera coverage setups, dramatic beats, and technical specs.
-                </p>
-                <button
-                  onClick={handleBreakdownCurrentScene}
-                  disabled={isBreakingDown}
-                  className="px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition shadow-md flex items-center gap-1.5"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  Generate Multi-Cam Breakdown
-                </button>
+
+                {charSaveSuccess && (
+                  <div className="p-3 bg-emerald-950/60 border border-emerald-500/40 rounded-lg flex items-center gap-2 text-xs text-emerald-200">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    Character visual profile locked. All future Gen-AI camera renders will strictly enforce this actor look.
+                  </div>
+                )}
+
+                {/* Form Fields */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Role / Narrative Archetype</label>
+                    <input
+                      type="text"
+                      value={selectedCharacter.role}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, role: val } : c)));
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Actor Screen Reference &amp; Physical Appearance</label>
+                    <textarea
+                      rows={3}
+                      value={selectedCharacter.actor_reference}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, actor_reference: val } : c)));
+                      }}
+                      placeholder="e.g. Late 30s man, intense sunken eyes, dark wavy hair, weathered features, rugged jawline..."
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500 font-sans"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Defines actor age, physique, build, hair, and baseline screen presence.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Costume, Wardrobe &amp; Props</label>
+                    <textarea
+                      rows={2}
+                      value={selectedCharacter.look_and_costume}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, look_and_costume: val } : c)));
+                      }}
+                      placeholder="e.g. Drenched dark linen shirt with rolled-up sleeves, charcoal wool vest, silver pocket watch..."
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500 font-sans"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Wardrobe textures, fabrics, tailoring, distress level, and accessories.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Facial Features &amp; Catchlights</label>
+                    <textarea
+                      rows={2}
+                      value={selectedCharacter.facial_features}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, facial_features: val } : c)));
+                      }}
+                      placeholder="e.g. Sharp cheekbones, subtle 5 o'clock shadow, piercing hazel eyes filled with obsessive fervor..."
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500 font-sans"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Eyes, cheekbones, complexion, expressions, and key facial lighting marks.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Personality Traits (Comma-separated)</label>
+                    <input
+                      type="text"
+                      value={selectedCharacter.personality_traits.join(', ')}
+                      onChange={e => {
+                        const traits = e.target.value.split(',').map(t => t.trim()).filter(Boolean);
+                        setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, personality_traits: traits } : c)));
+                      }}
+                      placeholder="e.g. Obsessive, Perfectionist, Haunted, Virtuoso"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                </div>
               </div>
             ) : (
-              currentShots.map(shot => {
-                const isSelected = shot.id === selectedShotId;
-                return (
+              <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                <Users className="w-12 h-12 text-slate-600 mb-3" />
+                <p className="text-sm font-semibold">No characters selected</p>
+                <p className="text-xs text-slate-500">Upload a script or choose a demo to detect and profile characters.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* VIEW 2: 3-CAMERA PREVIZ & BREAKDOWN STUDIO                               */}
+      {/* ========================================================================= */}
+      {studioSubTab === 'previz' && (
+        <div className="flex-1 grid grid-cols-12 gap-0 overflow-hidden">
+          {/* Column 1: Scenes & Fountain Screenplay Ingestion */}
+          <div className="col-span-3 bg-[#0F172A]/70 border-r border-slate-800 flex flex-col overflow-hidden">
+            <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">Screenplay Scenes</h3>
+                <p className="text-[11px] text-slate-400">{parsedScenes.length} Scenes Extracted</p>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {parsedScenes.map((sc, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => setSelectedSceneIndex(idx)}
+                  className={`p-3 rounded-lg border transition cursor-pointer ${
+                    selectedSceneIndex === idx
+                      ? 'bg-purple-950/40 border-purple-500 text-white shadow-md'
+                      : 'bg-slate-900/40 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-900/80'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-500/20 text-purple-300 rounded">
+                      SCENE {sc.scene_number}
+                    </span>
+                    <span className="text-[10px] font-semibold text-slate-400">{sc.time_of_day}</span>
+                  </div>
+                  <h4 className="text-xs font-bold truncate text-slate-100">{sc.heading}</h4>
+                  <p className="text-[11px] text-slate-400 line-clamp-2 mt-1">
+                    {sc.action_blocks[0] || 'No action description'}
+                  </p>
+                  {sc.characters && sc.characters.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {sc.characters.map((cName, cIdx) => (
+                        <span key={cIdx} className="px-1 py-0.5 text-[9px] font-semibold bg-slate-800 text-purple-300 rounded border border-purple-500/20">
+                          {cName}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Column 2: Shot List & Synchronized Camera Setups */}
+          <div className="col-span-4 bg-[#0B1120] border-r border-slate-800 flex flex-col overflow-hidden">
+            <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">Multi-Cam Setups</h3>
+                <p className="text-[11px] text-slate-400">
+                  {currentShots.length > 0 ? `${currentShots.length} Setups (3 Cams / Setup)` : 'No breakdown yet'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+              {currentShots.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center p-6 text-slate-400">
+                  <Camera className="w-10 h-10 text-slate-600 mb-2" />
+                  <p className="text-xs font-bold">No Shot Breakdown Generated</p>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Click "Run AI 3-Cam Breakdown" to generate synchronized setups.
+                  </p>
+                </div>
+              ) : (
+                currentShots.map(shot => (
                   <div
                     key={shot.id}
                     onClick={() => setSelectedShotId(shot.id)}
-                    className={`p-3.5 rounded-lg border transition cursor-pointer relative overflow-hidden ${
-                      isSelected
-                        ? 'bg-gradient-to-r from-indigo-950/50 to-slate-900 border-indigo-500 shadow-md shadow-indigo-500/10 ring-1 ring-indigo-500/40'
-                        : 'bg-slate-900/40 border-slate-800 hover:bg-slate-800/50 hover:border-slate-700'
+                    className={`p-3 rounded-xl border transition cursor-pointer ${
+                      selectedShot?.id === shot.id
+                        ? 'bg-purple-950/40 border-purple-500 shadow-md'
+                        : 'bg-slate-900/50 border-slate-800 hover:border-slate-700'
                     }`}
                   >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-[11px] font-bold font-mono text-white flex items-center justify-center">
-                          {shot.shot_number}
-                        </span>
-                        <h4 className="text-xs font-bold text-slate-100">{shot.shot_name}</h4>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="px-2 py-0.5 text-[10px] font-extrabold bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded">
-                          {shot.shot_size}
-                        </span>
-                        <span className="px-2 py-0.5 text-[10px] font-semibold bg-slate-800 text-slate-300 rounded">
-                          {shot.camera_movement}
-                        </span>
-                      </div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-black text-white">{shot.shot_name}</span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded border border-slate-700">
+                        {shot.shot_size} • {shot.camera_angle}
+                      </span>
                     </div>
 
-                    <p className="text-xs text-slate-400 line-clamp-2 mb-2.5">
-                      {shot.dramatic_beat || shot.subject_description}
-                    </p>
+                    <p className="text-[11px] text-slate-300 line-clamp-2">{shot.subject_description}</p>
 
-                    {/* Multi-Camera Angle Pill Grid (A, B, C) */}
-                    <div className="grid grid-cols-3 gap-1.5 mb-2">
-                      {(shot.cameras || []).map(cam => {
-                        const isCamActive = isSelected && activeCamLetter === cam.camera_letter;
-                        return (
-                          <div
-                            key={cam.camera_letter}
-                            onClick={e => {
-                              e.stopPropagation();
-                              setSelectedShotId(shot.id);
-                              setActiveCamLetter(cam.camera_letter);
-                            }}
-                            className={`p-1.5 rounded text-left border transition ${
-                              isCamActive
-                                ? 'bg-indigo-600/30 border-indigo-400 text-white'
-                                : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between text-[10px] font-bold">
-                              <span className={isCamActive ? 'text-amber-300' : 'text-slate-300'}>Cam {cam.camera_letter}</span>
-                              <span className="font-mono text-[9px] text-purple-300">{cam.shot_size}</span>
-                            </div>
-                            <div className="text-[9px] font-mono truncate text-slate-400 mt-0.5">
-                              {cam.focal_length}mm • {cam.aperture}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Technical Lens & Preset Badge */}
-                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 bg-slate-950/60 px-2.5 py-1.5 rounded border border-slate-800/60">
-                      <span className="text-purple-300">{shot.dop_spec.dop_preset}</span>
-                      <span className="text-emerald-400 font-bold">{shot.dop_spec.lighting_ratio}</span>
-                      <span className="text-amber-400">{shot.dop_spec.color_temperature_k}K</span>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        {/* ======================================================== */}
-        {/* COLUMN 3: DoP STUDIO & STORYBOARD GALLERY (Width: 5/12)   */}
-        {/* ======================================================== */}
-        <div className="col-span-5 flex flex-col h-full bg-[#080C14] overflow-hidden">
-          {/* DoP Configuration Header & Mode Switcher */}
-          <div className="px-4 py-2.5 bg-slate-900/60 border-b border-slate-800 flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Sliders className="w-3.5 h-3.5 text-pink-400" />
-                3. DoP Cinematography &amp; Previz
-              </span>
-              
-              {/* Single Cam vs Multi-Cam Grid Toggle */}
-              {selectedShot && (
-                <div className="flex items-center bg-slate-950 border border-slate-800 rounded p-0.5 ml-2">
-                  <button
-                    onClick={() => setViewMode('single')}
-                    className={`p-1 rounded text-[10px] font-bold flex items-center gap-1 ${
-                      viewMode === 'single' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-                    }`}
-                    title="Single Camera Inspector"
-                  >
-                    <Monitor className="w-3 h-3" />
-                  </button>
-                  <button
-                    onClick={() => setViewMode('multicam')}
-                    className={`p-1 rounded text-[10px] font-bold flex items-center gap-1 ${
-                      viewMode === 'multicam' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-                    }`}
-                    title="3-Camera Multi-View Grid"
-                  >
-                    <LayoutGrid className="w-3 h-3" />
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Tri-Modal Switcher */}
-            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-md p-0.5">
-              <button
-                onClick={() => setDopMode('preset')}
-                className={`px-2.5 py-1 text-[11px] font-bold rounded transition ${
-                  dopMode === 'preset' ? 'bg-pink-600 text-white' : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Presets
-              </button>
-              <button
-                onClick={() => setDopMode('matrix')}
-                className={`px-2.5 py-1 text-[11px] font-bold rounded transition ${
-                  dopMode === 'matrix' ? 'bg-pink-600 text-white' : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Technical Matrix
-              </button>
-              <button
-                onClick={() => setDopMode('prompt')}
-                className={`px-2.5 py-1 text-[11px] font-bold rounded transition ${
-                  dopMode === 'prompt' ? 'bg-pink-600 text-white' : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Free-form
-              </button>
-            </div>
-          </div>
-
-          {/* DoP Style Selector Controls Area */}
-          <div className="p-3.5 border-b border-slate-800 bg-slate-900/30 shrink-0">
-            {dopMode === 'preset' && (
-              <div className="grid grid-cols-3 gap-2">
-                {Object.keys(presetsDict).map(pKey => {
-                  const p = presetsDict[pKey];
-                  const isChosen = selectedPreset === pKey;
-                  return (
-                    <button
-                      key={pKey}
-                      onClick={() => setSelectedPreset(pKey)}
-                      className={`p-2 rounded-md border text-left transition flex flex-col justify-between ${
-                        isChosen
-                          ? 'bg-pink-950/40 border-pink-500 text-pink-100 shadow-md shadow-pink-500/10'
-                          : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                      }`}
-                    >
-                      <div>
-                        <div className="text-[11px] font-bold text-white truncate">{pKey}</div>
-                        <div className="text-[9px] text-slate-400 line-clamp-1 mt-0.5">{p.tagline}</div>
-                      </div>
-                      <div className="mt-2 text-[9px] font-mono text-pink-400 font-semibold">
-                        {p.focal_length}mm • {p.aperture}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {dopMode === 'matrix' && (
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-400 mb-1 block">
-                    Focal Length ({customFocalLength}mm)
-                  </label>
-                  <input
-                    type="range"
-                    min="18"
-                    max="135"
-                    step="1"
-                    value={customFocalLength}
-                    onChange={e => setCustomFocalLength(Number(e.target.value))}
-                    className="w-full accent-pink-500 cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[9px] text-slate-500 font-mono">
-                    <span>18mm (Wide)</span>
-                    <span>50mm</span>
-                    <span>135mm (Tele)</span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-400 mb-1 block">
-                    Aperture / T-Stop ({customAperture})
-                  </label>
-                  <select
-                    value={customAperture}
-                    onChange={e => setCustomAperture(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 focus:outline-none focus:border-pink-500"
-                  >
-                    {['T1.3', 'T1.4', 'T2.0', 'T2.8', 'T4.0', 'T5.6', 'T8.0'].map(ap => (
-                      <option key={ap} value={ap}>{ap}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-400 mb-1 block">
-                    Color Temp ({customColorTemp}K)
-                  </label>
-                  <input
-                    type="range"
-                    min="2800"
-                    max="6500"
-                    step="100"
-                    value={customColorTemp}
-                    onChange={e => setCustomColorTemp(Number(e.target.value))}
-                    className="w-full accent-pink-500 cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[9px] text-slate-500 font-mono">
-                    <span>3200K (Warm)</span>
-                    <span>5600K (Daylight)</span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-400 mb-1 block">
-                    Lighting Contrast Ratio
-                  </label>
-                  <select
-                    value={customLightingRatio}
-                    onChange={e => setCustomLightingRatio(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200 focus:outline-none focus:border-pink-500"
-                  >
-                    {['1:1 (Flat)', '2:1 (Gentle)', '4:1 (Dramatic)', '8:1 (Chiaroscuro)', '16:1 (Noir)'].map(r => (
-                      <option key={r} value={r}>{r}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {dopMode === 'prompt' && (
-              <div>
-                <label className="text-[10px] font-bold uppercase text-slate-400 mb-1 block">
-                  Natural Language Mood &amp; Lighting Prompt
-                </label>
-                <textarea
-                  value={customMoodPrompt}
-                  onChange={e => setCustomMoodPrompt(e.target.value)}
-                  rows={2}
-                  placeholder="e.g. Gothic great_hall gloom with shafts of golden light, heavy vignette, anamorphic flare..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-200 focus:outline-none focus:border-pink-500 resize-none font-sans"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Active Storyboard Previz Preview */}
-          <div className="flex-1 p-4 overflow-y-auto flex flex-col">
-            {selectedShot ? (
-              <div className="flex-1 flex flex-col bg-slate-950/80 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
-                
-                {/* Multi-Camera Angle Selector Tabs */}
-                <div className="px-4 py-2 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between shrink-0">
-                  <div className="flex items-center gap-1.5">
-                    {(selectedShot.cameras || []).map(cam => {
-                      const isCamActive = activeCamLetter === cam.camera_letter;
-                      return (
+                    {/* Camera Switcher Pills */}
+                    <div className="flex items-center gap-1.5 mt-2.5 pt-2 border-t border-slate-800/80">
+                      {shot.cameras.map(cam => (
                         <button
                           key={cam.camera_letter}
-                          onClick={() => {
+                          onClick={e => {
+                            e.stopPropagation();
+                            setSelectedShotId(shot.id);
                             setActiveCamLetter(cam.camera_letter);
-                            setViewMode('single');
                           }}
-                          className={`px-3 py-1 rounded-md text-xs font-bold transition flex items-center gap-1.5 ${
-                            isCamActive
-                              ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                              : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+                          className={`px-2 py-1 text-[10px] font-bold rounded flex items-center gap-1 transition ${
+                            selectedShot?.id === shot.id && activeCamLetter === cam.camera_letter
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
                           }`}
                         >
-                          <span>Camera {cam.camera_letter}</span>
-                          <span className="text-[10px] font-mono font-normal opacity-80">({cam.shot_size})</span>
+                          <Camera className="w-2.5 h-2.5" />
+                          Cam {cam.camera_letter} ({cam.focal_length}mm)
                         </button>
-                      );
-                    })}
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Column 3: Active Previz Canvas & Generative Prompt Console */}
+          <div className="col-span-5 bg-[#090D16] flex flex-col overflow-y-auto p-4 space-y-4">
+            {selectedShot && selectedCam ? (
+              <div className="space-y-4">
+                {/* Visual Frame Canvas Header */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 text-xs font-black bg-purple-600 text-white rounded">
+                      CAMERA {activeCamLetter}
+                    </span>
+                    <span className="text-xs font-bold text-white">{selectedCam.camera_role}</span>
                   </div>
 
-                  <span className="text-[11px] font-semibold text-purple-300 truncate max-w-[200px]">
-                    {selectedCam?.camera_role}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono text-purple-300">
+                      {selectedCam.focal_length}mm • {selectedCam.aperture} • {aspectRatio}
+                    </span>
+                  </div>
                 </div>
 
-                {/* VIEW MODE: 3-CAMERA MULTI-VIEW GRID */}
-                {viewMode === 'multicam' ? (
-                  <div className="p-3 grid grid-cols-3 gap-2 bg-black flex-1 overflow-y-auto">
-                    {(selectedShot.cameras || []).map(cam => {
-                      const genKey = `${selectedShot.id}_${cam.camera_letter}`;
-                      const isGen = generatingCamMap[genKey];
-                      return (
-                        <div key={cam.camera_letter} className="flex flex-col bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
-                          <div className="px-2 py-1 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-[10px] font-bold">
-                            <span className="text-amber-400">Camera {cam.camera_letter}</span>
-                            <span className="text-purple-300">{cam.shot_size} • {cam.focal_length}mm</span>
-                          </div>
-                          <div className="relative flex-1 bg-black flex items-center justify-center p-1">
-                            {cam.image_url ? (
-                              <img
-                                src={cam.image_url}
-                                alt={`Camera ${cam.camera_letter}`}
-                                className="w-full h-auto object-contain rounded cursor-pointer"
-                                onClick={() => setEnlargedImage({
-                                  url: cam.image_url!,
-                                  prompt: cam.prompt,
-                                  title: `SC ${selectedShot.scene_number} / SH ${selectedShot.shot_number} • CAM ${cam.camera_letter} (${cam.camera_role})`
-                                })}
-                              />
-                            ) : (
-                              <div className="text-center p-4 text-xs text-slate-500">No Image</div>
-                            )}
-                          </div>
-                          <div className="p-2 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between">
-                            <span className="text-[9px] text-slate-400 truncate">{cam.camera_role}</span>
-                            <button
-                              onClick={() => handleRegenerateCameraFrame(selectedShot, cam)}
-                              disabled={isGen}
-                              className="p-1 bg-slate-800 hover:bg-slate-700 text-purple-300 rounded text-[10px]"
-                            >
-                              <RotateCw className={`w-3 h-3 ${isGen ? 'animate-spin' : ''}`} />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                {/* Main Previz Frame Display */}
+                <div className="relative rounded-xl overflow-hidden border border-slate-700 bg-slate-950 aspect-[2.39/1] shadow-2xl group">
+                  {selectedCam.image_url ? (
+                    <img
+                      src={selectedCam.image_url}
+                      alt={selectedCam.prompt}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs">
+                      <Camera className="w-8 h-8 mb-2 text-slate-600" />
+                      Rendering Previz Frame...
+                    </div>
+                  )}
+
+                  {/* Overlay Badge */}
+                  <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/70 backdrop-blur text-[10px] font-mono font-bold text-purple-300 rounded border border-purple-500/30">
+                    35mm Previz • {selectedShot.dop_spec.dop_preset}
                   </div>
-                ) : (
-                  /* VIEW MODE: SINGLE CAMERA INSPECTOR */
-                  <div className="relative w-full bg-black flex items-center justify-center p-3 group">
-                    {selectedCam?.image_url ? (
-                      <div className="relative w-full overflow-hidden rounded-lg border border-slate-800 shadow-inner">
-                        <img
-                          src={selectedCam.image_url}
-                          alt={selectedShot.shot_name}
-                          className="w-full object-contain cursor-pointer transition transform group-hover:scale-[1.01]"
-                          onClick={() => setEnlargedImage({
+
+                  {/* Character Lock Badge */}
+                  <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/80 backdrop-blur text-[10px] font-semibold text-emerald-300 rounded border border-emerald-500/30 flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                    Consistent Cast Applied
+                  </div>
+
+                  {/* Hover Actions */}
+                  <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition">
+                    {selectedCam.image_url && (
+                      <button
+                        onClick={() =>
+                          setEnlargedImage({
                             url: selectedCam.image_url!,
                             prompt: selectedCam.prompt,
-                            title: `SC ${selectedShot.scene_number} / SH ${selectedShot.shot_number} • CAM ${selectedCam.camera_letter} - ${selectedCam.camera_role}`
-                          })}
-                        />
-                        <button
-                          onClick={() => setEnlargedImage({
-                            url: selectedCam.image_url!,
-                            prompt: selectedCam.prompt,
-                            title: `SC ${selectedShot.scene_number} / SH ${selectedShot.shot_number} • CAM ${selectedCam.camera_letter} - ${selectedCam.camera_role}`
-                          })}
-                          className="absolute bottom-3 right-3 p-1.5 bg-black/70 hover:bg-black text-white rounded-md border border-slate-700 opacity-0 group-hover:opacity-100 transition shadow"
-                        >
-                          <Maximize2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="w-full aspect-[2.39/1] bg-slate-900 flex flex-col items-center justify-center border border-dashed border-slate-800 rounded-lg">
-                        <Film className="w-8 h-8 text-slate-600 mb-2" />
-                        <span className="text-xs text-slate-500">No Previz Rendered</span>
-                      </div>
+                            title: `${selectedShot.shot_name} - Camera ${activeCamLetter}`
+                          })
+                        }
+                        className="p-1.5 bg-black/80 hover:bg-black text-white rounded-md border border-slate-700 transition"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </button>
                     )}
                   </div>
-                )}
+                </div>
 
-                {/* Shot Metadata & Regenerate Controls */}
-                <div className="p-4 bg-slate-900/50 border-t border-slate-800 flex-1 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                          SCENE {selectedShot.scene_number} • SHOT {selectedShot.shot_number} • CAM {selectedCam?.camera_letter}
-                        </span>
-                        <span className="text-xs font-bold text-white">{selectedShot.shot_name}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="px-2 py-0.5 text-[10px] font-extrabold bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-200 rounded border border-purple-500/40 flex items-center gap-1">
-                          <Sparkles className="w-3 h-3 text-amber-300" />
-                          Live AI Diffusion
-                        </span>
-                        <span className="px-2 py-0.5 text-[10px] font-extrabold bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">
-                          {aspectRatio} Scope
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 mb-3 text-[11px] font-mono">
-                      <div className="p-2 bg-slate-950/60 rounded border border-slate-800">
-                        <span className="text-slate-500 block text-[9px] uppercase font-sans">Camera &amp; Optics</span>
-                        <span className="text-slate-200 font-bold">{selectedCam?.focal_length}mm {selectedCam?.aperture} • Cam {selectedCam?.camera_letter}</span>
-                      </div>
-                      <div className="p-2 bg-slate-950/60 rounded border border-slate-800">
-                        <span className="text-slate-500 block text-[9px] uppercase font-sans">Lighting &amp; Temp</span>
-                        <span className="text-slate-200 font-bold">{selectedShot.dop_spec.color_temperature_k}K • {selectedShot.dop_spec.lighting_ratio}</span>
-                      </div>
-                      <div className="p-2 bg-slate-950/60 rounded border border-slate-800">
-                        <span className="text-slate-500 block text-[9px] uppercase font-sans">Film Stock</span>
-                        <span className="text-pink-300 font-bold">{selectedShot.dop_spec.lut_emulation}</span>
-                      </div>
-                    </div>
-
-                    {/* Editable Active Camera Prompt Console */}
-                    <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 mb-3 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-extrabold uppercase text-purple-300 flex items-center gap-1.5 tracking-wider">
-                          <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                          Active Camera {selectedCam?.camera_letter} Prompt (Editable)
-                        </span>
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          {selectedCam?.prompt.length || 0} chars • Ctrl+Enter to render
-                        </span>
-                      </div>
-
-                      <textarea
-                        value={selectedCam?.prompt || ''}
-                        onChange={e => handleUpdateActivePrompt(e.target.value)}
-                        onKeyDown={e => {
-                          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                            e.preventDefault();
-                            if (selectedCam) handleRegenerateCameraFrame(selectedShot, selectedCam);
-                          }
-                        }}
-                        rows={3}
-                        placeholder="Describe exact camera angle, subject emotion, action, lighting, and environment..."
-                        className="w-full bg-slate-900/90 border border-slate-700/80 rounded-lg p-2.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 resize-none leading-relaxed shadow-inner"
-                      />
-
-                      {/* Quick-Add Prompt Modifier Chips */}
-                      <div className="flex flex-wrap gap-1 pt-0.5">
-                        {[
-                          'Volumetric Haze',
-                          'Chiaroscuro Rim Light',
-                          'Anamorphic Streak Flare',
-                          'Extreme Close-Up Eyes',
-                          'Rain Reflections',
-                          'Low-Key Noir Shadows',
-                          'Warm Amber Glow',
-                          'Neon Cyan Rim Light',
-                          '35mm Authentic Grain'
-                        ].map(tag => (
-                          <button
-                            key={tag}
-                            type="button"
-                            onClick={() => handleAppendPromptModifier(tag)}
-                            className="px-2 py-0.5 text-[9px] font-semibold bg-slate-800/80 hover:bg-purple-900/40 text-slate-300 hover:text-purple-200 rounded border border-slate-700 hover:border-purple-500/50 transition"
-                          >
-                            + {tag}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                {/* Prompt Modifier Chips */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-purple-400" />
+                      Quick Cinematography Modifiers:
+                    </label>
                   </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
-                    <button
-                      onClick={() => selectedCam && handleRegenerateCameraFrame(selectedShot, selectedCam)}
-                      disabled={generatingCamMap[`${selectedShot.id}_${selectedCam?.camera_letter}`]}
-                      className="px-4 py-2 text-xs font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-lg shadow-lg shadow-purple-600/30 transition flex items-center gap-2 disabled:opacity-50"
-                    >
-                      <Sparkles className={`w-3.5 h-3.5 text-amber-300 ${generatingCamMap[`${selectedShot.id}_${selectedCam?.camera_letter}`] ? 'animate-spin' : ''}`} />
-                      {generatingCamMap[`${selectedShot.id}_${selectedCam?.camera_letter}`]
-                        ? `Generating Camera ${selectedCam?.camera_letter} Concept...`
-                        : `Execute & Render Camera ${selectedCam?.camera_letter} AI Concept`}
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentShots, null, 2));
-                        const downloadAnchor = document.createElement('a');
-                        downloadAnchor.setAttribute("href", dataStr);
-                        downloadAnchor.setAttribute("download", `CineSpine_MultiCam_ShotList_Scene_${currentScene?.scene_number || '1'}.json`);
-                        document.body.appendChild(downloadAnchor);
-                        downloadAnchor.click();
-                        downloadAnchor.remove();
-                      }}
-                      className="px-3.5 py-1.5 text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white rounded-md transition shadow-md flex items-center gap-1.5"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      Export Multi-Cam Shot Pack
-                    </button>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      '+ Volumetric Haze',
+                      '+ Chiaroscuro Rim Light',
+                      '+ Anamorphic Streak Flare',
+                      '+ Close-Up Eye Catchlights',
+                      '+ Rain Reflections',
+                      '+ 35mm Authentic Grain'
+                    ].map(mod => (
+                      <button
+                        key={mod}
+                        onClick={() => handleAppendPromptModifier(mod)}
+                        className="px-2 py-1 text-[10px] font-semibold bg-slate-900 hover:bg-purple-950 text-slate-300 hover:text-purple-200 border border-slate-800 hover:border-purple-500/40 rounded transition shadow-sm"
+                      >
+                        {mod}
+                      </button>
+                    ))}
                   </div>
                 </div>
+
+                {/* Editable Generative Prompt Box */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                    Cinematography &amp; Character Prompt (Camera {activeCamLetter})
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={selectedCam.prompt}
+                    onChange={e => handleUpdateActivePrompt(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                {/* Execute AI Render Button */}
+                <button
+                  onClick={() => handleRegenerateCameraFrame(selectedShot, selectedCam)}
+                  disabled={generatingCamMap[`${selectedShot.id}_${selectedCam.camera_letter}`]}
+                  className="w-full py-2.5 text-xs font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-lg shadow-lg shadow-purple-600/30 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {generatingCamMap[`${selectedShot.id}_${selectedCam.camera_letter}`] ? (
+                    <>
+                      <RotateCw className="w-4 h-4 animate-spin" />
+                      Rendering Camera {activeCamLetter} AI Still...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      Execute &amp; Render Camera {activeCamLetter} AI Concept
+                    </>
+                  )}
+                </button>
               </div>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-6 border border-dashed border-slate-800 rounded-xl">
-                <Film className="w-8 h-8 text-slate-600 mb-2" />
-                <span className="text-xs text-slate-400 font-semibold">Select a shot setup from Column 2 to view its 3-camera coverage &amp; concept art frames.</span>
+              <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs">
+                <Camera className="w-10 h-10 mb-2 text-slate-600" />
+                Select a shot setup to inspect camera perspectives.
               </div>
             )}
           </div>
         </div>
+      )}
 
-      </div>
+      {/* ========================================================================= */}
+      {/* VIEW 3: DOP CINEMATOGRAPHY MATRIX                                        */}
+      {/* ========================================================================= */}
+      {studioSubTab === 'dop' && (
+        <div className="flex-1 overflow-y-auto p-6 bg-[#090D16]">
+          <div className="max-w-4xl space-y-6">
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-purple-400" />
+                Director of Photography Optical &amp; Lighting Matrix
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Configure master cinematographer presets, color temperature Kelvin, lighting contrast ratio, and film stock LUT emulation.
+              </p>
+            </div>
 
-      {/* Lightbox Image Preview Modal */}
+            {/* Presets Grid */}
+            <div className="grid grid-cols-3 gap-3">
+              {Object.entries(presetsDict).map(([presetName, presetData]: [string, any]) => (
+                <div
+                  key={presetName}
+                  onClick={() => setSelectedPreset(presetName)}
+                  className={`p-3.5 rounded-xl border transition cursor-pointer ${
+                    selectedPreset === presetName
+                      ? 'bg-purple-950/60 border-purple-500 shadow-lg shadow-purple-500/20'
+                      : 'bg-slate-900/50 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <h4 className="text-xs font-bold text-white">{presetData.name || presetName}</h4>
+                  <p className="text-[10px] text-purple-300 mt-0.5">{presetData.tagline}</p>
+                  <p className="text-[11px] text-slate-400 line-clamp-3 mt-2">{presetData.description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Enlarged Image Modal */}
       {enlargedImage && (
         <div
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-6"
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6"
           onClick={() => setEnlargedImage(null)}
         >
           <div
-            className="max-w-5xl w-full bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+            className="max-w-5xl w-full bg-slate-900 rounded-2xl overflow-hidden border border-slate-700 shadow-2xl"
             onClick={e => e.stopPropagation()}
           >
-            <div className="p-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
               <h3 className="text-sm font-bold text-white">{enlargedImage.title}</h3>
               <button
                 onClick={() => setEnlargedImage(null)}
@@ -1186,12 +1066,11 @@ export const ScriptStudio: React.FC = () => {
             <div className="p-4 bg-black flex items-center justify-center">
               <img
                 src={enlargedImage.url}
-                alt="Enlarged concept frame"
-                className="max-h-[70vh] w-auto object-contain rounded-lg border border-slate-800"
+                alt={enlargedImage.prompt}
+                className="max-h-[70vh] object-contain rounded-lg"
               />
             </div>
-            <div className="p-4 bg-slate-900/80 border-t border-slate-800 text-xs text-slate-300 font-mono">
-              <span className="text-purple-400 font-bold block mb-1">PROMPT:</span>
+            <div className="p-4 bg-slate-900/90 text-xs font-mono text-slate-300">
               {enlargedImage.prompt}
             </div>
           </div>

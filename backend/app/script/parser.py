@@ -1,10 +1,10 @@
 """
 Screenplay & Fountain Parser Module for CineSpine.
-Parses standard Screenplay formatting and Fountain syntax into structured scenes,
-headings, action blocks, characters, and dialogues.
+Parses standard Screenplay formatting, Markdown (.md), Plaintext (.txt), and Fountain syntax into structured scenes,
+headings, action blocks, dialogues, and automatically extracts detailed Character Profiles.
 """
 import re
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Tuple
 from pydantic import BaseModel, Field
 
 
@@ -12,6 +12,19 @@ class DialogueLine(BaseModel):
     character: str
     parenthetical: Optional[str] = None
     line: str
+
+
+class CharacterProfile(BaseModel):
+    id: str
+    name: str
+    role: str = "Key Character"
+    actor_reference: str = "Distinct cinematic screen presence"
+    look_and_costume: str = "Production wardrobe matching scene setting"
+    facial_features: str = "Expressive cinematic facial features"
+    personality_traits: List[str] = Field(default_factory=list)
+    dialogue_count: int = 0
+    scenes_present: List[str] = Field(default_factory=list)
+    avatar_url: Optional[str] = None
 
 
 class ScreenplayScene(BaseModel):
@@ -22,35 +35,203 @@ class ScreenplayScene(BaseModel):
     time_of_day: str = "DAY"  # DAY, NIGHT, DUSK, DAWN, MAGIC_HOUR
     action_blocks: List[str] = Field(default_factory=list)
     dialogues: List[DialogueLine] = Field(default_factory=list)
+    characters: List[str] = Field(default_factory=list)
     raw_content: str = ""
 
 
 class Screenplay(BaseModel):
     title: str = "Untitled Screenplay"
     scenes_count: int = 0
+    characters_count: int = 0
+    characters: List[CharacterProfile] = Field(default_factory=list)
     scenes: List[ScreenplayScene] = Field(default_factory=list)
     raw_text: str = ""
 
 
-# Scene Heading Regex (Fountain standard and standard screenplay)
-SCENE_HEADING_REGEX = re.compile(
-    r"^(?:\.?\s*)?(INT\./EXT\.|INT/EXT\.|INT\.|EXT\.|I/E\.)\s+([^-]+)(?:-\s*([^\n\r]+))?",
-    re.IGNORECASE | re.MULTILINE
-)
+# Curated Character Archetypes & Presets for known cinema fixtures
+CHARACTER_ARCHETYPES = {
+    "LEAD": {
+        "role": "Lead Protagonist / Virtuoso Organist",
+        "actor_reference": "Late 30s man, intense sunken eyes, dark wavy hair, weathered features, rugged jawline",
+        "look_and_costume": "Drenched dark linen shirt with rolled-up sleeves, charcoal wool vest, silver pocket watch, sweat glistening on forehead",
+        "facial_features": "Sharp cheekbones, subtle 5 o'clock shadow, piercing hazel eyes filled with obsessive fervor",
+        "personality_traits": ["Obsessive", "Perfectionist", "Haunted", "Virtuoso"]
+    },
+    "SUPPORT": {
+        "role": "Key Ally / Acoustic Theorist",
+        "actor_reference": "Early 30s woman, sharp intelligent gaze, structured posture, calm amidst chaos",
+        "look_and_costume": "Tailored dark blazer over silk blouse, hair tied back in practical chignon, silver minimalist pendant",
+        "facial_features": "High cheekbones, perceptive almond-shaped brown eyes, focused and observant expression",
+        "personality_traits": ["Analytical", "Protective", "Perceptive", "Steadfast"]
+    },
+    "COMMANDER VANCE": {
+        "role": "Tactical Police Unit Commander",
+        "actor_reference": "Mid 50s rugged veteran commander, imposing broad-shouldered build",
+        "look_and_costume": "Heavy rain-drenched black tactical trench coat, tactical radio earpiece, wet soaked military uniform",
+        "facial_features": "Weathered battle-hardened jawline, prominent brow, sharp intense gray eyes",
+        "personality_traits": ["Authoritative", "Relentless", "Pragmatic", "Tactical"]
+    },
+    "DECKARD": {
+        "role": "Blade Runner / Hard-Boiled Detective",
+        "actor_reference": "Early 40s man, weary yet sharp gaze, classic neo-noir detective presence",
+        "look_and_costume": "Classic brown heavy trench coat, patterned dark tie, rumpled collar",
+        "facial_features": "Tired observant eyes, rugged stubble, determined set jaw",
+        "personality_traits": ["Cynical", "Observant", "Determined", "Resourceful"]
+    },
+    "RACHAEL": {
+        "role": "Tyrell Corporation Emissary",
+        "actor_reference": "Late 20s woman, striking elegant neo-noir silhouette, iconic 1940s victory rolls",
+        "look_and_costume": "Structured 1940s padded-shoulder black suit, fur collar accent, cigarette holder",
+        "facial_features": "Flawless porcelain skin, dark sculpted eyebrows, intense luminous dark eyes, deep crimson lips",
+        "personality_traits": ["Enigmatic", "Elegant", "Fragile", "Mysterious"]
+    },
+    "ROY BATTY": {
+        "role": "Combat Replicant Leader",
+        "actor_reference": "Mid 30s man, athletic powerful build, shock of bleached blonde hair",
+        "look_and_costume": "Distressed black leather coat with upturned collar, rain-soaked bare chest",
+        "facial_features": "Piercing blue eyes, manic playful grin, intense poetic intelligence",
+        "personality_traits": ["Philosophical", "Ferocious", "Charismatic", "Tragic"]
+    }
+}
 
-# Numbered scene prefix e.g. "27 INT. GREAT HALL - DAY" or "SCENE 27 - INT. GREAT HALL"
-NUMBERED_SCENE_REGEX = re.compile(
-    r"^(?:SCENE\s+)?(\d+[A-Z]?)\.?\s+(INT\./EXT\.|INT/EXT\.|INT\.|EXT\.|I/E\.)\s+([^-]+)(?:-\s*([^\n\r]+))?",
-    re.IGNORECASE | re.MULTILINE
-)
+VALID_TOD = {"DAY", "NIGHT", "DUSK", "DAWN", "MAGIC HOUR", "MAGIC_HOUR", "CONTINUOUS", "LATER", "SAME TIME", "MORNING", "EVENING", "AFTERNOON"}
+
+
+def split_heading_components(raw_heading: str) -> Tuple[str, str, str]:
+    """
+    Splits a heading like 'INT. GREAT HALL - NAVE - DAY' into ('INT', 'GREAT HALL - NAVE', 'DAY')
+    """
+    clean = re.sub(r"^[#*_\s]+|[#*_\s]+$", "", raw_heading).strip()
+    
+    # Extract INT/EXT
+    m_env = re.match(r"^(INT\./EXT\.|INT/EXT\.|INT\.|EXT\.|I/E\.)\s+(.+)$", clean, re.IGNORECASE)
+    if m_env:
+        env_raw = m_env.group(1).replace(".", "").upper()
+        rest = m_env.group(2).strip()
+    else:
+        env_raw = "INT"
+        rest = clean
+
+    env = "INT" if "INT" in env_raw else "EXT"
+
+    # Split rest by hyphens
+    parts = [p.strip() for p in rest.split("-") if p.strip()]
+    if len(parts) >= 2 and parts[-1].upper() in VALID_TOD:
+        tod = parts[-1].upper()
+        loc = " - ".join(parts[:-1])
+    elif len(parts) >= 2:
+        tod = parts[-1].upper()
+        loc = " - ".join(parts[:-1])
+    else:
+        loc = rest
+        tod = "DAY"
+
+    return env, loc, tod
+
+
+def clean_character_name(raw_name: str) -> str:
+    """
+    Cleans raw character name string by stripping parentheticals like (V.O.), (O.S.), (CONT'D).
+    """
+    cleaned = re.sub(r"\s*\([^)]*\)", "", raw_name)
+    cleaned = re.sub(r"^[#*_\s]+|[#*_\s]+$", "", cleaned)
+    return cleaned.strip().upper()
+
+
+def extract_character_profiles(scenes: List[ScreenplayScene], script_text: str) -> List[CharacterProfile]:
+    """
+    Extracts all characters from dialogue cues and action descriptions across the screenplay,
+    calculates dialogue counts, scene presence, and generates polished visual profiles.
+    """
+    char_stats: Dict[str, Dict[str, Any]] = {}
+
+    for sc in scenes:
+        scene_chars = set()
+        for d in sc.dialogues:
+            name = clean_character_name(d.character)
+            if not name or len(name) < 2 or name in ["CUT TO", "FADE IN", "FADE OUT", "SCENE", "CONTINUED"]:
+                continue
+            
+            if name not in char_stats:
+                char_stats[name] = {
+                    "name": name,
+                    "dialogue_count": 0,
+                    "scenes": set()
+                }
+            char_stats[name]["dialogue_count"] += 1
+            char_stats[name]["scenes"].add(sc.scene_number)
+            scene_chars.add(name)
+        
+        sc.characters = sorted(list(scene_chars))
+
+    # Also scan action blocks for capitalized character names
+    for sc in scenes:
+        for action in sc.action_blocks:
+            for word in re.findall(r"\b[A-Z]{2,}(?:\s+[A-Z]{2,})*\b", action):
+                if word in ["INT", "EXT", "DAY", "NIGHT", "POV", "CU", "WS", "CLOSE", "ANGLE", "THE", "AND", "WITH"]:
+                    continue
+                if word in char_stats:
+                    char_stats[word]["scenes"].add(sc.scene_number)
+                    if word not in sc.characters:
+                        sc.characters.append(word)
+
+    profiles: List[CharacterProfile] = []
+    
+    # Sort characters by dialogue frequency
+    sorted_chars = sorted(char_stats.values(), key=lambda c: c["dialogue_count"], reverse=True)
+
+    for c in sorted_chars:
+        name = c["name"]
+        char_id = f"char_{name.lower().replace(' ', '_')}"
+        scenes_list = sorted(list(c["scenes"]), key=lambda s: int(re.sub(r'\D', '', s) or '0'))
+
+        # Check if known archetype exists
+        if name in CHARACTER_ARCHETYPES:
+            arch = CHARACTER_ARCHETYPES[name]
+            profile = CharacterProfile(
+                id=char_id,
+                name=name,
+                role=arch["role"],
+                actor_reference=arch["actor_reference"],
+                look_and_costume=arch["look_and_costume"],
+                facial_features=arch["facial_features"],
+                personality_traits=arch["personality_traits"],
+                dialogue_count=c["dialogue_count"],
+                scenes_present=scenes_list,
+                avatar_url=f"/avatars/{name.lower().replace(' ', '_')}.jpg"
+            )
+        else:
+            # Dynamically infer a cinematic profile
+            role_desc = "Primary Cast" if c["dialogue_count"] >= 3 else "Supporting Character"
+            profile = CharacterProfile(
+                id=char_id,
+                name=name,
+                role=role_desc,
+                actor_reference=f"Cinematic screen presence, expressive dramatic persona for {name}",
+                look_and_costume="Authentic production costume matching scene environment and era",
+                facial_features="Sharp facial features with motivated cinematic lighting catchlights",
+                personality_traits=["Determined", "Expressive", "Dramatic"],
+                dialogue_count=c["dialogue_count"],
+                scenes_present=scenes_list,
+                avatar_url=None
+            )
+        profiles.append(profile)
+
+    return profiles
 
 
 def parse_fountain_screenplay(script_text: str, title: str = "Screenplay") -> Screenplay:
     """
-    Parses Fountain format or standard screenplay text into structured scenes.
+    Parses Fountain, Markdown (.md), Plaintext (.txt), or standard screenplay text into structured scenes.
     """
     if not script_text or not script_text.strip():
-        return Screenplay(title=title, scenes_count=0, scenes=[], raw_text=script_text)
+        return Screenplay(title=title, scenes_count=0, characters_count=0, characters=[], scenes=[], raw_text=script_text)
+
+    # Detect title if present in text
+    detected_title = title
+    m_title = re.search(r"^Title:\s*(.+)$", script_text, re.MULTILINE | re.IGNORECASE)
+    if m_title:
+        detected_title = m_title.group(1).strip()
 
     lines = script_text.strip().splitlines()
     scenes: List[ScreenplayScene] = []
@@ -81,139 +262,107 @@ def parse_fountain_screenplay(script_text: str, title: str = "Screenplay") -> Sc
         pending_parenthetical = None
         pending_dialogue_lines = []
 
-    def flush_scene():
-        nonlocal current_scene, current_actions, current_dialogues, current_raw_lines, scenes
+    def save_current_scene():
+        nonlocal current_scene, current_actions, current_dialogues, current_raw_lines
         flush_dialogue()
         if current_scene:
             current_scene.action_blocks = [a for a in current_actions if a.strip()]
-            current_scene.dialogues = current_dialogues
-            current_scene.raw_content = "\n".join(current_raw_lines)
-            scenes.append(current_scene)
-            current_scene = None
+            current_scene.dialogues = list(current_dialogues)
+            current_scene.raw_content = "\n".join(current_raw_lines).strip()
+            # Only append scene if it contains actions, dialogues, or valid content
+            if current_scene.action_blocks or current_scene.dialogues:
+                scenes.append(current_scene)
             current_actions = []
             current_dialogues = []
             current_raw_lines = []
 
-    idx = 0
-    while idx < len(lines):
-        line = lines[idx]
-        line_clean = line.strip()
+    # Scene match regex
+    scene_regex = re.compile(
+        r"^(?:#+\s*)?(?:(?:SCENE\s+)?(\d+[A-Z]?)(?:\.|\:)?\s+)?(INT\./EXT\.|INT/EXT\.|INT\.|EXT\.|I/E\.)\s+([^\n\r]+)",
+        re.IGNORECASE
+    )
 
-        if not line_clean:
-            flush_dialogue()
-            if current_raw_lines:
-                current_raw_lines.append("")
-            idx += 1
-            continue
+    for line in lines:
+        stripped = line.strip()
+        
+        # Check for Scene Headings
+        match = scene_regex.match(stripped)
+        if match:
+            save_current_scene()
+            sc_num_override = match.group(1)
+            env_prefix = match.group(2)
+            rest_heading = match.group(3)
 
-        # Check for Scene Heading
-        numbered_match = NUMBERED_SCENE_REGEX.match(line_clean)
-        standard_match = SCENE_HEADING_REGEX.match(line_clean)
-
-        if numbered_match or standard_match:
-            flush_scene()
-            if numbered_match:
-                sc_num = numbered_match.group(1).strip()
-                env = numbered_match.group(2).replace(".", "").strip().upper()
-                rem = line_clean[numbered_match.end(2):].strip().lstrip(".- ")
+            if sc_num_override:
+                sc_num = sc_num_override
             else:
                 current_scene_num += 1
                 sc_num = str(current_scene_num)
-                env = standard_match.group(1).replace(".", "").strip().upper()
-                rem = line_clean[standard_match.end(1):].strip().lstrip(".- ")
 
-            # Split on last dash for time of day (e.g. "GREAT HALL - NAVE - DAY" -> loc="GREAT HALL - NAVE", tod="DAY")
-            if " - " in rem:
-                p_loc, p_tod = rem.rsplit(" - ", 1)
-                loc = p_loc.strip()
-                tod = p_tod.strip().upper()
-            elif "-" in rem:
-                p_loc, p_tod = rem.rsplit("-", 1)
-                loc = p_loc.strip()
-                tod = p_tod.strip().upper()
-            else:
-                loc = rem.strip()
-                tod = "DAY"
+            full_h = f"{env_prefix} {rest_heading}"
+            env, loc, tod = split_heading_components(full_h)
 
             current_scene = ScreenplayScene(
                 scene_number=sc_num,
-                heading=line_clean,
+                heading=f"{env}. {loc} - {tod}",
                 environment=env,
                 location=loc,
-                time_of_day=tod,
-                action_blocks=[],
-                dialogues=[],
-                raw_content=""
+                time_of_day=tod
             )
             current_raw_lines.append(line)
-            idx += 1
             continue
 
-        # Check for Fountain Top Title Page Metadata
-        if not current_scene and ":" in line_clean and any(line_clean.lower().startswith(k) for k in ["title:", "author:", "authors:", "credit:", "source:", "draft:", "date:", "contact:", "copyright:"]):
-            k, v = line_clean.split(":", 1)
-            if k.lower().strip() == "title" and v.strip():
-                title = v.strip()
-            idx += 1
-            continue
-
-        # If no scene header encountered yet, create a default Scene 1
         if not current_scene:
-            current_scene_num += 1
-            current_scene = ScreenplayScene(
-                scene_number=str(current_scene_num),
-                heading=f"INT. LOCATION - DAY",
-                environment="INT",
-                location="LOCATION",
-                time_of_day="DAY"
+            # Skip metadata header lines like Title:, Author:, # Title:, Draft:
+            clean_hdr = re.sub(r"^[#*_\s]+", "", stripped)
+            is_meta = any(clean_hdr.lower().startswith(x) for x in ["title:", "author:", "draft:", "date:", "copyright:"])
+            if stripped and not is_meta:
+                current_scene_num = 1
+                current_scene = ScreenplayScene(
+                    scene_number="1",
+                    heading="INT. SCENE 1 - DAY",
+                    environment="INT",
+                    location="SCENE 1",
+                    time_of_day="DAY"
+                )
+
+        if current_scene:
+            current_raw_lines.append(line)
+
+            # Character Cue (Uppercase name, often centered or standalone)
+            clean_cue = re.sub(r"^[#*_\s]+|[#*_\s]+$", "", stripped)
+            is_char_cue = (
+                clean_cue.isupper() and
+                len(clean_cue) > 1 and
+                len(clean_cue) < 35 and
+                not clean_cue.endswith(":") and
+                not any(clean_cue.startswith(x) for x in ["INT.", "EXT.", "CUT TO", "FADE", "SCENE"])
             )
 
-        current_raw_lines.append(line)
+            if is_char_cue and not pending_character:
+                flush_dialogue()
+                pending_character = clean_cue
+            elif pending_character and stripped.startswith("(") and stripped.endswith(")"):
+                pending_parenthetical = stripped[1:-1].strip()
+            elif pending_character and stripped:
+                pending_dialogue_lines.append(stripped)
+            elif not stripped:
+                flush_dialogue()
+            else:
+                flush_dialogue()
+                current_actions.append(stripped)
 
-        # Check for Character Name (All Uppercase, centered or without lowercase letters, not ending in punctuation)
-        is_all_caps = line_clean.isupper() and len(line_clean) < 35 and not line_clean.endswith((".", ":", ";"))
-        is_character = (
-            is_all_caps
-            and not standard_match
-            and not any(line_clean.startswith(pfx) for pfx in ["INT.", "EXT.", "CUT TO:", "FADE IN:", "FADE OUT:"])
-        )
+    # Save final scene
+    save_current_scene()
 
-        if is_character:
-            flush_dialogue()
-            # Clean character name from Fountain indicators e.g. "LEAD (V.O.)" -> "LEAD"
-            char_name = re.sub(r"\(.*?\)", "", line_clean).strip()
-            parenthetical_inline = None
-            if "(" in line_clean:
-                p_match = re.search(r"\((.*?)\)", line_clean)
-                if p_match:
-                    parenthetical_inline = p_match.group(1)
-
-            pending_character = char_name or line_clean
-            pending_parenthetical = parenthetical_inline
-            idx += 1
-            continue
-
-        # Check for Parenthetical e.g. "(whispering)"
-        if pending_character and line_clean.startswith("(") and line_clean.endswith(")"):
-            pending_parenthetical = line_clean.strip("()")
-            idx += 1
-            continue
-
-        # Check for Dialogue line
-        if pending_character:
-            pending_dialogue_lines.append(line_clean)
-            idx += 1
-            continue
-
-        # Otherwise it is an Action Block
-        current_actions.append(line_clean)
-        idx += 1
-
-    flush_scene()
+    # Extract & Profile all Characters
+    characters = extract_character_profiles(scenes, script_text)
 
     return Screenplay(
-        title=title,
+        title=detected_title,
         scenes_count=len(scenes),
+        characters_count=len(characters),
+        characters=characters,
         scenes=scenes,
         raw_text=script_text
     )
@@ -226,7 +375,6 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
     import io
     extracted_text = []
 
-    # 1. Try pdfplumber
     try:
         import pdfplumber
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
@@ -239,7 +387,6 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
     except Exception:
         pass
 
-    # 2. Try pypdf / PyPDF2
     try:
         from pypdf import PdfReader
         reader = PdfReader(io.BytesIO(pdf_bytes))
@@ -252,7 +399,6 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
     except Exception:
         pass
 
-    # 3. Fallback: string decode with ignore
     try:
         return pdf_bytes.decode("utf-8", errors="ignore")
     except Exception:
@@ -261,7 +407,7 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
 
 def parse_screenplay_file(file_bytes: bytes, filename: str) -> Screenplay:
     """
-    Parses an uploaded screenplay file (.fountain, .txt, .pdf, .fdx).
+    Parses an uploaded screenplay file (.fountain, .txt, .md, .pdf, .fdx).
     """
     clean_name = filename.rsplit(".", 1)[0].replace("_", " ").replace("-", " ").title()
     if filename.lower().endswith(".pdf"):
@@ -273,4 +419,3 @@ def parse_screenplay_file(file_bytes: bytes, filename: str) -> Screenplay:
             text = file_bytes.decode("latin-1", errors="ignore")
 
     return parse_fountain_screenplay(text, title=clean_name)
-

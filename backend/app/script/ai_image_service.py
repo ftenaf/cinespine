@@ -25,11 +25,12 @@ def compile_dop_generative_prompt(
     lighting_ratio: str = "4:1",
     color_temp_k: int = 5600,
     lut_emulation: str = "Kodak Vision3 500T 5219",
-    aspect_ratio: str = "2.39:1"
+    aspect_ratio: str = "2.39:1",
+    character_details: Optional[str] = None
 ) -> str:
     """
     Compiles a comprehensive technical cinematography prompt synthesizing:
-    - User scene description and characters
+    - User scene description and persistent character visual profiles
     - Camera rig perspective (Camera A, B, C)
     - Optical lens specs and aperture depth-of-field
     - DoP lighting contrast ratio, color temperature Kelvin, and film LUT.
@@ -67,17 +68,23 @@ def compile_dop_generative_prompt(
     }
     dop_style_str = dop_tags.get(dop_preset, f"{dop_preset} cinematic style")
 
-    # Construct prompt
+    # Construct prompt tokens
     prompt_tokens = [
         f"Cinematic 35mm motion picture film still shot on {cam_str}",
         f"{size_str}",
         f"{raw_prompt}",
+    ]
+
+    if character_details:
+        prompt_tokens.append(f"Character Visual Consistency: {character_details}")
+
+    prompt_tokens.extend([
         f"shot on {focal_length}mm lens at {aperture} aperture",
         f"color temperature {color_temp_k}K, {lighting_ratio} lighting contrast ratio",
         f"{lut_emulation} film stock grade",
         f"{dop_style_str}",
         f"aspect ratio {aspect_ratio}, 8k resolution, authentic 35mm film grain, masterpiece feature film production still"
-    ]
+    ])
 
     return ", ".join(t.strip() for t in prompt_tokens if t.strip())
 
@@ -94,13 +101,14 @@ async def generate_ai_cinematic_image(
     lighting_ratio: str = "4:1",
     color_temp_k: int = 5600,
     lut_emulation: str = "Kodak Vision3 500T 5219",
-    aspect_ratio: str = "2.39:1"
+    aspect_ratio: str = "2.39:1",
+    character_details: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Executes real-time AI image generation taking into account all DoP settings,
-    lens optics, camera angle, and narrative prompt.
+    character visual profiles, lens optics, camera angle, and narrative prompt.
     """
-    # 1. Compile full DoP prompt
+    # 1. Compile full DoP prompt with character profiles
     compiled_prompt = compile_dop_generative_prompt(
         raw_prompt=prompt,
         camera_letter=camera_letter,
@@ -111,7 +119,8 @@ async def generate_ai_cinematic_image(
         lighting_ratio=lighting_ratio,
         color_temp_k=color_temp_k,
         lut_emulation=lut_emulation,
-        aspect_ratio=aspect_ratio
+        aspect_ratio=aspect_ratio,
+        character_details=character_details
     )
 
     # 2. Check for OpenAI API Key
