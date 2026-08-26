@@ -210,53 +210,120 @@ def test_api_script_upload_endpoint(client):
     assert data["characters"][0]["name"] in ["LEAD", "SUPPORT"]
 
 
-def test_markdown_and_txt_script_parsing():
-    md_script = """# Title: Blade Runner Noir
+PLAINTEXT_SCRIPT = """THE LAST SIGNAL
+Written by A. Writer
 
-### Scene 1: INT. TYRELL HEADQUARTERS - NIGHT
+INT. RADIO STATION - NIGHT
 
-Massive pyramids pierce the smoggy Los Angeles sky.
+Rain streaks the windows. MAYA CHEN, 30s, sits hunched over a console.
 
-DECKARD
-Tell me about the test.
+MAYA
+Anyone out there?
 
-RACHAEL
-Do you like our owl?
+DANIEL
+Maya? Is that you?
 """
-    screenplay = parse_fountain_screenplay(md_script, title="Blade Runner Noir")
-    assert screenplay.title == "Blade Runner Noir"
+
+
+def test_markdown_and_txt_script_parsing():
+    md_script = """# Title: Night Frequency
+
+### Scene 1: INT. CONTROL ROOM - NIGHT
+
+Banks of dead monitors line the wall.
+
+OPERATOR
+Tell me about the signal.
+
+ANALYST
+It repeats every twelve minutes.
+"""
+    screenplay = parse_fountain_screenplay(md_script, title="Fallback Title")
+    assert screenplay.title == "Night Frequency"
     assert screenplay.scenes_count == 1
     assert screenplay.scenes[0].environment == "INT"
-    assert "TYRELL HEADQUARTERS" in screenplay.scenes[0].location
+    assert "CONTROL ROOM" in screenplay.scenes[0].location
     assert screenplay.scenes[0].time_of_day == "NIGHT"
-    
-    # Check Character Profiles
-    assert len(screenplay.characters) >= 2
+
     char_names = [c.name for c in screenplay.characters]
-    assert "DECKARD" in char_names
-    assert "RACHAEL" in char_names
-    
-    deckard_profile = next(c for c in screenplay.characters if c.name == "DECKARD")
-    assert "trench coat" in deckard_profile.look_and_costume.lower()
-    assert "Detective" in deckard_profile.role or "Blade Runner" in deckard_profile.role
+    assert "OPERATOR" in char_names
+    assert "ANALYST" in char_names
 
 
-def test_api_character_update_endpoint(client):
-    req = {
-        "id": "char_lead",
-        "name": "LEAD",
-        "role": "Haunted Great Hall Organist",
-        "actor_reference": "Late 30s man, intense sunken eyes, dark wavy hair, weathered features",
-        "look_and_costume": "Drenched dark linen shirt with rolled-up sleeves, charcoal wool vest",
-        "facial_features": "Sharp cheekbones, subtle 5 o'clock shadow, piercing hazel eyes",
-        "personality_traits": ["Obsessive", "Perfectionist", "Haunted"]
-    }
-    res = client.post("/api/script/characters/update", json=req)
+def test_plaintext_title_block_is_not_parsed_as_a_character():
+    """
+    A plain script's title and author credit sit above the first scene heading.
+    They are metadata, not a speaking character, and must not create a phantom
+    scene either.
+    """
+    screenplay = parse_fountain_screenplay(PLAINTEXT_SCRIPT, title="plain")
+
+    assert screenplay.title == "THE LAST SIGNAL"
+    assert screenplay.author == "A. Writer"
+
+    char_names = [c.name for c in screenplay.characters]
+    assert "THE LAST SIGNAL" not in char_names
+    assert sorted(char_names) == ["DANIEL", "MAYA"]
+
+    # Only the one real scene heading, no synthetic pre-heading scene.
+    assert screenplay.scenes_count == 1
+    assert "RADIO STATION" in screenplay.scenes[0].location
+
+
+def test_character_profile_is_seeded_from_the_screenplay():
+    """Descriptions come from the script's own action lines, not a fixed default."""
+    screenplay = parse_fountain_screenplay(PLAINTEXT_SCRIPT, title="plain")
+    maya = next(c for c in screenplay.characters if c.name == "MAYA")
+    daniel = next(c for c in screenplay.characters if c.name == "DANIEL")
+
+    assert "Maya Chen" in maya.actor_reference
+    assert "30s" in maya.actor_reference
+    # A character the script never describes must not borrow someone else's look.
+    assert maya.actor_reference != daniel.actor_reference
+
+
+def test_api_character_update_persists_and_survives_reparse(client):
+    """Edits must be stored against the script and survive re-uploading it."""
+    files = {"file": ("plain.txt", PLAINTEXT_SCRIPT.encode("utf-8"), "text/plain")}
+    first = client.post("/api/script/upload", files=files).json()
+    script_id = first["script_id"]
+    maya = next(c for c in first["characters"] if c["name"] == "MAYA")
+
+    res = client.post("/api/script/characters/update", json={
+        "id": maya["id"],
+        "name": "MAYA",
+        "script_id": script_id,
+        "role": "Lead",
+        "look_and_costume": "Red raincoat, silver locket, soaked boots",
+    })
     assert res.status_code == 200
-    data = res.json()
-    assert data["status"] == "updated"
-    assert data["character"]["name"] == "LEAD"
-    assert data["character"]["role"] == "Haunted Great Hall Organist"
+    assert res.json()["character"]["look_and_costume"] == "Red raincoat, silver locket, soaked boots"
+
+    # Readable back through the dedicated endpoint.
+    listed = client.get(f"/api/script/{script_id}/characters").json()
+    stored = next(c for c in listed["characters"] if c["name"] == "MAYA")
+    assert stored["look_and_costume"] == "Red raincoat, silver locket, soaked boots"
+
+    # And preserved when the same screenplay is uploaded again.
+    again = client.post("/api/script/upload", files=files).json()
+    maya_again = next(c for c in again["characters"] if c["name"] == "MAYA")
+    assert maya_again["look_and_costume"] == "Red raincoat, silver locket, soaked boots"
+    # Structural data is still refreshed from the new parse.
+    assert maya_again["dialogue_count"] == maya["dialogue_count"]
+
+
+def test_api_character_update_rejects_unknown_character(client):
+    """A save that cannot be stored must report failure, not a false success."""
+    files = {"file": ("plain.txt", PLAINTEXT_SCRIPT.encode("utf-8"), "text/plain")}
+    script_id = client.post("/api/script/upload", files=files).json()["script_id"]
+
+    res = client.post("/api/script/characters/update", json={
+        "id": "char_does_not_exist",
+        "name": "NOBODY",
+        "script_id": script_id,
+        "role": "Ghost",
+    })
+    assert res.status_code == 404
 
 
 def test_character_relationships_detection():

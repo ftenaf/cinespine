@@ -17,14 +17,14 @@
 ### [0:30 – 1:15] The 3-Axis Discrepancy Reconciliation Engine
 * **Visual:** Switch to CineSpine UI (`http://localhost:5173`) $\rightarrow$ **Production Overview** and **Discrepancy Matrix**.
 * **Action:**
-  1. Click on **Scene 27 / Day 31 (La Cathédrale)**.
+  1. Click on **Scene 27 / Day 31 (Demo Production)**.
   2. Point out the 3 active discrepancy cards:
      - *Card 1: Silent False Start on Take 3 (Script supervisor flagged False Start, Sound labeled Good).*
      - *Card 2: Missing Audio Track on Take 5 (Roll A120 vs A_0120 naming collision).*
   3. Click **"Consensus Triage"** and resolve the discrepancy live with one click.
   4. Show the real-time Notification Toast dispatching to `@director` and the Sound Department.
 * **Voiceover:**
-  > *"Meet CineSpine. Built on an immutable append-only event spine in ClickHouse, CineSpine treats every document as a witness. Our 3-Axis Reconciliation Engine continuously checks Intent against Belief against Existence. Here on Day 31 of 'La Cathédrale', CineSpine instantly catches a silent false start on Take 3 and an unlinked audio track caused by a roll naming collision. In one click, the assistant editor reaches consensus, immediately notifying the crew via our real-time notification bus."*
+  > *"Meet CineSpine. Built on an immutable append-only event spine in ClickHouse, CineSpine treats every document as a witness. Our 3-Axis Reconciliation Engine continuously checks Intent against Belief against Existence. Here on Day 31 of 'Demo Production', CineSpine instantly catches a silent false start on Take 3 and an unlinked audio track caused by a roll naming collision. In one click, the assistant editor reaches consensus, immediately notifying the crew via our real-time notification bus."*
 
 ---
 

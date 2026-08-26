@@ -167,7 +167,7 @@ COMMANDER VANCE steps out into the downpour, pointing a high-power spotlight at 
 
 export const ScriptStudio: React.FC = () => {
   // Screenplay Editor State
-  const [scriptTitle, setScriptTitle] = useState<string>('La Cathédrale');
+  const [scriptTitle, setScriptTitle] = useState<string>('Demo Production');
   const [parsedScenes, setParsedScenes] = useState<ScreenplayScene[]>([]);
   const [characters, setCharacters] = useState<CharacterProfile[]>([]);
   const [selectedCharId, setSelectedCharId] = useState<string | null>(null);
@@ -195,6 +195,10 @@ export const ScriptStudio: React.FC = () => {
   const [dopTestRenderUrl, setDopTestRenderUrl] = useState<string | null>(null);
   const [isTestRenderingDoP, setIsTestRenderingDoP] = useState<boolean>(false);
   const [showViewfinderGrid, setShowViewfinderGrid] = useState<boolean>(true);
+  // Identity of the loaded screenplay; character edits are stored against it.
+  const [scriptId, setScriptId] = useState<string | null>(null);
+  const [charSaveError, setCharSaveError] = useState<string | null>(null);
+  const [parseWarnings, setParseWarnings] = useState<string[]>([]);
   const [showSurround, setShowSurround] = useState<boolean>(true);
   const [protectRatio, setProtectRatio] = useState<string>('16:9');
   const [focusDistanceM, setFocusDistanceM] = useState<number>(3);
@@ -300,7 +304,9 @@ export const ScriptStudio: React.FC = () => {
           color_temp_k: customColorTemp,
           lut_emulation: customLutEmulation,
           aspect_ratio: aspectRatio,
-          character_details: characters.length > 0 ? `${characters[0].name} (${characters[0].actor_reference})` : undefined
+          // Use the characters actually present in the selected scene, not the
+          // first in the cast list.
+          character_details: getActiveCharacterDetails() || undefined
         })
       });
       if (res.ok) {
@@ -338,6 +344,8 @@ export const ScriptStudio: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         if (data.title) setScriptTitle(data.title);
+        setScriptId(data.script_id || null);
+        setParseWarnings(data.parse_warnings || []);
         setParsedScenes(data.scenes || []);
         setCharacters(data.characters || []);
         if (data.characters && data.characters.length > 0) {
@@ -697,20 +705,31 @@ export const ScriptStudio: React.FC = () => {
 
   // Update Character Profile Handler
   const handleUpdateCharacter = async (char: CharacterProfile) => {
+    if (!scriptId) {
+      setCharSaveError('Upload or parse a screenplay before saving character edits.');
+      return;
+    }
     setSavingCharId(char.id);
+    setCharSaveError(null);
     try {
       const res = await fetch('/api/script/characters/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(char)
+        body: JSON.stringify({ ...char, script_id: scriptId })
       });
       if (res.ok) {
-        setCharacters(prev => prev.map(c => (c.id === char.id ? char : c)));
+        const data = await res.json();
+        // Trust the stored record so the UI reflects what was actually saved.
+        setCharacters(prev => prev.map(c => (c.id === char.id ? { ...c, ...data.character } : c)));
         setCharSaveSuccess(char.id);
         setTimeout(() => setCharSaveSuccess(null), 3000);
+      } else {
+        const detail = await res.json().catch(() => null);
+        setCharSaveError(detail?.detail || `Save failed (HTTP ${res.status}).`);
       }
     } catch (err) {
       console.error('Failed to update character profile:', err);
+      setCharSaveError('Save failed: could not reach the server.');
     } finally {
       setSavingCharId(null);
     }
@@ -752,6 +771,8 @@ export const ScriptStudio: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         if (data.title) setScriptTitle(data.title);
+        setScriptId(data.script_id || null);
+        setParseWarnings(data.parse_warnings || []);
         setParsedScenes(data.scenes || []);
         setCharacters(data.characters || []);
         if (data.characters && data.characters.length > 0) {
@@ -810,6 +831,14 @@ export const ScriptStudio: React.FC = () => {
                 </span>
               )}
             </div>
+            {parseWarnings.length > 0 && (
+              <div className="mt-2 p-3 bg-amber-950/50 border border-amber-500/40 rounded-lg text-[11px] text-amber-200 space-y-1">
+                <div className="font-bold">Parsed with warnings:</div>
+                {parseWarnings.map((w, i) => (
+                  <div key={i}>• {w}</div>
+                ))}
+              </div>
+            )}
             <p className="text-xs text-slate-400">
               Multi-Format Screenplay Ingestion (.fountain / .md / .txt / .pdf) • Cast Character Profiler • Tri-Modal DoP Previz
             </p>
@@ -982,7 +1011,14 @@ export const ScriptStudio: React.FC = () => {
                 {charSaveSuccess && (
                   <div className="p-3 bg-emerald-950/60 border border-emerald-500/40 rounded-lg flex items-center gap-2 text-xs text-emerald-200">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    Character visual profile locked. All future Gen-AI camera renders will strictly enforce this actor look.
+                    Saved. This look is stored against the screenplay and reused in every Gen-AI render featuring this character.
+                  </div>
+                )}
+
+                {charSaveError && (
+                  <div className="p-3 bg-red-950/60 border border-red-500/40 rounded-lg flex items-center gap-2 text-xs text-red-200">
+                    <X className="w-4 h-4 text-red-400 shrink-0" />
+                    {charSaveError}
                   </div>
                 )}
 

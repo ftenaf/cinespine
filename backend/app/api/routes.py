@@ -1561,11 +1561,16 @@ class GenerateStoryboardRequest(BaseModel):
 class UpdateCharacterRequest(BaseModel):
     id: str
     name: str
-    role: str
-    actor_reference: str
-    look_and_costume: str
-    facial_features: str
-    personality_traits: List[str] = []
+    # Identifies which screenplay this character belongs to. Required so the
+    # edit is stored against the right script rather than discarded.
+    script_id: str
+    role: Optional[str] = None
+    actor_reference: Optional[str] = None
+    look_and_costume: Optional[str] = None
+    facial_features: Optional[str] = None
+    personality_traits: Optional[List[str]] = None
+    avatar_url: Optional[str] = None
+    portrait_prompt: Optional[str] = None
 
 
 class GeneratePortraitRequest(BaseModel):
@@ -1581,11 +1586,41 @@ class GeneratePortraitRequest(BaseModel):
 @router.post("/script/characters/update")
 def update_character_profile(req: UpdateCharacterRequest):
     """
-    Updates and polishes a character's physical look, facial appearance, costume, and personality traits.
+    Persists edits to a character's look, facial appearance, costume, role and
+    personality traits, against the screenplay they belong to.
     """
+    updates = req.model_dump(exclude_none=True, exclude={"id", "name", "script_id"})
+    saved = spine_writer.update_character_profile(
+        script_id=req.script_id,
+        character_id=req.id,
+        updates=updates,
+    )
+
+    if saved is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No character '{req.id}' stored for script '{req.script_id}'. "
+                "Upload or parse the screenplay before editing its characters."
+            ),
+        )
+
+    return {"status": "updated", "script_id": req.script_id, "character": saved}
+
+
+@router.get("/script/{script_id}/characters")
+def list_character_profiles(script_id: str):
+    """
+    Returns the stored character profiles for a screenplay, including any edits.
+    """
+    screenplay = spine_writer.get_screenplay(script_id)
+    if screenplay is None:
+        raise HTTPException(status_code=404, detail=f"Unknown script '{script_id}'.")
+
     return {
-        "status": "updated",
-        "character": req.model_dump()
+        "script_id": script_id,
+        "title": screenplay.get("title"),
+        "characters": spine_writer.get_character_profiles(script_id),
     }
 
 
@@ -1623,12 +1658,29 @@ def get_google_cloud_status():
     return get_google_cloud_runtime_status()
 
 
+def _persist_screenplay(screenplay: Screenplay, filename: Optional[str] = None) -> Screenplay:
+    """
+    Registers a parsed screenplay and reattaches any previously saved character
+    edits for the same script.
+    """
+    merged = spine_writer.store_screenplay(
+        script_id=screenplay.script_id,
+        title=screenplay.title,
+        author=screenplay.author,
+        filename=filename,
+        profiles=[c.model_dump() for c in screenplay.characters],
+    )
+    screenplay.characters = [CharacterProfile(**{k: v for k, v in m.items() if k in CharacterProfile.model_fields}) for m in merged]
+    screenplay.characters_count = len(screenplay.characters)
+    return screenplay
+
+
 @router.post("/script/parse", response_model=Screenplay)
 def parse_script(req: ScriptParseRequest):
     """
     Parses raw Fountain / standard screenplay text into structured scenes.
     """
-    return parse_fountain_screenplay(req.script_text, req.title)
+    return _persist_screenplay(parse_fountain_screenplay(req.script_text, req.title))
 
 
 @router.post("/script/upload", response_model=Screenplay)
@@ -1650,7 +1702,7 @@ async def upload_script_file(file: UploadFile = File(...)):
     )
 
     screenplay = parse_screenplay_file(file_bytes=file_bytes, filename=filename)
-    return screenplay
+    return _persist_screenplay(screenplay, filename=filename)
 
 
 @router.get("/script/presets")

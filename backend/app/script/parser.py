@@ -3,9 +3,20 @@ Screenplay & Fountain Parser Module for CineSpine.
 Parses standard Screenplay formatting, Markdown (.md), Plaintext (.txt), and Fountain syntax into structured scenes,
 headings, action blocks, dialogues, Character Profiles, and Character Relationship networks.
 """
+import hashlib
 import re
 from typing import List, Optional, Dict, Any, Tuple, Set
 from pydantic import BaseModel, Field
+
+
+def compute_script_id(script_text: str) -> str:
+    """
+    Stable identity for a screenplay, derived from its text. Re-uploading the
+    same script yields the same id, so previously saved character profiles are
+    reattached instead of being regenerated from scratch.
+    """
+    normalized = "\n".join(line.rstrip() for line in (script_text or "").strip().splitlines())
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
 
 
 class DialogueLine(BaseModel):
@@ -51,84 +62,91 @@ class ScreenplayScene(BaseModel):
 
 class Screenplay(BaseModel):
     title: str = "Untitled Screenplay"
+    # Stable identity derived from the script text, so re-uploading the same
+    # screenplay resolves to the same stored character profiles.
+    script_id: str = ""
+    author: Optional[str] = None
     scenes_count: int = 0
     characters_count: int = 0
     characters: List[CharacterProfile] = Field(default_factory=list)
     scenes: List[ScreenplayScene] = Field(default_factory=list)
     raw_text: str = ""
+    # Non-fatal parse observations, so the UI can say what looked wrong instead
+    # of silently presenting a bad parse as success.
+    parse_warnings: List[str] = Field(default_factory=list)
 
 
-# Curated Character Archetypes & Presets for known cinema fixtures
-CHARACTER_ARCHETYPES = {
-    "LEAD": {
-        "role": "Lead Protagonist / Virtuoso Organist",
-        "actor_reference": "Late 30s man, intense sunken eyes, dark wavy hair, weathered features, rugged jawline",
-        "look_and_costume": "Drenched dark linen shirt with rolled-up sleeves, charcoal wool vest, silver pocket watch, sweat glistening on forehead",
-        "facial_features": "Sharp cheekbones, subtle 5 o'clock shadow, piercing hazel eyes filled with obsessive fervor",
-        "personality_traits": ["Obsessive", "Perfectionist", "Haunted", "Virtuoso"]
-    },
-    "SUPPORT": {
-        "role": "Key Ally / Acoustic Theorist",
-        "actor_reference": "Early 30s woman, sharp intelligent gaze, structured posture, calm amidst chaos",
-        "look_and_costume": "Tailored dark blazer over silk blouse, hair tied back in practical chignon, silver minimalist pendant",
-        "facial_features": "High cheekbones, perceptive almond-shaped brown eyes, focused and observant expression",
-        "personality_traits": ["Analytical", "Protective", "Perceptive", "Steadfast"]
-    },
-    "COMMANDER VANCE": {
-        "role": "Tactical Police Unit Commander",
-        "actor_reference": "Mid 50s rugged veteran commander, imposing broad-shouldered build",
-        "look_and_costume": "Heavy rain-drenched black tactical trench coat, tactical radio earpiece, wet soaked military uniform",
-        "facial_features": "Weathered battle-hardened jawline, prominent brow, sharp intense gray eyes",
-        "personality_traits": ["Authoritative", "Relentless", "Pragmatic", "Tactical"]
-    },
-    "DECKARD": {
-        "role": "Blade Runner / Hard-Boiled Detective",
-        "actor_reference": "Early 40s man, weary yet sharp gaze, classic neo-noir detective presence",
-        "look_and_costume": "Classic brown heavy trench coat, patterned dark tie, rumpled collar",
-        "facial_features": "Tired observant eyes, rugged stubble, determined set jaw",
-        "personality_traits": ["Cynical", "Observant", "Determined", "Resourceful"]
-    },
-    "RACHAEL": {
-        "role": "Tyrell Corporation Emissary",
-        "actor_reference": "Late 20s woman, striking elegant neo-noir silhouette, iconic 1940s victory rolls",
-        "look_and_costume": "Structured 1940s padded-shoulder black suit, fur collar accent, cigarette holder",
-        "facial_features": "Flawless porcelain skin, dark sculpted eyebrows, intense luminous dark eyes, deep crimson lips",
-        "personality_traits": ["Enigmatic", "Elegant", "Fragile", "Mysterious"]
-    },
-    "ROY BATTY": {
-        "role": "Combat Replicant Leader",
-        "actor_reference": "Mid 30s man, athletic powerful build, shock of bleached blonde hair",
-        "look_and_costume": "Distressed black leather coat with upturned collar, rain-soaked bare chest",
-        "facial_features": "Piercing blue eyes, manic playful grin, intense poetic intelligence",
-        "personality_traits": ["Philosophical", "Ferocious", "Charismatic", "Tragic"]
-    }
+# Tokens that look like character cues but are structural screenplay elements.
+NON_CHARACTER_TOKENS = {
+    "INT", "EXT", "DAY", "NIGHT", "POV", "CU", "WS", "CLOSE", "ANGLE", "THE", "AND",
+    "WITH", "CUT TO", "FADE IN", "FADE OUT", "FADE TO", "DISSOLVE TO", "SMASH CUT",
+    "MATCH CUT", "BACK TO", "CONTINUED", "SCENE", "TITLE", "SUPER", "INSERT",
+    "MONTAGE", "END MONTAGE", "INTERCUT", "THE END", "OMITTED", "LATER",
+    "CONTINUOUS", "MOMENTS LATER", "WRITTEN BY", "BY",
 }
 
-# Curated Relationship Dynamics for known cinema fixtures
-CURATED_RELATIONSHIPS = {
-    ("LEAD", "SUPPORT"): {
-        "type": "Key Ally & Protector",
-        "description": "Deep intellectual and emotional bond. SUPPORT attempts to save LEAD from his self-destructive obsession with the sanctuary organ."
-    },
-    ("LEAD", "COMMANDER VANCE"): {
-        "type": "Hostile Pursuer vs Defiant Subject",
-        "description": "Tactical siege dynamic; Vance enforces the shutdown order while LEAD refuses to cease his performance."
-    },
-    ("SUPPORT", "COMMANDER VANCE"): {
-        "type": "Diplomatic Intermediary",
-        "description": "SUPPORT attempts to negotiate terms with Vance to stall the tactical breach."
-    },
-    ("DECKARD", "RACHAEL"): {
-        "type": "Enigmatic Romantic Counterpart",
-        "description": "Investigator and subject whose encounter tests the boundaries of artificial memory and human emotion."
-    },
-    ("DECKARD", "ROY BATTY"): {
-        "type": "Mortal Adversaries",
-        "description": "Relentless cat-and-mouse pursuit culminating in a transcendent philosophical reckoning on mortality."
-    }
-}
+# Metadata keys that may appear in a title block before the first scene heading.
+TITLE_BLOCK_KEYS = (
+    "title:", "author:", "authors:", "written by:", "draft:", "date:", "contact:",
+    "copyright:", "source:", "credit:", "notes:", "revision:",
+)
+
+# Descriptor mined from an action line, e.g. "MAYA CHEN, 30s, sits hunched over a console."
+DESCRIPTOR_RE = re.compile(
+    r"\b([A-Z][A-Z0-9'\-]*(?:\s+[A-Z][A-Z0-9'\-]*){0,3})\s*,\s*([^.;]{3,120})"
+)
+AGE_RE = re.compile(
+    r"\b((?:early|mid|late)[\s-]+\d{2}s|\d{2}s|\d{1,2}\s*(?:years old|yo)|aged?\s*\d{1,2})\b",
+    re.IGNORECASE,
+)
+
 
 VALID_TOD = {"DAY", "NIGHT", "DUSK", "DAWN", "MAGIC HOUR", "MAGIC_HOUR", "CONTINUOUS", "LATER", "SAME TIME", "MORNING", "EVENING", "AFTERNOON"}
+
+# Scene heading, e.g. "INT. RADIO STATION - NIGHT", "## 12. EXT. ROOF - DAY".
+SCENE_REGEX = re.compile(
+    r"^(?:#+\s*)?(?:(?:SCENE\s+)?(\d+[A-Z]?)(?:\.|\:)?\s+)?(INT\./EXT\.|INT/EXT\.|INT\.|EXT\.|I/E\.)\s+([^\n\r]+)",
+    re.IGNORECASE,
+)
+
+
+def parse_title_block(block_lines: List[str]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Reads the metadata block that precedes the first scene heading.
+
+    Handles both Fountain key/value form ("Title: The Last Signal") and the
+    common plain form where the title is simply the first line, optionally
+    followed by a "Written by ..." credit.
+    """
+    title: Optional[str] = None
+    author: Optional[str] = None
+
+    for raw in block_lines:
+        line = re.sub(r"^[#*_>\s]+|[*_\s]+$", "", raw).strip()
+        if not line:
+            continue
+
+        lowered = line.lower()
+        if lowered.startswith("title:"):
+            title = line.split(":", 1)[1].strip() or title
+            continue
+        if lowered.startswith(("author:", "authors:", "written by:", "credit:")):
+            author = line.split(":", 1)[1].strip() or author
+            continue
+        if lowered.startswith(("written by", "by ", "screenplay by", "story by")):
+            candidate = re.sub(
+                r"^(written by|screenplay by|story by|by)\s*", "", line, flags=re.IGNORECASE
+            ).strip()
+            if candidate and not author:
+                author = candidate
+            continue
+        if any(lowered.startswith(k) for k in TITLE_BLOCK_KEYS):
+            continue
+        if title is None:
+            # First substantive line of the block is the title.
+            title = line
+
+    return title, author
 
 
 def split_heading_components(raw_heading: str) -> Tuple[str, str, str]:
@@ -204,19 +222,18 @@ def extract_character_relationships(
                 last_speaker = speaker
 
         if shared_scenes or interaction_turns > 0:
-            # Check for curated relationship
-            pair_key = (char_name, other_name)
-            rev_key = (other_name, char_name)
-
-            if pair_key in CURATED_RELATIONSHIPS:
-                rel_type = CURATED_RELATIONSHIPS[pair_key]["type"]
-                dyn_desc = CURATED_RELATIONSHIPS[pair_key]["description"]
-            elif rev_key in CURATED_RELATIONSHIPS:
-                rel_type = CURATED_RELATIONSHIPS[rev_key]["type"]
-                dyn_desc = CURATED_RELATIONSHIPS[rev_key]["description"]
+            # Relationship strength is derived from the script itself: how often the two
+            # trade dialogue turns, and how many scenes they share.
+            if interaction_turns >= 6:
+                rel_type = "Principal Dialogue Counterpart"
+            elif interaction_turns > 0:
+                rel_type = "Key Dialogue Counterpart"
             else:
-                rel_type = "Key Dialogue Counterpart" if interaction_turns > 0 else "Shared Scene Presence"
-                dyn_desc = f"Interacts in {len(shared_scenes)} scene(s) with {interaction_turns} direct dialogue turn(s)."
+                rel_type = "Shared Scene Presence"
+            dyn_desc = (
+                f"Interacts in {len(shared_scenes)} scene(s) "
+                f"with {interaction_turns} direct dialogue turn(s)."
+            )
 
             relationships.append(
                 CharacterRelationship(
@@ -231,6 +248,82 @@ def extract_character_relationships(
     # Sort relationships by interaction frequency & shared scene count
     relationships.sort(key=lambda r: (r.interaction_count, len(r.shared_scenes)), reverse=True)
     return relationships
+
+
+def extract_character_descriptors(
+    scenes: List[ScreenplayScene],
+    known_names: Set[str],
+) -> Dict[str, Dict[str, str]]:
+    """
+    Mines action lines for how the screenplay introduces each character.
+
+    Screenplays conventionally introduce a character in caps with an appositive
+    description, e.g. "MAYA CHEN, 30s, sits hunched over a console." The cue is
+    usually the first name only ("MAYA"), so a full name in the action line is
+    matched back to the shorter cue.
+
+    Returns {cue_name: {"full_name", "description", "age"}}.
+    """
+    found: Dict[str, Dict[str, str]] = {}
+
+    for sc in scenes:
+        for action in sc.action_blocks:
+            for match in DESCRIPTOR_RE.finditer(action):
+                raw_name = match.group(1).strip()
+                description = match.group(2).strip().rstrip(",")
+                if not raw_name or raw_name in NON_CHARACTER_TOKENS:
+                    continue
+
+                # Resolve "MAYA CHEN" in the action back to the "MAYA" cue.
+                cue = None
+                if raw_name in known_names:
+                    cue = raw_name
+                else:
+                    for known in known_names:
+                        if raw_name.startswith(known + " ") or known.startswith(raw_name + " "):
+                            cue = known
+                            break
+                if cue is None or cue in found:
+                    continue
+
+                age_match = AGE_RE.search(description)
+                found[cue] = {
+                    "full_name": raw_name,
+                    "description": description,
+                    "age": age_match.group(1) if age_match else "",
+                }
+
+    return found
+
+
+# Dialogue cues that hint at a character's disposition. Deliberately small and
+# transparent: these are starting points for the user to edit, not a claim to
+# have understood the character.
+TRAIT_HINTS = (
+    ("Commanding", ("must", "now", "order", "stand", "step", "move", "stop")),
+    ("Inquisitive", ("who", "what", "why", "where", "how", "?")),
+    ("Guarded", ("careful", "listen", "wait", "quiet", "don't")),
+    ("Urgent", ("hurry", "quick", "run", "late", "!")),
+)
+
+
+def infer_personality_traits(name: str, scenes: List[ScreenplayScene]) -> List[str]:
+    """
+    Derives a small set of starting personality traits from the character's own
+    dialogue. Returns an empty list when the script gives nothing to go on,
+    rather than inventing the same three adjectives for everyone.
+    """
+    spoken = " ".join(
+        d.line.lower()
+        for sc in scenes
+        for d in sc.dialogues
+        if clean_character_name(d.character) == name
+    )
+    if not spoken.strip():
+        return []
+
+    traits = [trait for trait, hints in TRAIT_HINTS if any(h in spoken for h in hints)]
+    return traits[:4]
 
 
 def extract_character_profiles(scenes: List[ScreenplayScene], script_text: str) -> List[CharacterProfile]:
@@ -263,7 +356,7 @@ def extract_character_profiles(scenes: List[ScreenplayScene], script_text: str) 
     for sc in scenes:
         for action in sc.action_blocks:
             for word in re.findall(r"\b[A-Z]{2,}(?:\s+[A-Z]{2,})*\b", action):
-                if word in ["INT", "EXT", "DAY", "NIGHT", "POV", "CU", "WS", "CLOSE", "ANGLE", "THE", "AND", "WITH"]:
+                if word in NON_CHARACTER_TOKENS:
                     continue
                 if word in char_stats:
                     char_stats[word]["scenes"].add(sc.scene_number)
@@ -272,11 +365,14 @@ def extract_character_profiles(scenes: List[ScreenplayScene], script_text: str) 
 
     profiles: List[CharacterProfile] = []
     all_names = set(char_stats.keys())
-    
+
+    # Mine the action lines once for how the script describes each character.
+    descriptors = extract_character_descriptors(scenes, all_names)
+
     # Sort characters by dialogue frequency
     sorted_chars = sorted(char_stats.values(), key=lambda c: c["dialogue_count"], reverse=True)
 
-    for c in sorted_chars:
+    for rank, c in enumerate(sorted_chars):
         name = c["name"]
         char_id = f"char_{name.lower().replace(' ', '_')}"
         scenes_list = sorted(list(c["scenes"]), key=lambda s: int(re.sub(r'\D', '', s) or '0'))
@@ -284,38 +380,52 @@ def extract_character_profiles(scenes: List[ScreenplayScene], script_text: str) 
         # Extract relationships with other cast members
         relationships = extract_character_relationships(name, all_names, scenes)
 
-        # Check if known archetype exists
-        if name in CHARACTER_ARCHETYPES:
-            arch = CHARACTER_ARCHETYPES[name]
-            profile = CharacterProfile(
-                id=char_id,
-                name=name,
-                role=arch["role"],
-                actor_reference=arch["actor_reference"],
-                look_and_costume=arch["look_and_costume"],
-                facial_features=arch["facial_features"],
-                personality_traits=arch["personality_traits"],
-                relationships=relationships,
-                dialogue_count=c["dialogue_count"],
-                scenes_present=scenes_list,
-                avatar_url=f"/avatars/{name.lower().replace(' ', '_')}.jpg"
-            )
+        # Seed the profile from what the screenplay itself says about this
+        # character, so each one starts visually distinct rather than every
+        # character sharing one generic placeholder description.
+        seed = descriptors.get(name, {})
+        described_as = seed.get("description")
+        age = seed.get("age")
+        full_name = seed.get("full_name", name)
+
+        if rank == 0 and c["dialogue_count"] > 0:
+            role_desc = "Lead"
+        elif c["dialogue_count"] >= 3:
+            role_desc = "Principal Cast"
+        elif c["dialogue_count"] > 0:
+            role_desc = "Supporting Character"
         else:
-            # Dynamically infer a cinematic profile
-            role_desc = "Primary Cast" if c["dialogue_count"] >= 3 else "Supporting Character"
-            profile = CharacterProfile(
-                id=char_id,
-                name=name,
-                role=role_desc,
-                actor_reference=f"Cinematic screen presence, expressive dramatic persona for {name}",
-                look_and_costume="Authentic production costume matching scene environment and era",
-                facial_features="Sharp facial features with motivated cinematic lighting catchlights",
-                personality_traits=["Determined", "Expressive", "Dramatic"],
-                relationships=relationships,
-                dialogue_count=c["dialogue_count"],
-                scenes_present=scenes_list,
-                avatar_url=None
+            role_desc = "Background / Non-Speaking"
+
+        if described_as:
+            actor_reference = f"{full_name.title()}, {described_as}"
+        elif age:
+            actor_reference = f"{full_name.title()}, {age}"
+        else:
+            actor_reference = (
+                f"{full_name.title()} — appearance not described in the screenplay; "
+                f"set a reference to lock this character's look"
             )
+
+        profile = CharacterProfile(
+            id=char_id,
+            name=name,
+            role=role_desc,
+            actor_reference=actor_reference,
+            look_and_costume=(
+                f"Wardrobe for {full_name.title()}, consistent across "
+                f"{len(scenes_list)} scene(s); refine to lock continuity"
+            ),
+            facial_features=(
+                f"{age}, distinguishing features to be defined" if age
+                else "Distinguishing facial features to be defined"
+            ),
+            personality_traits=infer_personality_traits(name, scenes),
+            relationships=relationships,
+            dialogue_count=c["dialogue_count"],
+            scenes_present=scenes_list,
+            avatar_url=None,
+        )
         profiles.append(profile)
 
     return profiles
@@ -328,13 +438,40 @@ def parse_fountain_screenplay(script_text: str, title: str = "Screenplay") -> Sc
     if not script_text or not script_text.strip():
         return Screenplay(title=title, scenes_count=0, characters_count=0, characters=[], scenes=[], raw_text=script_text)
 
-    # Detect title if present in text
-    detected_title = title
-    m_title = re.search(r"^Title:\s*(.+)$", script_text, re.MULTILINE | re.IGNORECASE)
-    if m_title:
-        detected_title = m_title.group(1).strip()
+    all_lines = script_text.strip().splitlines()
+    parse_warnings: List[str] = []
 
-    lines = script_text.strip().splitlines()
+    # Everything before the first scene heading is a title block, not content.
+    # Parsing it as scene body is what previously turned a plain title line into
+    # a speaking character with the author credit as its dialogue.
+    first_heading_idx = next(
+        (i for i, ln in enumerate(all_lines) if SCENE_REGEX.match(ln.strip())),
+        None,
+    )
+    if first_heading_idx is None:
+        # No headings at all: treat the leading paragraph as the title block so a
+        # bare title line still does not get read as dialogue.
+        split_at = next(
+            (i for i, ln in enumerate(all_lines) if not ln.strip()),
+            0,
+        )
+        title_block, lines = all_lines[:split_at], all_lines[split_at:]
+        parse_warnings.append(
+            "No INT./EXT. scene headings found; the whole file was treated as a single scene."
+        )
+    else:
+        title_block = all_lines[:first_heading_idx]
+        lines = all_lines[first_heading_idx:]
+
+    detected_title, detected_author = parse_title_block(title_block)
+    if not detected_title:
+        # Fall back to the caller's title (usually the filename).
+        detected_title = title
+        if title_block:
+            parse_warnings.append(
+                "Could not identify a title in the text; used the file name instead."
+            )
+
     scenes: List[ScreenplayScene] = []
     
     current_scene_num = 0
@@ -377,17 +514,11 @@ def parse_fountain_screenplay(script_text: str, title: str = "Screenplay") -> Sc
             current_dialogues = []
             current_raw_lines = []
 
-    # Scene match regex
-    scene_regex = re.compile(
-        r"^(?:#+\s*)?(?:(?:SCENE\s+)?(\d+[A-Z]?)(?:\.|\:)?\s+)?(INT\./EXT\.|INT/EXT\.|INT\.|EXT\.|I/E\.)\s+([^\n\r]+)",
-        re.IGNORECASE
-    )
-
     for line in lines:
         stripped = line.strip()
         
         # Check for Scene Headings
-        match = scene_regex.match(stripped)
+        match = SCENE_REGEX.match(stripped)
         if match:
             save_current_scene()
             sc_num_override = match.group(1)
@@ -459,13 +590,24 @@ def parse_fountain_screenplay(script_text: str, title: str = "Screenplay") -> Sc
     # Extract & Profile all Characters and their relationships
     characters = extract_character_profiles(scenes, script_text)
 
+    if not characters:
+        parse_warnings.append(
+            "No character cues were detected. Character names should sit on their own "
+            "line in capitals, above their dialogue."
+        )
+    if not scenes:
+        parse_warnings.append("No scenes could be extracted from this file.")
+
     return Screenplay(
         title=detected_title,
+        script_id=compute_script_id(script_text),
+        author=detected_author,
         scenes_count=len(scenes),
         characters_count=len(characters),
         characters=characters,
         scenes=scenes,
-        raw_text=script_text
+        raw_text=script_text,
+        parse_warnings=parse_warnings,
     )
 
 

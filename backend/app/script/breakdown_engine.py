@@ -8,7 +8,7 @@ import uuid
 import re
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
-from backend.app.script.parser import ScreenplayScene, CharacterProfile, CHARACTER_ARCHETYPES
+from backend.app.script.parser import ScreenplayScene, CharacterProfile
 from backend.app.script.dop_presets import DoPSpecification, resolve_dop_specification, DOP_MASTER_PRESETS
 
 
@@ -107,9 +107,10 @@ def synthesize_cinematic_prompt(
             p = character_profiles_map.get(char_name)
             if p:
                 char_visuals.append(f"{p.name} ({p.actor_reference}, wearing {p.look_and_costume}, facial features: {p.facial_features})")
-            elif char_name in CHARACTER_ARCHETYPES:
-                arch = CHARACTER_ARCHETYPES[char_name]
-                char_visuals.append(f"{char_name} ({arch['actor_reference']}, wearing {arch['look_and_costume']}, facial features: {arch['facial_features']})")
+            else:
+                # Name the character anyway so the frame is at least cast-correct,
+                # rather than silently dropping them from the prompt.
+                char_visuals.append(char_name)
 
     char_str = "; ".join(char_visuals) if char_visuals else ""
 
