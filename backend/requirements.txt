@@ -15,6 +15,7 @@
 # The resolution is universal: markers cover Windows/Linux and Python 3.11+,
 # so the same lock installs on a developer machine and on the 3.11 CI runner.
 
+
 annotated-doc==0.0.5
     # via fastapi
 annotated-types==0.8.0
@@ -204,6 +205,7 @@ pytest-cov==7.1.0
     # via cinespine (pyproject.toml)
 python-dotenv==1.2.3
     # via
+    #   cinespine (pyproject.toml)
     #   pydantic-settings
     #   uvicorn
 python-multipart==0.0.32
