@@ -1,0 +1,51 @@
+{
+  "title": "Production Lighthouse (CineSpine)",
+  "uid": "production_lighthouse",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Active Discrepancies",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(cinespine_active_discrepancies)",
+          "legendFormat": "Total"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Department Sync Lag (Seconds)",
+      "gridPos": { "h": 6, "w": 16, "x": 8, "y": 0 },
+      "targets": [
+        {
+          "expr": "cinespine_department_sync_lag_seconds",
+          "legendFormat": "{{department}} ({{shoot_day}})"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Active SSE Streaming Connections",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "expr": "cinespine_sse_active_connections",
+          "legendFormat": "{{user_role}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Ingested Events",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        {
+          "expr": "rate(cinespine_ingested_events_total[5m])",
+          "legendFormat": "{{department}} - {{axis}}"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38
+}

@@ -1,0 +1,51 @@
+{
+  "title": "AI Cost & Observability (CineSpine)",
+  "uid": "ai_cost_observability",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "LLM Tokens Consumed Rate",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(cinespine_llm_tokens_consumed_total[5m])",
+          "legendFormat": "{{model}} ({{task_complexity}})"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Total Tokens Consumed",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(cinespine_llm_tokens_consumed_total)",
+          "legendFormat": "{{model}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Generative Inference Latency (95th Percentile)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(cinespine_llm_inference_duration_seconds_bucket[5m])) by (le, model))",
+          "legendFormat": "{{model}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "AI Cache Hit Ratio",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(cinespine_ai_cache_hits_total[5m])",
+          "legendFormat": "{{model}} - {{status}}"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38
+}

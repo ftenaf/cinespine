@@ -168,11 +168,11 @@ async def test_gemini_analysis_uses_sdk_when_configured(monkeypatch):
 
     assert res["success"] is True
     assert res["provider"] == "Google Cloud Gemini Enterprise"
-    assert res["model"] == "gemini-2.0-flash"
+    assert res["model"] == "gemini-3.7-flash"
     assert res["analysis"] == "FAKE GEMINI ANALYSIS"
 
     assert captured["api_key"] == "test-key-123"
-    assert captured["model"] == "gemini-2.0-flash"
+    assert captured["model"] == "gemini-3.7-flash"
     assert "Roger Deakins" in captured["contents"]
     assert "LEAD plays the organ" in captured["contents"]
 

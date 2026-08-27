@@ -69,14 +69,24 @@ class LiveEventBroker:
         shoot_day: Optional[str] = None,
         user_handle: Optional[str] = None,
     ) -> SSESubscriber:
+        from backend.app.core.telemetry import SSE_ACTIVE_CONNECTIONS
         sub_id = f"sub_{uuid.uuid4().hex[:8]}"
         subscriber = SSESubscriber(sub_id, production_id, shoot_day, user_handle)
         self._subscribers[sub_id] = subscriber
+        
+        role = user_handle or "anonymous"
+        SSE_ACTIVE_CONNECTIONS.labels(user_role=role).inc()
+        
         logger.info(f"Registered SSE subscriber {sub_id} (prod={production_id}, day={shoot_day}). Total: {len(self._subscribers)}")
         return subscriber
 
     def unregister_subscriber(self, subscriber_id: str) -> None:
+        from backend.app.core.telemetry import SSE_ACTIVE_CONNECTIONS
         if subscriber_id in self._subscribers:
+            sub = self._subscribers[subscriber_id]
+            role = sub.user_handle or "anonymous"
+            SSE_ACTIVE_CONNECTIONS.labels(user_role=role).dec()
+            
             del self._subscribers[subscriber_id]
             logger.info(f"Unregistered SSE subscriber {subscriber_id}. Total: {len(self._subscribers)}")
 

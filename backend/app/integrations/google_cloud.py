@@ -108,6 +108,8 @@ async def run_gemini_screenplay_analysis(
     if GENAI_AVAILABLE and api_key:
         try:
             from backend.app.script.llm_router import get_optimal_gemini_model
+            from backend.app.core.telemetry import LLM_TOKENS_CONSUMED, LLM_LATENCY
+            
             client = genai.Client(api_key=api_key)
             prompt = (
                 f"Analyze this screenplay scene for Director of Photography style '{dop_style}'. "
@@ -117,10 +119,17 @@ async def run_gemini_screenplay_analysis(
             # This is a short semantic extraction task, so route as 'simple'
             optimal_model = get_optimal_gemini_model(prompt, task_complexity="simple")
             
-            response = client.models.generate_content(
-                model=optimal_model,
-                contents=prompt
-            )
+            with LLM_LATENCY.labels(model=optimal_model).time():
+                response = client.models.generate_content(
+                    model=optimal_model,
+                    contents=prompt
+                )
+                
+            if hasattr(response, "usage_metadata") and response.usage_metadata:
+                tokens = response.usage_metadata.total_token_count
+                if tokens:
+                    LLM_TOKENS_CONSUMED.labels(model=optimal_model, task_complexity="simple").inc(tokens)
+                    
             return {
                 "success": True,
                 "analysis": response.text,

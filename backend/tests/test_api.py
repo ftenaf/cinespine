@@ -101,6 +101,8 @@ def test_api_metrics_endpoint(client):
     response = client.get("/api/metrics")
     assert response.status_code == 200
     assert b"cinespine_ingested_events_total" in response.content
+    assert b"cinespine_llm_tokens_consumed_total" in response.content
+    assert b"cinespine_sse_active_connections" in response.content
 
 
 def test_api_document_raw_pdf_streaming(client):

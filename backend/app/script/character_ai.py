@@ -188,6 +188,7 @@ def _call_gemini(prompt: str) -> str:
     """Blocking Gemini call; run off the event loop by the caller. Uses SQLite cache."""
     from google import genai
     from backend.app.script.llm_router import get_optimal_gemini_model
+    from backend.app.core.telemetry import LLM_TOKENS_CONSUMED, AI_CACHE_HITS, LLM_LATENCY
 
     # Use a 'complex' task type since we're generating rich narrative descriptions
     optimal_model = get_optimal_gemini_model(prompt, task_complexity="complex")
@@ -196,20 +197,32 @@ def _call_gemini(prompt: str) -> str:
     cached = get_cached_response(req_hash)
     if cached:
         logger.info("Character inference cache hit for %s", req_hash)
+        AI_CACHE_HITS.labels(model=optimal_model, status="hit").inc()
         return cached["text"]
         
     logger.info("Character inference cache miss for %s", req_hash)
+    AI_CACHE_HITS.labels(model=optimal_model, status="miss").inc()
 
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=optimal_model,
-        contents=prompt,
-        config={"response_mime_type": "application/json", "temperature": 0.4},
-    )
+    
+    with LLM_LATENCY.labels(model=optimal_model).time():
+        response = client.models.generate_content(
+            model=optimal_model,
+            contents=prompt,
+            config={"response_mime_type": "application/json", "temperature": 0.4},
+        )
+        
     text = response.text or ""
     if text:
         set_cached_response(req_hash, {"text": text})
+        
+    # GenAI SDK for Gemini returns usage metadata
+    if hasattr(response, "usage_metadata") and response.usage_metadata:
+        tokens = response.usage_metadata.total_token_count
+        if tokens:
+            LLM_TOKENS_CONSUMED.labels(model=optimal_model, task_complexity="complex").inc(tokens)
+            
     return text
 
 

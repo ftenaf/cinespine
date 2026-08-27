@@ -4,14 +4,37 @@ Lighthouse Telemetry and Prometheus Metrics Exporter.
 Evidence:
 - references/domain/handoffs.md ('Department sync latency and lost acknowledgements')
 """
-from typing import Dict, Any, Optional
-from prometheus_client import Counter, Gauge, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 # Metrics
 INGESTED_EVENTS = Counter(
     "cinespine_ingested_events_total",
     "Total production events ingested onto the spine",
     ["department", "axis"],
+)
+
+LLM_TOKENS_CONSUMED = Counter(
+    "cinespine_llm_tokens_consumed_total",
+    "Total tokens consumed by generative tasks",
+    ["model", "task_complexity"]
+)
+
+AI_CACHE_HITS = Counter(
+    "cinespine_ai_cache_hits_total",
+    "Cache hit ratio for LLM inference",
+    ["model", "status"]
+)
+
+LLM_LATENCY = Histogram(
+    "cinespine_llm_inference_duration_seconds",
+    "Time spent waiting for Gemini/Imagen API responses",
+    ["model"]
+)
+
+SSE_ACTIVE_CONNECTIONS = Gauge(
+    "cinespine_sse_active_connections",
+    "Number of active Server-Sent Event streaming clients",
+    ["user_role"]
 )
 
 PARSER_REJECTIONS = Counter(
