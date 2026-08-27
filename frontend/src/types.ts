@@ -301,3 +301,51 @@ export interface CameraSetup {
   image_prompt?: string;
   focus_distance?: number;
 }
+
+/** One take read off a script supervisor's lined page. */
+export interface LinedPageTake {
+  take_id: string;
+  camera_rolls: string[];
+  is_starred: boolean;
+  is_pickup: boolean;
+  is_vfx: boolean;
+  is_false_start: boolean;
+  is_wild_track: boolean;
+  notes?: string | null;
+}
+
+export interface LinedPage {
+  scene: string;
+  slates: string[];
+  takes: LinedPageTake[];
+  lining_notes?: string | null;
+  page_number?: number | null;
+}
+
+export interface UploadFeedback {
+  tone: 'success' | 'warning' | 'error';
+  message: string;
+  /** What was read off the page, when anything was. */
+  detail?: string | null;
+  /** Why nothing, or not everything, could be read. Never silently dropped. */
+  warnings?: string[];
+}
+
+/** What POST /api/upload/file returns. */
+export interface UploadResult {
+  status: string;
+  doc_id: string;
+  checksum: string;
+  filename: string;
+  production_id: string;
+  shoot_day: string;
+  detected_doc_type: string;
+  detected_department: string;
+  detected_axis: string;
+  /** Whether the document needs vision to be read at all. */
+  is_multimodal: boolean;
+  /** What vision actually read, or null. Distinct from is_multimodal. */
+  lined_page?: LinedPage | null;
+  /** Why a page came back unread. Empty when there was nothing to report. */
+  lining_warnings?: string[];
+}

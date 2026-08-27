@@ -11,7 +11,8 @@ import {
 } from 'lucide-react';
 import { 
   TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, SequenceRecord,
-  UserProfile, Requirement, NotificationItem, RequirementPriority, RequirementCategory
+  UserProfile, Requirement, NotificationItem, RequirementPriority, RequirementCategory,
+  UploadFeedback, LinedPage
 } from './types';
 import { 
   fetchTakes, fetchDiscrepancies, fetchProductions, fetchDocuments,
@@ -24,6 +25,32 @@ import {
 } from './api';
 import { ScriptStudio } from './components/ScriptStudio';
 
+
+
+/**
+ * One line describing what was read off a lined page.
+ *
+ * Returns null when nothing was read, so the caller shows the warnings instead
+ * of a reassuring summary of an empty result.
+ */
+function describeLinedPage(page: LinedPage | null | undefined): string | null {
+  if (!page || page.takes.length === 0) return null;
+
+  const parts = [`${page.takes.length} take${page.takes.length === 1 ? '' : 's'} read`];
+  if (page.scene) parts.push(`scene ${page.scene}`);
+  if (page.slates.length > 0) parts.push(`slate ${page.slates.join(', ')}`);
+
+  const circled = page.takes.filter(t => t.is_starred).map(t => t.take_id);
+  if (circled.length > 0) parts.push(`circled ${circled.join(', ')}`);
+
+  const falseStarts = page.takes.filter(t => t.is_false_start).length;
+  if (falseStarts > 0) parts.push(`${falseStarts} false start${falseStarts === 1 ? '' : 's'}`);
+
+  const rolls = Array.from(new Set(page.takes.flatMap(t => t.camera_rolls)));
+  if (rolls.length > 0) parts.push(`rolls ${rolls.join(', ')}`);
+
+  return parts.join(' • ');
+}
 
 export default function App() {
   const [productions, setProductions] = useState<Production[]>([]);
@@ -128,7 +155,7 @@ export default function App() {
   const [uploadContent, setUploadContent] = useState('');
   const [uploadFilename, setUploadFilename] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
+  const [uploadFeedback, setUploadFeedback] = useState<UploadFeedback | null>(null);
 
   const loadProductions = async () => {
     try {
@@ -509,7 +536,16 @@ export default function App() {
     try {
       if (uploadMode === 'file' && selectedFile) {
         const res = await uploadFile(selectedFile);
-        setUploadFeedback(`✅ Ingested ${res.filename} to ${res.production_id} (Day ${res.shoot_day}) [${res.detected_department.toUpperCase()}]`);
+        const warnings = res.lining_warnings || [];
+        setUploadFeedback({
+          // A page that was ingested but not read is not a clean success. Saying
+          // so here is the whole point: an unread page and a page with nothing
+          // on it look identical in the spine otherwise.
+          tone: warnings.length > 0 ? 'warning' : 'success',
+          message: `Ingested ${res.filename} to ${res.production_id} (Day ${res.shoot_day}) [${res.detected_department.toUpperCase()}]`,
+          detail: describeLinedPage(res.lined_page),
+          warnings,
+        });
         if (res.production_id) setSelectedProductionId(res.production_id);
         if (res.shoot_day) setSelectedDay(res.shoot_day);
       } else if (uploadMode === 'text' && uploadContent.trim()) {
@@ -517,7 +553,10 @@ export default function App() {
           raw_content: uploadContent,
           filename: uploadFilename || 'manual_drop.txt',
         });
-        setUploadFeedback(`✅ Ingested to ${res.production_id} (Day ${res.shoot_day}) [${res.detected_department.toUpperCase()}]`);
+        setUploadFeedback({
+          tone: 'success',
+          message: `Ingested to ${res.production_id} (Day ${res.shoot_day}) [${res.detected_department.toUpperCase()}]`,
+        });
         if (res.production_id) setSelectedProductionId(res.production_id);
         if (res.shoot_day) setSelectedDay(res.shoot_day);
       }
@@ -528,9 +567,12 @@ export default function App() {
       await loadSpineData();
     } catch (err: any) {
       if (err.message && err.message.includes('409')) {
-        setUploadFeedback(`⚠️ Duplicate Document: This file has already been ingested into the spine.`);
+        setUploadFeedback({
+          tone: 'warning',
+          message: 'Duplicate document: this file is already in the spine.',
+        });
       } else {
-        setUploadFeedback(`❌ Upload Failed: ${err.message}`);
+        setUploadFeedback({ tone: 'error', message: `Upload failed: ${err.message}` });
       }
     } finally {
       setLoading(false);
@@ -3462,8 +3504,35 @@ export default function App() {
             </div>
 
             {uploadFeedback && (
-              <div className="bg-spine-success/40 border border-spine-success/40 text-spine-success text-xs p-3 rounded-lg">
-                {uploadFeedback}
+              <div
+                className={`text-xs p-3 rounded-lg border ${
+                  uploadFeedback.tone === 'error'
+                    ? 'bg-spine-critical/20 border-spine-critical/40 text-spine-critical'
+                    : uploadFeedback.tone === 'warning'
+                    ? 'bg-spine-warning/20 border-spine-warning/40 text-spine-warning'
+                    : 'bg-spine-success/40 border-spine-success/40 text-spine-success'
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  <span aria-hidden="true">
+                    {uploadFeedback.tone === 'error' ? '✕' : uploadFeedback.tone === 'warning' ? '!' : '✓'}
+                  </span>
+                  <span className="font-semibold">{uploadFeedback.message}</span>
+                </div>
+
+                {uploadFeedback.detail && (
+                  <p className="mt-2 pl-5 text-gray-300 font-mono text-[11px] leading-relaxed">
+                    {uploadFeedback.detail}
+                  </p>
+                )}
+
+                {uploadFeedback.warnings && uploadFeedback.warnings.length > 0 && (
+                  <ul className="mt-2 pl-5 space-y-1 list-disc list-inside text-spine-warning/90">
+                    {uploadFeedback.warnings.map((warning, i) => (
+                      <li key={i} className="leading-relaxed">{warning}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
 

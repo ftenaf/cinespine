@@ -1,4 +1,4 @@
-import { TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument } from './types';
+import { TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, UploadResult } from './types';
 
 const API_BASE = '/api';
 
@@ -65,7 +65,7 @@ export async function uploadDocument(payload: {
   return res.json();
 }
 
-export async function uploadFile(file: File, productionId?: string, shootDay?: string): Promise<any> {
+export async function uploadFile(file: File, productionId?: string, shootDay?: string): Promise<UploadResult> {
   const formData = new FormData();
   formData.append('file', file);
   if (productionId) formData.append('production_id', productionId);
