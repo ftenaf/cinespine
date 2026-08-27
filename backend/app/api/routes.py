@@ -495,19 +495,39 @@ def is_take_media_match(media_info: Dict[str, Any], slate: str, take_id: str, ca
         m_sc_clean = m_scene.lstrip("+").upper()
 
         if (sc.upper() == m_scene.upper() or sc_clean == m_sc_clean) and tk_match:
-            if camera_roll and media_info.get("camera_roll") and camera_roll.upper() == media_info.get("camera_roll", "").upper():
-                return True
-            if sh and m_shot:
-                if (
-                    sh.upper() == m_shot.upper()
-                    or m_shot.upper().endswith(f"/{sh.upper()}")
-                    or m_shot.upper() == slate.upper()
-                    or m_shot.upper() == f"{sc.upper()}/{sh.upper()}"
-                    or m_shot.upper() == sc.upper()
-                ):
+            # A camera roll is the least specific identifier on the page: one roll
+            # spans many slates and many takes. Roll agreement therefore cannot
+            # stand in for a shot match -- doing so attached every clip on a roll
+            # to every take on it, so slate 49/5 and 49/6 showed the same twelve
+            # clips. Disagreement, however, is disqualifying.
+            m_roll = media_info.get("camera_roll") or ""
+            roll_conflict = bool(camera_roll and m_roll and camera_roll.upper() != m_roll.upper())
+
+            # Silverstack often writes the shot as the bare scene number, which
+            # identifies no particular slate. Treated as a match it attached every
+            # clip in a scene to every slate in that scene, so 49/1 through 49/9
+            # all showed the same clips.
+            shot_is_informative = bool(m_shot) and m_shot.upper() not in (
+                sc.upper(), sc_clean.upper()
+            )
+
+            if not roll_conflict:
+                if sh and shot_is_informative:
+                    if (
+                        sh.upper() == m_shot.upper()
+                        or m_shot.upper().endswith(f"/{sh.upper()}")
+                        or m_shot.upper() == slate.upper()
+                        or m_shot.upper() == f"{sc.upper()}/{sh.upper()}"
+                    ):
+                        return True
+                elif not sh:
+                    # The slate names no shot either, so scene and take are all
+                    # the evidence either side has. This is as precise as it gets.
                     return True
-            else:
-                return True
+                # Otherwise the slate distinguishes a shot and the media does not.
+                # Which slate this clip belongs to is unknown, and attaching it to
+                # all of them would invent an answer. Clip-name matching below can
+                # still claim it where the camera report names it explicitly.
 
     # 2. Camera Clip Name matching (e.g. ZoeLog 'A120_C001' vs Silverstack 'A_0120C001_260728_091309_h1EIC.mxf' or 'A120_C001_260728.MOV')
     if clip_name:
