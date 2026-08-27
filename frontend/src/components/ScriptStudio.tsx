@@ -39,8 +39,14 @@ import {
   backgroundBlurRadius
 } from '../optics';
 import { DopControls, DopSettings } from './DopControls';
-import { CharacterProfileCard } from './CharacterProfileCard';
-import { DEFAULT_DOP_PRESETS } from '../presets';
+import {
+  DEFAULT_DOP_PRESETS,
+  loadCustomPresets,
+  saveCustomPresets,
+  loadDeletedPresets,
+  saveDeletedPresets,
+  mergeActivePresets
+} from '../presets';
 
 export interface DialogueLine {
   character: string;
@@ -246,27 +252,22 @@ export const ScriptStudio: React.FC = () => {
   const [protectRatio, setProtectRatio] = useState<string>('16:9');
   const [focusDistanceM, setFocusDistanceM] = useState<number>(3);
   const [whiteBalanceK, setWhiteBalanceK] = useState<number>(5600);
-  const [customPresets, setCustomPresets] = useState<Record<string, any>>({});
-  const [presetsDict, setPresetsDict] = useState<Record<string, any>>(DEFAULT_DOP_PRESETS);
+  const [customPresets, setCustomPresets] = useState<Record<string, any>>(() => loadCustomPresets());
+  const [deletedPresets, setDeletedPresets] = useState<string[]>(() => loadDeletedPresets());
+  const [backendPresets, setBackendPresets] = useState<Record<string, any>>({});
+  const [presetsDict, setPresetsDict] = useState<Record<string, any>>(() =>
+    mergeActivePresets({}, loadCustomPresets(), loadDeletedPresets())
+  );
   const [enlargedImage, setEnlargedImage] = useState<{ url: string; prompt: string; title: string } | null>(null);
   const [generatingCamMap, setGeneratingCamMap] = useState<Record<string, boolean>>({});
   const [showCamSettings, setShowCamSettings] = useState<boolean>(false);
   const [showShotScript, setShowShotScript] = useState<boolean>(false);
   const [popupCharacter, setPopupCharacter] = useState<CharacterProfile | null>(null);
 
-  // Load custom presets on mount and merge with DEFAULT_DOP_PRESETS
-  React.useEffect(() => {
-    try {
-      const stored = localStorage.getItem('cinespine_custom_presets');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setCustomPresets(parsed);
-        setPresetsDict(prev => ({ ...DEFAULT_DOP_PRESETS, ...prev, ...parsed }));
-      }
-    } catch (e) {
-      console.warn("Failed to load custom presets:", e);
-    }
-  }, []);
+  // Re-compute active presets dictionary whenever backend, custom, or deleted presets change
+  useEffect(() => {
+    setPresetsDict(mergeActivePresets(backendPresets, customPresets, deletedPresets));
+  }, [backendPresets, customPresets, deletedPresets]);
 
   // Real-Time Viewfinder Geometry (sensor extraction, angle of view, framing scale)
   const geometry = useMemo(
@@ -386,7 +387,7 @@ export const ScriptStudio: React.FC = () => {
       .then(res => res.json())
       .then(data => {
         if (data.presets) {
-          setPresetsDict(prev => ({ ...DEFAULT_DOP_PRESETS, ...data.presets, ...prev, ...customPresets }));
+          setBackendPresets(data.presets);
         }
       })
       .catch(err => {
@@ -395,11 +396,6 @@ export const ScriptStudio: React.FC = () => {
 
     handleParseScript(DEMO_FOUNTAIN_SCRIPT);
   }, []);
-
-  // Update presetsDict when customPresets changes
-  useEffect(() => {
-    setPresetsDict(prev => ({ ...DEFAULT_DOP_PRESETS, ...prev, ...customPresets }));
-  }, [customPresets]);
 
   const globalDopSettings: DopSettings = {
     dopMode, aspectRatio, selectedPreset, customFocalLength, customAperture,
@@ -436,15 +432,52 @@ export const ScriptStudio: React.FC = () => {
       is_custom: true
     };
     
+    // If it was previously in deletedPresets, un-delete it
+    if (deletedPresets.includes(name)) {
+      const nextDeleted = deletedPresets.filter(n => n !== name);
+      setDeletedPresets(nextDeleted);
+      saveDeletedPresets(nextDeleted);
+    }
+
     setCustomPresets(prev => {
       const next = { ...prev, [name]: newPreset };
-      localStorage.setItem('cinespine_custom_presets', JSON.stringify(next));
+      saveCustomPresets(next);
       return next;
     });
     
     // Automatically select it globally
     setSelectedPreset(name);
     setDopMode('preset');
+  };
+
+  const handleDeletePreset = (name: string) => {
+    // 1. If it's a custom preset, remove from customPresets
+    if (customPresets[name]) {
+      setCustomPresets(prev => {
+        const next = { ...prev };
+        delete next[name];
+        saveCustomPresets(next);
+        return next;
+      });
+    }
+
+    // 2. Mark as deleted so built-in / backend presets are also suppressed
+    const nextDeleted = Array.from(new Set([...deletedPresets, name]));
+    setDeletedPresets(nextDeleted);
+    saveDeletedPresets(nextDeleted);
+
+    // 3. If currently selected, fallback to the first available active preset
+    if (selectedPreset === name) {
+      const remainingKeys = Object.keys(presetsDict).filter(k => k !== name);
+      if (remainingKeys.length > 0) {
+        setSelectedPreset(remainingKeys[0]);
+      }
+    }
+  };
+
+  const handleResetPresets = () => {
+    setDeletedPresets([]);
+    saveDeletedPresets([]);
   };
 
   const handleCamDopChange = (shot: ShotProposal, camLetter: string, updates: Partial<DopSettings>) => {
@@ -1879,6 +1912,9 @@ export const ScriptStudio: React.FC = () => {
                         onChange={(updates) => handleCamDopChange(selectedShot, selectedCam.camera_letter, updates)}
                         presetsDict={presetsDict}
                         onSavePreset={handleSavePreset}
+                        onDeletePreset={handleDeletePreset}
+                        onResetPresets={handleResetPresets}
+                        deletedPresetsCount={deletedPresets.length}
                         hideAspectRatio={true}
                       />
                     </div>
@@ -2109,6 +2145,9 @@ export const ScriptStudio: React.FC = () => {
                   onChange={handleGlobalDopChange}
                   presetsDict={presetsDict}
                   onSavePreset={handleSavePreset}
+                  onDeletePreset={handleDeletePreset}
+                  onResetPresets={handleResetPresets}
+                  deletedPresetsCount={deletedPresets.length}
                 />
               </div>
             </div>

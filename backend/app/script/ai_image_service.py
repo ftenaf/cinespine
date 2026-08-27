@@ -239,16 +239,17 @@ async def generate_character_portrait_image(
     locking the actor appearance, facial features, costume, and DoP portrait lighting.
     """
     tokens = [
-        f"Cinematic 35mm motion picture character portrait headshot of {character_name}",
-        f"Role: {role}",
-        f"Actor Screen Reference: {actor_reference}",
-        f"Costume and Wardrobe: {look_and_costume}",
-        f"Facial Features and Catchlights: {facial_features}",
+        f"Extremely photorealistic and highly detailed cinematic 35mm portrait headshot of {character_name}",
+        f"Role / Archetype: {role}",
+        f"Actor Appearance / Casting Reference: {actor_reference}",
+        f"Detailed Facial Features: {facial_features}",
+        f"Costume, Wardrobe, and Texture: {look_and_costume}",
+        f"Hyper-realistic textures, visible skin pores, natural imperfections, lifelike portrait",
         f"85mm portrait prime lens at T1.4 aperture, creamy bokeh background",
         f"Cinematography Style: {dop_preset} portrait lighting",
         f"Color Temperature: {color_temp_k}K, {lighting_ratio} lighting contrast ratio",
         f"{lut_emulation} film stock grade",
-        f"8k resolution, eye catchlights, authentic 35mm film grain, masterpiece cinema lookbook portrait still"
+        f"8k resolution, perfectly exposed eye catchlights, authentic 35mm film grain, cinematic masterpiece portrait still"
     ]
     if custom_mood:
         tokens.append(f"Mood: {custom_mood}")

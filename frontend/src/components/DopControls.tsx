@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Camera, Aperture, Crosshair, Sun, Palette, Terminal, Save, Sparkles, Loader2 } from 'lucide-react';
+import { Camera, Aperture, Crosshair, Sun, Palette, Terminal, Save, Sparkles, Loader2, Trash2, RotateCcw } from 'lucide-react';
 import { parseStop, SENSOR_FORMATS, formatDistance, depthOfField, computeViewfinderGeometry } from '../optics';
 import { suggestDoPPreset } from '../api';
 
@@ -23,10 +23,22 @@ export interface DopControlsProps {
   onChange: (updates: Partial<DopSettings>) => void;
   presetsDict: Record<string, any>;
   onSavePreset: (presetName: string, tagline: string, description: string, basePresetOverrides?: Partial<DopSettings>) => void;
+  onDeletePreset?: (presetName: string) => void;
+  onResetPresets?: () => void;
+  deletedPresetsCount?: number;
   hideAspectRatio?: boolean;
 }
 
-export const DopControls: React.FC<DopControlsProps> = ({ settings, onChange, presetsDict, onSavePreset, hideAspectRatio = false }) => {
+export const DopControls: React.FC<DopControlsProps> = ({
+  settings,
+  onChange,
+  presetsDict,
+  onSavePreset,
+  onDeletePreset,
+  onResetPresets,
+  deletedPresetsCount = 0,
+  hideAspectRatio = false,
+}) => {
   const [isSavingPreset, setIsSavingPreset] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
@@ -148,14 +160,26 @@ export const DopControls: React.FC<DopControlsProps> = ({ settings, onChange, pr
         {/* MODE 1: PRESETS */}
         {settings.dopMode === 'preset' && (
           <div className="space-y-2.5">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search master DoP presets (e.g. Deakins, Fraser, IMAX, Noir)..."
-                value={presetSearch}
-                onChange={e => setPresetSearch(e.target.value)}
-                className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
-              />
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  placeholder="Search master DoP presets (e.g. Deakins, Fraser, IMAX, Noir)..."
+                  value={presetSearch}
+                  onChange={e => setPresetSearch(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                />
+              </div>
+              {onResetPresets && deletedPresetsCount > 0 && (
+                <button
+                  onClick={onResetPresets}
+                  title={`Restore ${deletedPresetsCount} deleted preset${deletedPresetsCount > 1 ? 's' : ''}`}
+                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-purple-300 hover:text-purple-200 text-[11px] font-bold rounded-lg transition flex items-center gap-1.5 shrink-0 shadow-sm"
+                >
+                  <RotateCcw className="w-3 h-3 text-purple-400" />
+                  Restore Defaults ({deletedPresetsCount})
+                </button>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -174,18 +198,42 @@ export const DopControls: React.FC<DopControlsProps> = ({ settings, onChange, pr
                       customSensorFormat: presetData.sensor_format || settings.customSensorFormat
                     });
                   }}
-                  className={`p-2.5 rounded-xl border transition cursor-pointer flex flex-col justify-between ${
+                  className={`p-2.5 rounded-xl border transition cursor-pointer flex flex-col justify-between group relative ${
                     settings.selectedPreset === presetName
                       ? 'bg-purple-950/70 border-purple-500 shadow-lg shadow-purple-500/20 ring-1 ring-purple-500'
                       : 'bg-slate-900/50 border-slate-800 hover:border-slate-700 hover:bg-slate-900/80'
                   }`}
                 >
                   <div>
-                    <div className="flex items-center justify-between gap-1">
-                      <h4 className="text-xs font-bold text-white leading-tight">{presetData.name || presetName}</h4>
-                      {settings.selectedPreset === presetName && (
-                        <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
-                      )}
+                    <div className="flex items-start justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                        <h4 className="text-xs font-bold text-white leading-tight truncate">{presetData.name || presetName}</h4>
+                        {presetData.is_custom && (
+                          <span className="px-1.5 py-0.2 text-[8px] font-extrabold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded shrink-0">
+                            Custom
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {settings.selectedPreset === presetName && (
+                          <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
+                        )}
+                        {onDeletePreset && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`Delete preset "${presetData.name || presetName}"?`)) {
+                                onDeletePreset(presetName);
+                              }
+                            }}
+                            title={`Delete preset "${presetData.name || presetName}"`}
+                            className="p-1 text-slate-500 hover:text-red-400 hover:bg-red-950/50 rounded transition opacity-0 group-hover:opacity-100 focus:opacity-100"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <p className="text-[9px] font-medium text-purple-300 mt-0.5 line-clamp-1">{presetData.tagline}</p>
                     <p className="text-[10px] text-slate-400 line-clamp-2 mt-1 leading-relaxed">{presetData.description}</p>

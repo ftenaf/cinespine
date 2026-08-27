@@ -14,6 +14,7 @@ export interface DopMasterPreset {
   lut_emulation: string;
   prompt_style_tag: string;
   category?: 'naturalist' | 'noir' | 'anamorphic' | 'stylized' | 'large-format' | 'vintage';
+  is_custom?: boolean;
 }
 
 export const DEFAULT_DOP_PRESETS: Record<string, DopMasterPreset> = {
@@ -222,3 +223,80 @@ export const DEFAULT_DOP_PRESETS: Record<string, DopMasterPreset> = {
     category: "vintage"
   }
 };
+
+export const CUSTOM_PRESETS_STORAGE_KEY = 'cinespine_custom_presets';
+export const DELETED_PRESETS_STORAGE_KEY = 'cinespine_deleted_presets';
+
+function getStorage(): Storage | null {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return window.localStorage;
+  }
+  if (typeof globalThis !== 'undefined' && (globalThis as any).localStorage) {
+    return (globalThis as any).localStorage;
+  }
+  return null;
+}
+
+export function loadDeletedPresets(): string[] {
+  try {
+    const storage = getStorage();
+    if (!storage) return [];
+    const raw = storage.getItem(DELETED_PRESETS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.warn("Failed to load deleted presets:", e);
+    return [];
+  }
+}
+
+export function saveDeletedPresets(deletedList: string[]): void {
+  try {
+    const storage = getStorage();
+    if (!storage) return;
+    storage.setItem(DELETED_PRESETS_STORAGE_KEY, JSON.stringify(deletedList));
+  } catch (e) {
+    console.warn("Failed to save deleted presets:", e);
+  }
+}
+
+export function loadCustomPresets(): Record<string, DopMasterPreset> {
+  try {
+    const storage = getStorage();
+    if (!storage) return {};
+    const raw = storage.getItem(CUSTOM_PRESETS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (e) {
+    console.warn("Failed to load custom presets:", e);
+    return {};
+  }
+}
+
+export function saveCustomPresets(presets: Record<string, DopMasterPreset>): void {
+  try {
+    const storage = getStorage();
+    if (!storage) return;
+    storage.setItem(CUSTOM_PRESETS_STORAGE_KEY, JSON.stringify(presets));
+  } catch (e) {
+    console.warn("Failed to save custom presets:", e);
+  }
+}
+
+export function mergeActivePresets(
+  basePresets: Record<string, any>,
+  customPresets: Record<string, any>,
+  deletedPresets: string[]
+): Record<string, DopMasterPreset> {
+  const merged: Record<string, any> = { ...DEFAULT_DOP_PRESETS, ...basePresets, ...customPresets };
+  const deletedSet = new Set(deletedPresets);
+  const result: Record<string, DopMasterPreset> = {};
+  for (const [key, preset] of Object.entries(merged)) {
+    if (!deletedSet.has(key)) {
+      result[key] = preset;
+    }
+  }
+  return result;
+}
