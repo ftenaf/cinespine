@@ -27,6 +27,13 @@ from backend.app.normalizers.takes import normalize_take
 
 logger = logging.getLogger(__name__)
 
+# A slate names a scene and a shot -- 119/5. The scene half may itself be a
+# compound of scenes covered by one setup: 41+122A/4, 97+121/4, 73C-74AC/1. That
+# is how the script supervisor files a shot that plays in more than one scene,
+# and a pattern that only admits a bare number reads those rows as continuations
+# of the shot above them and hands that shot the wrong camera card.
+SLATE_TOKEN = r"(?:\d+[A-Z]{0,2}(?:[+-]\d+[A-Z]{0,2})*/(?:\d+[A-Z]?|WT)|\d+WT)"
+
 
 def extract_text_from_pdf(pdf_bytes_or_file) -> str:
     """
@@ -67,7 +74,7 @@ def extract_text_from_pdf(pdf_bytes_or_file) -> str:
                     lines = raw_pages[idx].splitlines()
                     enriched_lines = []
                     for line in lines:
-                        m = re.search(r"^(\d+[A-Z]?/\d+|\d+WT)\s+(\d{1,2}[A-Z*]?|FALSE)(?=(\d{2}:\d{2}:\d{2}:\d{2})|\s+|$)", line)
+                        m = re.search(r"^(" + SLATE_TOKEN + r")\s+(\d{1,2}[A-Z*]?|FALSE)(?=(\d{2}:\d{2}:\d{2}:\d{2})|\s+|$)", line)
                         if m:
                             raw_slate = m.group(1)
                             raw_take = m.group(2)
@@ -431,7 +438,7 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
 
         # 1. Check for single-line format: 27/7 1 09:26:12:04 ... A120 280726 2:46
         single_m = re.search(
-            r"^(\d+[A-Z]?/\d+|\d+WT)\s+(\d+[A-Z*]?|FALSE)\s+(\d{2}:\d{2}:\d{2}:\d{2})\s*(?:\d{2}:\d{2}:\d{2})?\s*(\d{2}:\d{2}:\d{2}:\d{2})?(.*)",
+            r"^(" + SLATE_TOKEN + r")\s+(\d+[A-Z*]?|FALSE)\s+(\d{2}:\d{2}:\d{2}:\d{2})\s*(?:\d{2}:\d{2}:\d{2})?\s*(\d{2}:\d{2}:\d{2}:\d{2})?(.*)",
             cleaned,
         )
         if single_m:
@@ -589,7 +596,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             continue
 
         # 2. Main Slate + Take header (e.g. '27/7 1 Scene(s): 27' or '49/1 1 Scene(s): 49' or '117/1 4* Scene(s): 117')
-        new_slate_m = re.search(r"^(\d+[A-Z]?/\d+|\d+WT)\s+(\d+[A-Z]?\s*\*?|\d+\*|FALSE)\s*(.*)", cleaned)
+        new_slate_m = re.search(r"^(" + SLATE_TOKEN + r")\s+(\d+[A-Z]?\s*\*?|\d+\*|FALSE)\s*(.*)", cleaned)
         if new_slate_m:
             current_slate = new_slate_m.group(1)
             current_take = new_slate_m.group(2).replace(" ", "")
@@ -654,7 +661,20 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
                 )
             continue
 
-        # 4. Standalone roll line for current setup (e.g. 'A1202807262:46' or 'B412807261:1125')
+        # 4. A row that carries its own slate but matched no header pattern is a
+        # row we cannot place. Reading on would give its card to the shot above:
+        # this is how 119/5 Take 1 came back claiming cards A046, A068 and A080,
+        # the last two belonging to shots further down the page. Better to drop
+        # the row, and to forget the current shot so the rows beneath it do not
+        # attach to it either.
+        if "Scene(s):" in cleaned:
+            logger.warning("Unrecognised slate on facing-page row, skipping: %s", cleaned[:80])
+            current_slate = None
+            current_take = None
+            current_notes = []
+            continue
+
+        # 5. Standalone roll line for current setup (e.g. 'A1202807262:46' or 'B412807261:1125')
         cr, raw_date = extract_script_camera_roll_and_date(cleaned)
         if cr and current_slate and current_take:
             norm_slate = normalize_slate(current_slate)
@@ -706,7 +726,7 @@ def parse_editors_log_text(text: str) -> List[ParsedScriptRecord]:
         if not cleaned or "DAILY EDITOR'S LOG" in cleaned or "Slate Take #" in cleaned:
             continue
 
-        m = re.search(r"^(\d+[A-Z]?/\d+)\s+(\d+[A-Z*]?)\s*(.*)$", cleaned)
+        m = re.search(r"^(" + SLATE_TOKEN + r")\s+(\d+[A-Z*]?)\s*(.*)$", cleaned)
         if m:
             raw_slate = m.group(1)
             raw_take = m.group(2)
