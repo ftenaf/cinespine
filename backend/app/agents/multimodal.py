@@ -5,10 +5,12 @@ Evidence:
 - references/domain/documents.md ('Facing and lined pages')
 - references/constraints/safety.md ('Never commit raw confidential material / PII')
 """
+import asyncio
 import json
 import logging
+import os
 import re
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from backend.app.normalizers.takes import normalize_take
 from backend.app.normalizers.rolls import normalize_camera_roll
@@ -37,6 +39,53 @@ class ExtractedScriptPage(BaseModel):
     takes: List[ExtractedTake] = Field(default_factory=list)
     lining_notes: Optional[str] = None
     page_number: Optional[int] = None
+
+
+# A lining page is a live, billed call of roughly ten to thirty seconds, and it
+# runs inside a document upload. Like character inference, it is off unless a key
+# exists and nothing has explicitly disabled it, so a test run cannot become a
+# paying customer the moment a developer adds a key to .env.
+# Measured round trips on a single lined page: 20s, 44s, and one that exceeded
+# 60s because the candidate chain had to walk past an overloaded model first.
+# A timeout discards the whole read, so the default leaves room for that walk;
+# the request is threaded, so waiting here does not block other traffic.
+TIMEOUT_SECONDS = float(os.environ.get("CINESPINE_LINING_EXTRACTION_TIMEOUT", "120"))
+
+# Extension fallback for when the browser sends no content type, or sends
+# application/octet-stream, which it often does for a drag-and-dropped scan.
+_EXTENSION_MIME_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".heic": "image/heic",
+    ".pdf": "application/pdf",
+}
+
+
+def is_enabled() -> bool:
+    """Lined page extraction runs only when configured and not explicitly disabled."""
+    if os.environ.get("CINESPINE_DISABLE_LINING_EXTRACTION", "").strip().lower() in (
+        "1", "true", "yes",
+    ):
+        return False
+    return bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
+
+
+def resolve_mime_type(filename: str, content_type: Optional[str]) -> Optional[str]:
+    """
+    The mime type to send, or None when this file is not a readable page.
+
+    Trusts the extension over the browser's content type: a scan dropped into
+    the page frequently arrives as application/octet-stream.
+    """
+    lowered = (filename or "").lower()
+    for extension, mime in _EXTENSION_MIME_TYPES.items():
+        if lowered.endswith(extension):
+            return mime
+    if content_type in SUPPORTED_MIME_TYPES:
+        return content_type
+    return None
 
 
 # What Gemini will accept inline. A lining page arrives either as a scan or as a
@@ -71,7 +120,7 @@ WHAT TO RETURN
   "slates": ["every distinct slate on the page, e.g. 21/1"],
   "takes": [
     {
-      "take_id": "the take exactly as written, including any suffix or mark",
+      "take_id": "the take alone, not the slate. A lining mark reads `21/1:4`, which means slate 21/1, take 4: put `4` here and `21/1` in slates. Keep any suffix or mark on the take itself, such as 3*, 2PK or FALSE",
       "camera_rolls": ["camera rolls annotated for that take, e.g. A120, B039"],
       "is_starred": true if the take is circled or marked with an asterisk,
       "notes": "any handwritten remark about that take, verbatim"
@@ -82,9 +131,10 @@ WHAT TO RETURN
 }
 
 RULES
-1. Transcribe take ids exactly as written. Do not tidy them. `3*`, `2PK`, `3 VFX`,
-   `FALSE`, `WT 01` all carry meaning that is lost if you normalise them, and the
-   normalisation happens after you.
+1. Transcribe take ids exactly as written, minus the slate prefix. Do not tidy them
+   otherwise. `3*`, `2PK`, `3 VFX`, `FALSE`, `WT 01` all carry meaning that is lost if
+   you normalise them, and the normalisation happens after you. A take id containing a
+   slash or a colon is a slate reference that has not been separated.
 2. A circled take is the one editorial will look for. Set is_starred for a take that is
    circled, ticked, or asterisked, and say which in its notes.
 3. Transcribe camera rolls exactly, including leading zeros: `B039` and `B39` are written
@@ -96,6 +146,27 @@ RULES
    tell them apart.
 6. If the page is illegible or is not a lined script page at all, return
    {"scene": "", "takes": []} rather than guessing."""
+
+
+
+def split_slate_take(raw: str) -> tuple:
+    """
+    Splits a lining annotation like `21/1:4` into ("21/1", "4").
+
+    Returns (None, raw) when there is no slate prefix. Lining marks are written
+    as slate-colon-take, and a model asked for "the take" will sometimes hand
+    back the whole reference. Left composite it normalises to a take id of
+    `21/1:4`, which is reported as valid and matches no take anywhere, which is
+    the shape of failure this project keeps finding.
+    """
+    text = (raw or "").strip()
+    if ":" not in text:
+        return None, text
+    slate, _, take = text.rpartition(":")
+    slate, take = slate.strip(), take.strip()
+    if not slate or not take:
+        return None, text
+    return slate, take
 
 
 class GeminiScriptLiningExtractor:
@@ -236,9 +307,12 @@ class GeminiScriptLiningExtractor:
 
         raw_takes = data.get("takes", [])
         normalized_takes: List[ExtractedTake] = []
+        slates: List[str] = list(data.get("slates", []))
 
         for t in raw_takes:
-            raw_take_id = t.get("take_id", "")
+            embedded_slate, raw_take_id = split_slate_take(t.get("take_id", ""))
+            if embedded_slate and embedded_slate not in slates:
+                slates.append(embedded_slate)
             take_info = normalize_take(raw_take_id)
             # Dropped only when nothing identifiable was written. A take that
             # normalises to "not a valid take" is still a record of something
@@ -267,8 +341,77 @@ class GeminiScriptLiningExtractor:
 
         return ExtractedScriptPage(
             scene=data.get("scene", "").strip().upper(),
-            slates=data.get("slates", []),
+            slates=slates,
             takes=normalized_takes,
             lining_notes=self.sanitize_pii(data.get("lining_notes", "")),
             page_number=data.get("page_number"),
         )
+
+
+async def extract_lined_page_if_enabled(
+    document_bytes: bytes,
+    filename: str,
+    content_type: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Reads a lined page during upload, if it can.
+
+    Returns {"page": ExtractedScriptPage | None, "warnings": [str]}.
+
+    Never raises. Ingestion of the document is the thing the user asked for and
+    must not fail because a model was unavailable -- but every reason for coming
+    back empty is reported, because a silently unread page is indistinguishable
+    from a page with nothing on it, and that confusion is what this project keeps
+    paying for.
+    """
+    mime_type = resolve_mime_type(filename, content_type)
+    if mime_type is None:
+        return {
+            "page": None,
+            "warnings": [
+                f"{filename} was classified as a lined page but is not an image or PDF, "
+                "so nothing could be read from it."
+            ],
+        }
+
+    if not is_enabled():
+        return {
+            "page": None,
+            "warnings": [
+                "Lined page reading is off; set GEMINI_API_KEY to have takes, slates "
+                "and camera rolls read from the page."
+            ],
+        }
+
+    extractor = GeminiScriptLiningExtractor(api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
+    try:
+        page = await asyncio.wait_for(
+            asyncio.to_thread(extractor.extract_page, document_bytes, mime_type),
+            timeout=TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Lined page extraction timed out on %s", filename)
+        return {
+            "page": None,
+            "warnings": [
+                f"Reading {filename} timed out after {TIMEOUT_SECONDS:.0f}s; "
+                "the document was ingested but its takes were not read."
+            ],
+        }
+    except Exception as exc:  # noqa: BLE001 - ingestion must survive any of these
+        logger.warning("Lined page extraction failed on %s: %s", filename, exc)
+        return {
+            "page": None,
+            "warnings": [
+                f"Could not read {filename}: {exc}. The document was ingested, but its "
+                "takes, slates and camera rolls were not extracted."
+            ],
+        }
+
+    warnings: List[str] = []
+    if not page.takes:
+        warnings.append(
+            f"No takes were found on {filename}. Either the page carries none, or the "
+            "handwriting could not be read; check the page before relying on this."
+        )
+    return {"page": page, "warnings": warnings}

@@ -16,6 +16,7 @@ from backend.app.spine.writer import SpineWriter
 from backend.app.reconciliation.engine import ReconciliationEngine
 from backend.app.agents.mcp_server import ClickHouseMCPServer, GeminiDiscrepancyAssistant
 from backend.app.parsers.classifier import classify_document, infer_production_and_day
+from backend.app.agents.multimodal import extract_lined_page_if_enabled
 from backend.app.parsers.pdf_parsers import extract_text_from_pdf, extract_thumbnails_from_pdf
 from backend.app.normalizers.takes import normalize_take
 from backend.app.normalizers.slates import normalize_slate
@@ -374,6 +375,19 @@ async def upload_document_file(
 
     classification = classify_document(filename=filename, content=raw_text)
 
+    # A lined page is handwriting: there is no text layer to parse, so the takes,
+    # slates and camera rolls on it are only reachable through vision. Runs before
+    # the event is published so the extraction travels with the document rather
+    # than arriving as a later, separate fact.
+    lining_warnings: List[str] = []
+    lined_page = None
+    if classification.is_multimodal:
+        outcome = await extract_lined_page_if_enabled(
+            content_bytes, filename, file.content_type
+        )
+        lined_page = outcome["page"]
+        lining_warnings = outcome["warnings"]
+
     final_prod = production_id or classification.inferred_production_id or "DEMO_PRODUCTION"
     final_day = shoot_day or classification.inferred_shoot_day or "31"
 
@@ -395,7 +409,11 @@ async def upload_document_file(
         content=raw_text,
         checksum=checksum,
         raw_bytes=content_bytes,
-        metadata={"file_size": len(content_bytes), "content_type": file.content_type},
+        metadata={
+            "file_size": len(content_bytes),
+            "content_type": file.content_type,
+            "lined_page": lined_page.model_dump() if lined_page else None,
+        },
     )
 
     envelope = EventEnvelope(
@@ -412,6 +430,7 @@ async def upload_document_file(
             "checksum": checksum,
             "content_type": file.content_type,
             "thumbnails": thumbnails_map,
+            "lined_page": lined_page.model_dump() if lined_page else None,
         },
     )
 
@@ -442,6 +461,10 @@ async def upload_document_file(
         "detected_department": classification.department.value,
         "detected_axis": classification.axis.value,
         "is_multimodal": classification.is_multimodal,
+        # Named separately from the classification flag: is_multimodal says the
+        # page needs vision, this says whether vision actually read it.
+        "lined_page": lined_page.model_dump() if lined_page else None,
+        "lining_warnings": lining_warnings,
     }
 
 

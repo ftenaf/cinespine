@@ -67,6 +67,11 @@ credentials at all.
   storage client without credentials probes the GCE metadata server and blocks for roughly twelve
   seconds, so the unavailable result is **cached for the life of the process**; only the first upload
   pays it. The call also runs off the event loop, so it never stalls other requests.
+* **Lined pages** — extraction runs on upload only when a key exists and
+  `CINESPINE_DISABLE_LINING_EXTRACTION` is unset. It never fails the upload: the
+  document is always ingested, and `lining_warnings` in the response says why a page
+  came back unread. Measured round trips are 20–45s, so the timeout defaults to
+  `120` (`CINESPINE_LINING_EXTRACTION_TIMEOUT`).
 * **Timeouts** — character inference abandons after `CINESPINE_AI_CHARACTER_TIMEOUT` seconds (default
   `60`). Measured round trips on a five-scene script are 22–27s. A timeout discards the whole inference,
   so the default deliberately leaves headroom.

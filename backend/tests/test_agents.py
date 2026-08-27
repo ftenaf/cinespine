@@ -204,6 +204,45 @@ class TestGeminiScriptLiningExtractor:
         assert "600 123 456" not in page.lining_notes
         assert "[REDACTED_EMAIL]" in page.lining_notes
 
+    @pytest.mark.parametrize("raw, slate, take", [
+        ("21/1:4", "21/1", "4"),
+        ("21/1:2PK", "21/1", "2PK"),
+        ("3", None, "3"),
+        ("2PK", None, "2PK"),
+        ("", None, ""),
+        (":", None, ":"),
+        ("21/1:", None, "21/1:"),
+    ])
+    def test_slate_prefixed_takes_are_split(self, raw, slate, take):
+        from backend.app.agents.multimodal import split_slate_take
+
+        assert split_slate_take(raw) == (slate, take)
+
+    def test_a_composite_reference_does_not_survive_as_a_take_id(self):
+        """
+        Observed against the live model: asked for "the take", it returned the
+        whole lining annotation `21/1:1`. That normalises to a take id of
+        `21/1:1`, is reported valid, and matches no take in any other document.
+        """
+        extractor = GeminiScriptLiningExtractor(api_key=None)
+        page = extractor.validate_and_normalize(
+            '{"scene": "64A", "slates": [], "takes": ['
+            '{"take_id": "21/1:1", "camera_rolls": ["A120"]},'
+            '{"take_id": "21/1:2PK", "camera_rolls": ["B039"]}]}'
+        )
+        assert [t.take_id for t in page.takes] == ["1", "2PK"]
+        assert page.takes[1].is_pickup is True
+        assert page.slates == ["21/1"], "the slate must be recovered, not discarded"
+
+    def test_a_recovered_slate_is_not_duplicated(self):
+        extractor = GeminiScriptLiningExtractor(api_key=None)
+        page = extractor.validate_and_normalize(
+            '{"scene": "64A", "slates": ["21/1"], "takes": ['
+            '{"take_id": "21/1:1", "camera_rolls": []},'
+            '{"take_id": "21/1:2", "camera_rolls": []}]}'
+        )
+        assert page.slates == ["21/1"]
+
     def test_extraction_prompt_carries_the_domain_rules(self):
         """
         The facts a general model cannot infer from the picture: these pages are

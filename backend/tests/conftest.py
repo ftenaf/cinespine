@@ -41,6 +41,9 @@ def no_live_ai_calls(monkeypatch):
     _call_gemini.
     """
     monkeypatch.setenv("CINESPINE_DISABLE_AI_CHARACTER_INFERENCE", "1")
+    # Same reasoning for lined pages: uploading a facing-pages PDF would
+    # otherwise make a live, billed vision call on every run.
+    monkeypatch.setenv("CINESPINE_DISABLE_LINING_EXTRACTION", "1")
     yield
 
 
