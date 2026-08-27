@@ -380,6 +380,8 @@ CineSpine decouples filmmaking operations into two distinct, distraction-free he
   * Output is **validated, not trusted**: descriptions are checked for filler words, placeholder phrasing, minimum length and the presence of at least one concrete noun. Anything too generic to render gets one targeted retry, and anything still vague is reported rather than passed off as good.
   * Profiles are **editable and durable** — stored in SQLite against a script identity derived from the screenplay text, so hand-authored looks survive a re-upload *and* a backend restart. Structural data (dialogue counts, scene presence, relationships) refreshes from each parse while your edits win.
   * Every generated frame is prompted with **only the characters present in that scene**.
+* **Dynamic LLM Routing for Optimal Token Cost:**
+  * To run cost-effectively, especially during intensive hackathons, CineSpine implements a dynamic LLM router. Trivial semantic tasks (like suggesting preset names or generating short DoP summaries) automatically route to ultra-lightweight models (e.g., **Gemini Flash** or local models like **Gemma 2B** via Ollama), while massive context analysis (like deep script character profiling) scales up to **Pro** models only when required. See our research on [Deploying Tiny LLMs on Google Cloud](docs/research/tiny_llms_gcp.md).
 
 ### 3. 🔍 3-Axis Discrepancy Reconciliation Engine
 * Reconciles Intent (Planned), Belief (Logged on set), and Existence (Stored on disk) with sub-millisecond precision.
