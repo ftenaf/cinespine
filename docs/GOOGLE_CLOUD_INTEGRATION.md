@@ -30,6 +30,14 @@ CineSpine incorporates native, runtime integration with Google Cloud and the Gem
 ### A. `google-genai` SDK
 * **Modules:** [`backend/app/integrations/google_cloud.py`](backend/app/integrations/google_cloud.py), [`backend/app/script/ai_image_service.py`](backend/app/script/ai_image_service.py) and [`backend/app/script/character_ai.py`](backend/app/script/character_ai.py)
 * **Character inference (model chosen by `llm_router`, flash tier):** Reads each character's dialogue, parentheticals, the action lines naming them and the settings they appear in, and returns their role, physical appearance, costume and facial features. Called once for the whole cast so the ensemble stays visually coherent, with `response_mime_type: application/json` for structured output.
+* **Lined page extraction** ([`backend/app/agents/multimodal.py`](backend/app/agents/multimodal.py)):
+  Reads a script supervisor's handwritten lined / facing page (PNG, JPEG, WebP, HEIC or
+  PDF, sent inline) and returns scene, slates, takes and camera rolls. Take notation is
+  transcribed verbatim and normalised afterwards, so `3*`, `2PK`, `FALSE` and `WT 01`
+  keep their meaning. Contact details read off the page header are redacted before the
+  result is returned. It raises rather than returning an empty page when no model can
+  read it: an empty page is a real answer, and returning one on failure would make an
+  outage indistinguishable from a blank page.
 * **Screenplay analysis:** Scene-level tension mapping and DoP camera placement logic.
   The model is not pinned. [`backend/app/script/llm_router.py`](backend/app/script/llm_router.py)
   returns an ordered candidate list led by the floating `gemini-flash-latest` alias,

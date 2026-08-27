@@ -78,6 +78,148 @@ class TestGeminiScriptLiningExtractor:
         assert page.scene == "12A"
         assert page.takes[0].camera_rolls == ["B039"]
 
+    # ---------------------------------------------------------------- #
+    # extract_page
+    # ---------------------------------------------------------------- #
+
+    @staticmethod
+    def _extractor_with_model(monkeypatch, behaviour):
+        """A GeminiScriptLiningExtractor whose model follows `behaviour(model)`."""
+        from backend.app.agents.multimodal import GeminiScriptLiningExtractor
+
+        calls = []
+
+        class _Models:
+            def generate_content(self, model, contents, config):
+                calls.append((model, contents, config))
+                outcome = behaviour(model)
+                if isinstance(outcome, Exception):
+                    raise outcome
+                return type("R", (), {"text": outcome})()
+
+        class _Client:
+            def __init__(self, **kwargs):
+                self.models = _Models()
+
+        import google.genai as genai
+        monkeypatch.setattr(genai, "Client", _Client)
+        return GeminiScriptLiningExtractor(api_key="test-key"), calls
+
+    PAGE_JSON = (
+        '{"scene": "64A", "slates": ["21/1"], "page_number": 42, "takes": ['
+        '{"take_id": "3*", "camera_rolls": ["A120", "B039"]},'
+        '{"take_id": "FALSE", "camera_rolls": ["A120"], "notes": "reset from mark B"}]}'
+    )
+
+    def test_extract_page_reads_and_normalizes(self, monkeypatch):
+        extractor, calls = self._extractor_with_model(monkeypatch, lambda m: self.PAGE_JSON)
+        page = extractor.extract_page(b"fake-png-bytes", "image/png")
+
+        assert page.scene == "64A"
+        assert page.slates == ["21/1"]
+        starred = [t for t in page.takes if t.is_starred]
+        assert [t.take_id for t in starred] == ["3"], "the circled take must survive"
+        assert starred[0].camera_rolls == ["A120", "B039"], "leading zeros are preserved"
+        assert any(t.is_false_start for t in page.takes), "a false start is a fact, not noise"
+        assert len(calls) == 1
+
+    def test_extract_page_sends_the_document_inline(self, monkeypatch):
+        extractor, calls = self._extractor_with_model(monkeypatch, lambda m: self.PAGE_JSON)
+        extractor.extract_page(b"%PDF-1.4 fake", "application/pdf")
+
+        _model, contents, config = calls[0]
+        part = contents[0]
+        assert part.inline_data.mime_type == "application/pdf"
+        assert part.inline_data.data == b"%PDF-1.4 fake"
+        assert config["response_mime_type"] == "application/json"
+        assert config["temperature"] == 0.0, "transcription must not be creative"
+
+    def test_extract_page_prefers_the_callers_page_number(self, monkeypatch):
+        """The printed number can be misread; the file position cannot."""
+        extractor, _ = self._extractor_with_model(monkeypatch, lambda m: self.PAGE_JSON)
+        page = extractor.extract_page(b"img", "image/png", page_number=7)
+        assert page.page_number == 7
+
+    def test_extract_page_falls_through_to_the_next_model(self, monkeypatch):
+        def behaviour(model):
+            if "latest" in model:
+                raise RuntimeError("429 RESOURCE_EXHAUSTED")
+            return self.PAGE_JSON
+
+        extractor, calls = self._extractor_with_model(monkeypatch, behaviour)
+        page = extractor.extract_page(b"img", "image/png")
+        assert page.scene == "64A"
+        assert len(calls) >= 2
+
+    def test_extract_page_raises_when_no_model_can_read_it(self, monkeypatch):
+        """
+        An empty page is a real answer -- a page that carried no takes. Returning
+        one on failure would make an outage look like a blank page.
+        """
+        extractor, _ = self._extractor_with_model(
+            monkeypatch, lambda m: RuntimeError("503 UNAVAILABLE")
+        )
+        with pytest.raises(RuntimeError, match="No Gemini model could read"):
+            extractor.extract_page(b"img", "image/png")
+
+    def test_extract_page_raises_on_an_empty_model_response(self, monkeypatch):
+        extractor, _ = self._extractor_with_model(monkeypatch, lambda m: "")
+        with pytest.raises(RuntimeError, match="No Gemini model could read"):
+            extractor.extract_page(b"img", "image/png")
+
+    def test_extract_page_without_a_key_says_so(self):
+        from backend.app.agents.multimodal import GeminiScriptLiningExtractor
+
+        with pytest.raises(RuntimeError, match="No Gemini client"):
+            GeminiScriptLiningExtractor(api_key=None).extract_page(b"img", "image/png")
+
+    def test_extract_page_rejects_input_it_cannot_send(self, monkeypatch):
+        from backend.app.agents.multimodal import MAX_DOCUMENT_BYTES
+
+        extractor, calls = self._extractor_with_model(monkeypatch, lambda m: self.PAGE_JSON)
+
+        with pytest.raises(ValueError, match="No document bytes"):
+            extractor.extract_page(b"", "image/png")
+        with pytest.raises(ValueError, match="Unsupported mime type"):
+            extractor.extract_page(b"img", "text/plain")
+        with pytest.raises(ValueError, match="over the"):
+            extractor.extract_page(b"x" * (MAX_DOCUMENT_BYTES + 1), "image/png")
+
+        assert calls == [], "a rejected document must not reach the model"
+
+    def test_extract_page_redacts_contact_details_it_read(self, monkeypatch):
+        """
+        Lining pages carry the script supervisor's name and contact in the
+        header. Sanitisation is applied to what the model returns, not only to
+        text handed in by hand.
+        """
+        page_json = (
+            '{"scene": "64A", "takes": [], "lining_notes": '
+            '"Script Supervisor ana.ruiz@example.com tel +34 600 123 456"}'
+        )
+        extractor, _ = self._extractor_with_model(monkeypatch, lambda m: page_json)
+        page = extractor.extract_page(b"img", "image/png")
+
+        assert "ana.ruiz@example.com" not in page.lining_notes
+        assert "600 123 456" not in page.lining_notes
+        assert "[REDACTED_EMAIL]" in page.lining_notes
+
+    def test_extraction_prompt_carries_the_domain_rules(self):
+        """
+        The facts a general model cannot infer from the picture: these pages are
+        filed per scene across days, so out-of-day rolls belong; take notation
+        carries meaning that normalising would destroy; guessing is worse than
+        omitting.
+        """
+        from backend.app.agents.multimodal import EXTRACTION_PROMPT
+
+        lowered = EXTRACTION_PROMPT.lower()
+        assert "leading zero" in lowered
+        assert "circled" in lowered
+        assert "never invent" in lowered
+        for notation in ("3*", "2PK", "FALSE", "WT 01"):
+            assert notation in EXTRACTION_PROMPT
+
     def test_pii_sanitization_removes_personal_contact_info(self):
         extractor = GeminiScriptLiningExtractor(api_key=None)
         raw_text_with_pii = "Script Supervisor: Jane Doe (Tel: +34 600 123 456, email: jane@filmmaking.com)\nScene 64A Slate 21/1 Take 3"
