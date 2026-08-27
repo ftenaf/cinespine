@@ -349,3 +349,18 @@ export interface UploadResult {
   /** Why a page came back unread. Empty when there was nothing to report. */
   lining_warnings?: string[];
 }
+
+/**
+ * An in-app confirmation prompt.
+ *
+ * The browser's own confirm() is unusable here: embedded and sandboxed contexts
+ * return false without ever showing a dialog, so a guarded action silently does
+ * nothing and looks like a dead button.
+ */
+export interface ConfirmPrompt {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  destructive?: boolean;
+  onConfirm: () => void | Promise<void>;
+}

@@ -667,6 +667,7 @@ def seed_real_day_data(req: SeedRequest):
     """
     examples_dir = os.environ.get("CINESPINE_EXAMPLES_DIR", "data/examples")
     ingested_files = []
+    skipped_files: List[str] = []
 
     if os.path.exists(examples_dir):
         files = sorted(os.listdir(examples_dir))
@@ -692,6 +693,13 @@ def seed_real_day_data(req: SeedRequest):
                 txt = content_bytes.decode("utf-8", errors="ignore")
 
             classification = classify_document(filename=fn, content=txt)
+
+            # Same rule the upload routes enforce. Seeding twice used to store
+            # every document again under the same checksum, so a second click
+            # doubled the paperwork behind the spine.
+            if spine_writer.get_document_by_checksum(req.production_id, req.shoot_day, checksum):
+                skipped_files.append(fn)
+                continue
 
             doc_id = spine_writer.store_document(
                 production_id=req.production_id,
@@ -737,6 +745,13 @@ def seed_real_day_data(req: SeedRequest):
                     "27/7_1": b64_img,
                 }
 
+            # Same rule the upload routes enforce. Seeding twice used to store
+            # every document again under the same checksum, so a second click
+            # doubled the paperwork behind the spine.
+            if spine_writer.get_document_by_checksum(req.production_id, req.shoot_day, checksum):
+                skipped_files.append(fn)
+                continue
+
             doc_id = spine_writer.store_document(
                 production_id=req.production_id,
                 shoot_day=req.shoot_day,
@@ -775,7 +790,15 @@ def seed_real_day_data(req: SeedRequest):
         data={"files": ingested_files},
     ))
 
-    return {"status": "SEEDED", "ingested_count": len(ingested_files), "files": ingested_files}
+    return {
+        "status": "SEEDED",
+        "ingested_count": len(ingested_files),
+        "files": ingested_files,
+        # Reported rather than hidden: a second seed that ingests nothing should
+        # say so, not look identical to the first.
+        "skipped_count": len(skipped_files),
+        "skipped_files": skipped_files,
+    }
 
 
 

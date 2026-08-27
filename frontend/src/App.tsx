@@ -12,11 +12,11 @@ import {
 import { 
   TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, SequenceRecord,
   UserProfile, Requirement, NotificationItem, RequirementPriority, RequirementCategory,
-  UploadFeedback, LinedPage
+  UploadFeedback, LinedPage, ConfirmPrompt
 } from './types';
 import { 
   fetchTakes, fetchDiscrepancies, fetchProductions, fetchDocuments,
-  fetchDocumentContent, uploadDocument, uploadFile, askAssistant, seedDemoDay,
+  fetchDocumentContent, uploadDocument, uploadFile, askAssistant, seedDemoDay, deleteDocument, ApiError,
   fetchSequences, resolveDiscrepancy, unresolveDiscrepancy,
   fetchTeamUsers, loginUser, createRequirement,
   resolveRequirement, fetchNotifications, fetchRequirements,
@@ -156,6 +156,9 @@ export default function App() {
   const [uploadFilename, setUploadFilename] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadFeedback, setUploadFeedback] = useState<UploadFeedback | null>(null);
+  const [confirmPrompt, setConfirmPrompt] = useState<ConfirmPrompt | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const loadProductions = async () => {
     try {
@@ -364,15 +367,18 @@ export default function App() {
     jumpToTarget(notif.target_type, notif.target_id);
   };
 
-  const handleDeleteRequirement = async (reqId: string, reqTitle: string) => {
-    if (!window.confirm(`Are you sure you want to delete requirement "${reqTitle}"?`)) return;
-    try {
-      await deleteRequirement(reqId);
-      await loadSpineData();
-      await loadUsersAndNotifications(currentUser.handle);
-    } catch (err: any) {
-      alert(`Failed to delete requirement: ${err.message}`);
-    }
+  const handleDeleteRequirement = (reqId: string, reqTitle: string) => {
+    setConfirmPrompt({
+      title: 'Delete requirement',
+      message: `Delete requirement "${reqTitle}"?`,
+      confirmLabel: 'Delete',
+      destructive: true,
+      onConfirm: async () => {
+        await deleteRequirement(reqId);
+        await loadSpineData();
+        await loadUsersAndNotifications(currentUser.handle);
+      },
+    });
   };
 
   const handleUpdateRequirementStatus = async (reqId: string, newStatus: string) => {
@@ -493,24 +499,26 @@ export default function App() {
     }
   };
 
-  const handleDeleteDocument = async (docId: string, filename: string) => {
-    if (!window.confirm(`Are you sure you want to remove '${filename}'?\nThis will purge its ingested records from the spine.`)) {
-      return;
-    }
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/documents/${docId}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || 'Failed to delete document');
-      }
-      await loadProductions();
-      await loadSpineData();
-    } catch (e: any) {
-      alert(`Could not delete document: ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
+  const handleDeleteDocument = (docId: string, filename: string) => {
+    setConfirmPrompt({
+      title: 'Remove document',
+      message: `Remove '${filename}'? Its ingested records are purged from the spine.`,
+      confirmLabel: 'Remove',
+      destructive: true,
+      // Throws on failure rather than swallowing: the dialog stays open and
+      // shows why. Reporting it into the upload panel would have hidden it,
+      // since that panel is closed while a document is being deleted.
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          await deleteDocument(docId);
+          await loadProductions();
+          await loadSpineData();
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   };
 
   const handleInspectTake = (take: TakeRecord) => {
@@ -566,11 +574,11 @@ export default function App() {
       await loadProductions();
       await loadSpineData();
     } catch (err: any) {
-      if (err.message && err.message.includes('409')) {
-        setUploadFeedback({
-          tone: 'warning',
-          message: 'Duplicate document: this file is already in the spine.',
-        });
+      // The backend answers 409 with the name it is already filed under. That
+      // detail is the useful part, and it used to be discarded: uploadFile threw
+      // a bare "File upload failed", so a deliberate refusal read as a crash.
+      if (err instanceof ApiError && err.isDuplicate) {
+        setUploadFeedback({ tone: 'warning', message: err.detail });
       } else {
         setUploadFeedback({ tone: 'error', message: `Upload failed: ${err.message}` });
       }
@@ -4084,6 +4092,70 @@ export default function App() {
           </button>
         </div>
       )}
+
+    {/* Confirmation prompt.
+        An in-app dialog rather than window.confirm: embedded and sandboxed browser
+        contexts return false from confirm() without ever showing anything, which
+        made every guarded action look like a dead button. */}
+    {confirmPrompt && (
+      <div
+        className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        onClick={() => { if (!confirmBusy) { setConfirmPrompt(null); setConfirmError(null); } }}
+      >
+        <div
+          className="bg-spine-800 border border-slate-700 rounded-xl shadow-2xl max-w-md w-full p-5"
+          onClick={e => e.stopPropagation()}
+        >
+          <h3 id="confirm-title" className="text-sm font-bold text-white mb-2">{confirmPrompt.title}</h3>
+          <p className="text-xs text-gray-300 leading-relaxed mb-4">{confirmPrompt.message}</p>
+      {confirmError && (
+        <p className="text-xs text-spine-critical bg-spine-critical/10 border border-spine-critical/30 rounded p-2 mb-4">
+          {confirmError}
+        </p>
+      )}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={confirmBusy}
+              onClick={() => { setConfirmPrompt(null); setConfirmError(null); }}
+              className="px-3 py-1.5 text-xs font-semibold rounded border border-slate-600 text-gray-300 hover:bg-slate-700 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={confirmBusy}
+              onClick={async () => {
+                const prompt = confirmPrompt;
+                setConfirmBusy(true);
+                setConfirmError(null);
+                try {
+                  await prompt.onConfirm();
+                  setConfirmPrompt(null);
+                } catch (e: any) {
+                  // Kept open, showing why. Closing on failure would report the
+                  // removal as done when nothing was removed.
+                  setConfirmError(e?.message || 'That did not work.');
+                } finally {
+                  setConfirmBusy(false);
+                }
+              }}
+              className={`px-3 py-1.5 text-xs font-semibold rounded border disabled:opacity-50 ${
+                confirmPrompt.destructive
+                  ? 'bg-spine-critical/20 border-spine-critical/40 text-spine-critical hover:bg-spine-critical/30'
+                  : 'bg-spine-accent/20 border-spine-accent/40 text-spine-accent hover:bg-spine-accent/30'
+              }`}
+            >
+              {confirmBusy ? 'Working...' : confirmPrompt.confirmLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
     </div>
   );
 }

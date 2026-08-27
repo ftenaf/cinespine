@@ -2,6 +2,42 @@ import { TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocum
 
 const API_BASE = '/api';
 
+/**
+ * An error carrying the HTTP status and the server's own explanation.
+ *
+ * Without the status the caller can only show "upload failed", which is what
+ * turned a deliberate 409 -- this exact file is already in the spine -- into a
+ * generic failure the user could do nothing about.
+ */
+export class ApiError extends Error {
+  status: number;
+  detail: string;
+
+  constructor(status: number, detail: string) {
+    super(detail);
+    this.name = 'ApiError';
+    this.status = status;
+    this.detail = detail;
+  }
+
+  get isDuplicate(): boolean {
+    return this.status === 409;
+  }
+}
+
+/** Reads FastAPI's `detail` off a failed response, falling back to the status. */
+async function apiError(res: Response, fallback: string): Promise<ApiError> {
+  let detail = fallback;
+  try {
+    const body = await res.json();
+    if (body && typeof body.detail === 'string') detail = body.detail;
+  } catch {
+    // Not JSON; the fallback stands.
+  }
+  return new ApiError(res.status, detail);
+}
+
+
 export async function fetchProductions(): Promise<Production[]> {
   const res = await fetch(`${API_BASE}/productions`);
   if (!res.ok) throw new Error('Failed to fetch productions');
@@ -61,7 +97,7 @@ export async function uploadDocument(payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error('Upload failed');
+  if (!res.ok) throw await apiError(res, 'Upload failed');
   return res.json();
 }
 
@@ -75,7 +111,7 @@ export async function uploadFile(file: File, productionId?: string, shootDay?: s
     method: 'POST',
     body: formData,
   });
-  if (!res.ok) throw new Error('File upload failed');
+  if (!res.ok) throw await apiError(res, 'File upload failed');
   return res.json();
 }
 
@@ -267,6 +303,8 @@ export async function suggestDoPPreset(params: {
   return res.json();
 }
 
-
-
-
+export async function deleteDocument(docId: string): Promise<{ status: string; doc_id: string }> {
+  const res = await fetch(`${API_BASE}/documents/${docId}`, { method: 'DELETE' });
+  if (!res.ok) throw await apiError(res, 'Failed to delete document');
+  return res.json();
+}
