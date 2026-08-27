@@ -149,6 +149,25 @@ RULES
 
 
 
+def _coerce_page_list(data: Any) -> List[Dict[str, Any]]:
+    """
+    The pages in a model response, whatever shape it chose.
+
+    Asked for one page it returns an object; asked to read a multi-page PDF it
+    returns an array, or an object wrapping one under a key. All three are
+    reasonable answers to the same prompt, so all three are accepted.
+    """
+    if isinstance(data, list):
+        return [p for p in data if isinstance(p, dict)]
+    if not isinstance(data, dict):
+        return []
+    for key in ("pages", "script_pages", "lined_pages", "results"):
+        nested = data.get(key)
+        if isinstance(nested, list):
+            return [p for p in nested if isinstance(p, dict)]
+    return [data]
+
+
 def split_slate_take(raw: str) -> tuple:
     """
     Splits a lining annotation like `21/1:4` into ("21/1", "4").
@@ -217,6 +236,34 @@ class GeminiScriptLiningExtractor:
         outage indistinguishable from a blank page, which is precisely how the
         earlier failures in this project stayed invisible.
         """
+        self._check_readable(document_bytes, mime_type)
+
+        pages = self.extract_pages(document_bytes, mime_type)
+        page = pages[0] if pages else ExtractedScriptPage(scene="")
+
+        # The printed page number is what the model read; the caller's is where
+        # the page sat in the file. Prefer the caller's, which cannot be misread.
+        if page_number is not None:
+            page.page_number = page_number
+        return page
+
+    def extract_pages(
+        self,
+        document_bytes: bytes,
+        mime_type: str,
+    ) -> List[ExtractedScriptPage]:
+        """
+        Reads every lined page in a document.
+
+        A facing-and-lined PDF runs to dozens of pages, and the takes are spread
+        across all of them; reading only the first would silently lose the rest.
+        """
+        self._check_readable(document_bytes, mime_type)
+        raw = self._call_model(document_bytes, mime_type)
+        return self.validate_and_normalize_pages(raw)
+
+    def _check_readable(self, document_bytes: bytes, mime_type: str) -> None:
+        """Rejects input that cannot be sent, before paying for a round trip."""
         if self._client is None:
             raise RuntimeError(
                 "No Gemini client: GeminiScriptLiningExtractor was constructed without "
@@ -234,15 +281,6 @@ class GeminiScriptLiningExtractor:
                 f"Unsupported mime type {mime_type!r}; expected one of "
                 f"{', '.join(SUPPORTED_MIME_TYPES)}."
             )
-
-        raw = self._call_model(document_bytes, mime_type)
-        page = self.validate_and_normalize(raw)
-
-        # The printed page number is what the model read; the caller's is where
-        # the page sat in the file. Prefer the caller's, which cannot be misread.
-        if page_number is not None:
-            page.page_number = page_number
-        return page
 
     def _call_model(self, document_bytes: bytes, mime_type: str) -> str:
         """
@@ -298,13 +336,30 @@ class GeminiScriptLiningExtractor:
 
     def validate_and_normalize(self, raw_json_str: str) -> ExtractedScriptPage:
         """
-        Validates raw JSON extracted by Gemini and applies canonical normalizations.
+        Validates raw JSON from one page and applies canonical normalizations.
+
+        For a document of several pages use `validate_and_normalize_pages`; this
+        returns the first, and an empty page when the model returned nothing.
+        """
+        pages = self.validate_and_normalize_pages(raw_json_str)
+        return pages[0] if pages else ExtractedScriptPage(scene="")
+
+    def validate_and_normalize_pages(self, raw_json_str: str) -> List[ExtractedScriptPage]:
+        """
+        Validates raw JSON and returns every page it describes.
+
+        A lined script is not one page. Asked to read a whole facing-and-lined
+        PDF the model answers with an array, and reading only a single object
+        threw on the response rather than returning the pages it contained.
         """
         try:
             data = json.loads(raw_json_str)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON from multimodal extraction: {e}")
 
+        return [self._normalize_page(page) for page in _coerce_page_list(data)]
+
+    def _normalize_page(self, data: Dict[str, Any]) -> ExtractedScriptPage:
         raw_takes = data.get("takes", [])
         normalized_takes: List[ExtractedTake] = []
         slates: List[str] = list(data.get("slates", []))

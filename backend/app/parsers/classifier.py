@@ -113,6 +113,50 @@ def infer_production_and_day(
     return inferred_prod, inferred_day
 
 
+# Dates look like slates. 7/9/2026 is not scene 7 shot 9.
+_DATE_RE = re.compile(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b")
+
+# A slate as a camera report writes it: 73A/14, 119/5, 74B.
+_SLATE_RE = re.compile(r"\b\d{1,3}[A-Z]?/\d{1,3}[A-Z]?\b")
+
+# One row could be a coincidence; a report that lists a day's work has several.
+MIN_ROWS_FOR_A_TEXT_REPORT = 2
+
+
+def is_handwritten_form(text: str) -> bool:
+    """
+    Whether a camera report carries its data as ink rather than as text.
+
+    A scanned report extracts to its printed parts only -- the production
+    header and the column headings -- while every roll, clip, slate and take is
+    handwriting. Parsed as text it produces nothing, and a parser that produces
+    nothing looks exactly like a document that had nothing on it.
+
+    Decided on whether any rows can be read, not on file size or file name: a
+    production names a handwritten report and a machine export alike, and the
+    question that matters is whether text parsing has anything to work with.
+
+    Being wrong here is cheap in one direction only. A machine report mistaken
+    for handwriting is still read correctly, because the reader looks at the
+    page and printed text is legible in a picture; it just costs a model call.
+    A handwritten report mistaken for text yields silence.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return False
+
+    upper = text.upper()
+    if "CAMERA REPORT" not in upper and "ROLL" not in upper:
+        return False
+
+    # Delimited text is an export, never a scan.
+    if "	" in text or text.count(",") >= MIN_ROWS_FOR_A_TEXT_REPORT:
+        return False
+
+    without_dates = _DATE_RE.sub(" ", text)
+    slates = {m.group(0) for m in _SLATE_RE.finditer(without_dates)}
+    return len(slates) < MIN_ROWS_FOR_A_TEXT_REPORT
+
+
 def classify_document(
     filename: Optional[str] = None,
     content: Optional[Union[str, bytes]] = None,
@@ -164,19 +208,22 @@ def classify_document(
             inferred_shoot_day=inferred_day,
         )
 
-    # 3. Camera Reports (ZoeLog, ARRI, RED, Sony)
+    # 3. Camera Reports (ZoeLog, ARRI, RED, Sony, and handwritten forms)
     if (
         "CAM_" in fn_upper
         or "CAMERA" in fn_upper
         or "ZOELOG" in text_sample
         or ("ROLL" in text_sample and "SCENE TAKE CLIP" in text_sample)
     ):
+        handwritten = is_handwritten_form(text_sample)
         return DocumentClassification(
             doc_type=DocumentType.CAMERA_CSV,
             department=DepartmentType.CAMERA,
             axis=AxisType.BELIEF,
-            is_multimodal=False,
-            display_name="Camera Report",
+            is_multimodal=handwritten,
+            display_name=(
+                "Camera Report (handwritten)" if handwritten else "Camera Report"
+            ),
             inferred_production_id=inferred_prod,
             inferred_shoot_day=inferred_day,
         )

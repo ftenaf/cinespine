@@ -102,3 +102,98 @@ def test_records_without_an_identity_are_left_alone():
     rows = [FakeRecord(None, None, is_starred=True), FakeRecord("27/7", None)]
     unify_take_level_marks(rows)
     assert rows[0].is_starred and not rows[1].is_starred
+
+
+# --------------------------------------------------------------------------- #
+# A lined page may assert circled, never uncircled
+# --------------------------------------------------------------------------- #
+
+def _take_events(filename, text, doc_type):
+    """Runs one document through the dispatcher and returns its take payloads."""
+    from backend.app.streaming.bus import EventBus
+    from backend.app.streaming.dispatcher import IngestionDispatcher
+    from backend.app.streaming.models import AxisType, DepartmentType, EventEnvelope
+
+    bus = EventBus(in_memory=True)
+    captured = []
+    bus.subscribe("production.events.spine", lambda e: captured.append(e))
+    IngestionDispatcher(bus=bus).handle_script_drop(
+        EventEnvelope(
+            production_id="P", shoot_day="31",
+            axis=AxisType.BELIEF, department=DepartmentType.SCRIPT,
+            doc_type=doc_type, raw_content=text, filename=filename,
+        )
+    )
+    return [e["payload"] for e in captured if e.get("entity_type") == "take"]
+
+
+def test_a_lined_page_reports_a_circle_it_can_see():
+    from backend.app.streaming.models import DocumentType
+
+    payloads = _take_events("LAC_Facing&Lined_D031.pdf", THREE_CAMERA_TAKE, DocumentType.SCRIPT_LINED)
+    take1 = [p for p in payloads if p["slate"] == "27/7" and p["take_id"] == "1"]
+    assert take1, "the circled take should still be reported"
+    assert all(p["is_starred"] is True for p in take1)
+
+
+def test_a_lined_page_makes_no_claim_about_an_unmarked_take():
+    """
+    The circles are ink. No asterisk in the text layer means the drawing did
+    not reach us, not that the supervisor left the take uncircled. None is
+    "no claim", and the reconciliation engine skips it.
+    """
+    from backend.app.streaming.models import DocumentType
+
+    payloads = _take_events("LAC_Facing&Lined_D031.pdf", THREE_CAMERA_TAKE, DocumentType.SCRIPT_LINED)
+    take2 = [p for p in payloads if p["slate"] == "27/7" and p["take_id"] == "2"]
+    assert take2
+    assert all(p["is_starred"] is None for p in take2), "silence must not read as a denial"
+    assert not any(p["is_starred"] is False for p in take2)
+
+
+def test_other_script_documents_still_deny_a_circle():
+    """
+    A timecode log is a typed record: it lists every take, so an unmarked take
+    there is a genuine statement that the take was not circled. Only the lined
+    page abstains.
+    """
+    from backend.app.streaming.models import DocumentType
+
+    # An editor's log filename, so the same parser runs and only the document
+    # kind differs from the lined-page case above.
+    payloads = _take_events("LAC_DetailedEditorsLog_D031.pdf", THREE_CAMERA_TAKE, DocumentType.SCRIPT_TIMECODE)
+    take2 = [p for p in payloads if p["slate"] == "27/7" and p["take_id"] == "2"]
+    assert take2
+    assert all(p["is_starred"] is False for p in take2)
+
+
+def test_an_abstaining_witness_raises_no_conflict():
+    """The end the user sees: no discrepancy between a claim and a non-claim."""
+    from backend.app.reconciliation.engine import ReconciliationEngine
+
+    witnesses = [
+        {"department": "script", "doc_type": "script_timecode",
+         "source_document": "TCLog.pdf", "is_starred": True},
+        {"department": "script", "doc_type": "script_lined",
+         "source_document": "Facing&Lined.pdf", "is_starred": None},
+    ]
+    discs = ReconciliationEngine().reconcile_take_witnesses(
+        production_id="P", shoot_day="31", slate="27/7", take_id="1", witnesses=witnesses,
+    )
+    assert not [d for d in discs if "circled" in d.description.lower()]
+
+
+def test_two_documents_that_both_deny_still_conflict_with_one_that_asserts():
+    """Abstention must not disable the check for documents that do testify."""
+    from backend.app.reconciliation.engine import ReconciliationEngine
+
+    witnesses = [
+        {"department": "script", "doc_type": "script_timecode",
+         "source_document": "TCLog.pdf", "is_starred": True},
+        {"department": "script", "doc_type": "script_timecode",
+         "source_document": "EditorsLog.pdf", "is_starred": False},
+    ]
+    discs = ReconciliationEngine().reconcile_take_witnesses(
+        production_id="P", shoot_day="31", slate="27/7", take_id="1", witnesses=witnesses,
+    )
+    assert [d for d in discs if "circled" in d.description.lower()]

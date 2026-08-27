@@ -4,6 +4,7 @@ import os
 import re
 import uuid
 import hashlib
+from dataclasses import asdict
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Response, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
@@ -17,6 +18,7 @@ from backend.app.reconciliation.engine import ReconciliationEngine
 from backend.app.agents.mcp_server import ClickHouseMCPServer, GeminiDiscrepancyAssistant
 from backend.app.parsers.classifier import classify_document, infer_production_and_day
 from backend.app.agents.multimodal import extract_lined_page_if_enabled
+from backend.app.agents.camera_report_vision import read_camera_report_if_enabled
 from backend.app.parsers.pdf_parsers import extract_text_from_pdf, extract_thumbnails_from_pdf
 from backend.app.normalizers.takes import normalize_take
 from backend.app.normalizers.slates import normalize_slate
@@ -381,12 +383,22 @@ async def upload_document_file(
     # than arriving as a later, separate fact.
     lining_warnings: List[str] = []
     lined_page = None
+    handwritten_rows: List[Dict[str, Any]] = []
     if classification.is_multimodal:
-        outcome = await extract_lined_page_if_enabled(
-            content_bytes, filename, file.content_type
-        )
-        lined_page = outcome["page"]
-        lining_warnings = outcome["warnings"]
+        if classification.department == DepartmentType.CAMERA:
+            # A handwritten camera report carries its rows as ink, so the CSV
+            # parser finds nothing on it and reports a clean, empty document.
+            outcome = await read_camera_report_if_enabled(
+                content_bytes, filename, file.content_type
+            )
+            handwritten_rows = [asdict(r) for r in outcome["records"]]
+            lining_warnings = outcome["warnings"]
+        else:
+            outcome = await extract_lined_page_if_enabled(
+                content_bytes, filename, file.content_type
+            )
+            lined_page = outcome["page"]
+            lining_warnings = outcome["warnings"]
 
     final_prod = production_id or classification.inferred_production_id or "DEMO_PRODUCTION"
     final_day = shoot_day or classification.inferred_shoot_day or "31"
@@ -413,6 +425,7 @@ async def upload_document_file(
             "file_size": len(content_bytes),
             "content_type": file.content_type,
             "lined_page": lined_page.model_dump() if lined_page else None,
+            "handwritten_rows": handwritten_rows,
         },
     )
 
@@ -431,6 +444,7 @@ async def upload_document_file(
             "content_type": file.content_type,
             "thumbnails": thumbnails_map,
             "lined_page": lined_page.model_dump() if lined_page else None,
+            "handwritten_rows": handwritten_rows,
         },
     )
 
