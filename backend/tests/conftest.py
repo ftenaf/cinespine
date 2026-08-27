@@ -17,6 +17,19 @@ def isolated_character_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def isolated_ai_cache(tmp_path, monkeypatch):
+    """
+    Points the AI response cache at a temporary database for every test.
+
+    Shares the reason above: without it a test run reads and writes the
+    developer's real ai_cache.db, so one test can serve another a stale
+    generated image and a cache hit can mask a broken generator.
+    """
+    monkeypatch.setenv("CINESPINE_CACHE_DB", str(tmp_path / "test_ai_cache.db"))
+    yield
+
+
+@pytest.fixture(autouse=True)
 def no_live_ai_calls(monkeypatch):
     """
     Keeps the suite hermetic.

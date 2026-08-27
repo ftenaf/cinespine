@@ -31,10 +31,12 @@ export interface SensorFormat {
  */
 export const SENSOR_FORMATS: SensorFormat[] = [
   { id: 'Large Format 35mm (ARRI ALEXA 35)', label: 'ARRI ALEXA 35 (S35 open gate)', widthMm: 27.99, heightMm: 19.22, photositesW: 4608, photositesH: 3164 },
-  { id: 'Full Frame 65mm (ARRI ALEXA 65)', label: 'ARRI ALEXA 65 (open gate)', widthMm: 54.12, heightMm: 25.58, photositesW: 6560, photositesH: 3100 },
-  { id: 'Super 35mm (Panavision Panaflex Gold)', label: 'Panavision Panaflex Gold (4-perf S35)', widthMm: 24.89, heightMm: 18.66, photositesW: null, photositesH: null },
-  { id: 'RED V-Raptor 8K VV', label: 'RED V-Raptor 8K VV (open gate)', widthMm: 40.96, heightMm: 21.60, photositesW: 8192, photositesH: 4320 },
   { id: 'Large Format 35mm (ARRI ALEXA Mini LF)', label: 'ARRI ALEXA Mini LF (open gate)', widthMm: 36.70, heightMm: 25.54, photositesW: 4448, photositesH: 3096 },
+  { id: 'Full Frame 65mm (ARRI ALEXA 65)', label: 'ARRI ALEXA 65 (open gate)', widthMm: 54.12, heightMm: 25.58, photositesW: 6560, photositesH: 3100 },
+  { id: 'IMAX 70mm 15-Perf (IMAX MKIV)', label: 'IMAX 15-Perf 70mm (horizontal gate)', widthMm: 70.41, heightMm: 52.63, photositesW: null, photositesH: null },
+  { id: 'Super 35mm (Panavision Panaflex Gold)', label: 'Panavision Panaflex Gold (4-perf S35)', widthMm: 24.89, heightMm: 18.66, photositesW: null, photositesH: null },
+  { id: 'Super 35 3-Perf (Arricam ST)', label: 'Arricam ST (3-perf S35)', widthMm: 24.89, heightMm: 13.87, photositesW: null, photositesH: null },
+  { id: 'RED V-Raptor 8K VV', label: 'RED V-Raptor 8K VV (open gate)', widthMm: 40.96, heightMm: 21.60, photositesW: 8192, photositesH: 4320 },
 ];
 
 export const DEFAULT_SENSOR_ID = SENSOR_FORMATS[0].id;
@@ -45,8 +47,39 @@ const FULL_FRAME_DIAGONAL_MM = Math.hypot(36, 24);
 /** Reference focal length that maps to "no zoom" in the viewfinder. */
 export const REFERENCE_FOCAL_MM = 35;
 
+/**
+ * Short names the backend and older saved presets use for a sensor, mapped to
+ * the exact id they mean. Spelled out rather than matched by substring: several
+ * ids share the "Large Format 35mm" prefix, so a substring match resolves by
+ * array position and silently picks a different camera the moment SENSOR_FORMATS
+ * is reordered.
+ */
+const SENSOR_ALIASES: Record<string, string> = {
+  'large format 35mm': 'Large Format 35mm (ARRI ALEXA 35)',
+  'super 35': 'Super 35mm (Panavision Panaflex Gold)',
+  'super 35mm': 'Super 35mm (Panavision Panaflex Gold)',
+  'full frame 35mm': 'Large Format 35mm (ARRI ALEXA Mini LF)',
+  'large format 65mm': 'Full Frame 65mm (ARRI ALEXA 65)',
+  'full frame 65mm': 'Full Frame 65mm (ARRI ALEXA 65)',
+  'imax 70mm': 'IMAX 70mm 15-Perf (IMAX MKIV)',
+};
+
 export function resolveSensor(id: string): SensorFormat {
-  return SENSOR_FORMATS.find(s => s.id === id) ?? SENSOR_FORMATS[0];
+  if (!id) return SENSOR_FORMATS[0];
+
+  const exact = SENSOR_FORMATS.find(s => s.id === id);
+  if (exact) return exact;
+
+  const key = id.trim().toLowerCase();
+  const aliased = SENSOR_ALIASES[key];
+  if (aliased) {
+    const match = SENSOR_FORMATS.find(s => s.id === aliased);
+    if (match) return match;
+  }
+
+  // Last resort: match on the human label, which is unique per sensor.
+  const byLabel = SENSOR_FORMATS.find(s => s.label.toLowerCase() === key);
+  return byLabel ?? SENSOR_FORMATS[0];
 }
 
 /** Parses "2.39:1", "16:9", "4:3" into a numeric width/height ratio. */
@@ -302,27 +335,60 @@ export function depthOfField(
   };
 }
 
+/** Widest blur a browser composites smoothly; beyond this, growth is compressed. */
+const BLUR_SOFT_LIMIT_PX = 24;
+
+/** Hard ceiling, to keep an extreme setting from stalling the compositor. */
+const BLUR_HARD_LIMIT_PX = 64;
+
 /**
- * Calculates the apparent blur radius (in pixels relative to a standard 1000px wide container)
- * of a background object at infinity. This drives the real-time visual DoF simulator.
+ * Apparent blur radius, in CSS pixels, of a background object at infinity.
+ * Drives the real-time visual depth of field simulator.
+ *
+ * The blur circle is computed on the sensor and then scaled by how many pixels
+ * the frame is actually drawn across, so the same lens reads the same whatever
+ * size the viewfinder happens to be. Pass the *extraction* width rather than the
+ * full gate width: on a height-limited ratio the frame is narrower than the gate,
+ * and the sensor's own dimension would understate the blur by around 9%.
  */
 export function backgroundBlurRadius(
   focalLengthMm: number,
   fNumber: number,
   focusDistanceM: number,
-  sensorWidthMm: number,
+  frameWidthMm: number,
+  renderedWidthPx: number = 1000,
 ): number {
-  // Focus distance in mm. Cap to avoid division by zero or macro infinity.
+  if (!(focalLengthMm > 0) || !(fNumber > 0) || !(frameWidthMm > 0) || !(renderedWidthPx > 0)) {
+    return 0;
+  }
+
+  // Focus distance in mm, floored just past the focal length so the thin-lens
+  // denominator cannot reach zero.
   const s = Math.max(focusDistanceM * 1000, focalLengthMm + 1);
-  
-  // Blur circle diameter on the physical sensor (mm) for an object at infinity
-  const cBg = (focalLengthMm * focalLengthMm) / (fNumber * s);
-  
-  // Convert physical mm to a relative pixel blur radius for the UI
-  const blurRadiusPx = (cBg / sensorWidthMm) * 1000 * 0.5;
-  
-  // Cap max blur to 40px to prevent visual clipping and performance drops
-  return Math.min(blurRadiusPx, 40);
+
+  // Blur circle diameter on the sensor, in mm, for a subject at infinity.
+  // Exact thin-lens form; the f² / (N·s) approximation understates by ~2%.
+  const cBg = (focalLengthMm * focalLengthMm) / (fNumber * (s - focalLengthMm));
+
+  // As a fraction of frame width, then across the pixels the frame is drawn on.
+  const blurRadiusPx = (cBg / frameWidthMm) * renderedWidthPx * 0.5;
+
+  return softLimitBlur(blurRadiusPx);
+}
+
+/**
+ * Keeps very shallow settings distinguishable from one another.
+ *
+ * A flat clamp made every long lens look identical past the limit — a 135mm and
+ * a 250mm both pinned to the same value. Past the soft limit this compresses
+ * logarithmically instead, so more blur still reads as more blur, while the
+ * absolute ceiling protects the compositor.
+ */
+export function softLimitBlur(radiusPx: number): number {
+  if (radiusPx <= BLUR_SOFT_LIMIT_PX) return radiusPx;
+  const excess = radiusPx - BLUR_SOFT_LIMIT_PX;
+  const headroom = BLUR_HARD_LIMIT_PX - BLUR_SOFT_LIMIT_PX;
+  return BLUR_SOFT_LIMIT_PX + headroom * (1 - Math.exp(-excess / headroom));
 }
 
 /** Formats a distance in metres for a viewfinder readout. */

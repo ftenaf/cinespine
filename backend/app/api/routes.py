@@ -1523,10 +1523,22 @@ def get_prometheus_metrics():
 # ---------------------------------------------------------------------------
 
 from backend.app.script.parser import parse_fountain_screenplay, parse_screenplay_file, Screenplay, ScreenplayScene, CharacterProfile
-from backend.app.script.dop_presets import DOP_MASTER_PRESETS, resolve_dop_specification
+from backend.app.script.dop_presets import DOP_MASTER_PRESETS, resolve_dop_specification, suggest_dop_preset_metadata
 from backend.app.script.breakdown_engine import breakdown_scene_to_shots, ShotProposal
 from backend.app.script.storyboard_generator import render_cinematic_storyboard_svg
 from backend.app.script.character_ai import enrich_screenplay_characters
+
+
+class SuggestDoPPresetRequest(BaseModel):
+    focal_length: Optional[int] = 35
+    aperture: Optional[str] = "T2.8"
+    color_temperature_k: Optional[int] = 5600
+    white_balance_k: Optional[int] = 5600
+    lighting_ratio: Optional[str] = "4:1"
+    sensor_format: Optional[str] = "Large Format 35mm"
+    lut_emulation: Optional[str] = "Kodak 5219 Vision3 500T"
+    custom_prompt: Optional[str] = ""
+    aspect_ratio: Optional[str] = "2.39:1"
 
 
 class ScriptParseRequest(BaseModel):
@@ -1558,6 +1570,7 @@ class GenerateStoryboardRequest(BaseModel):
     lut_emulation: str = "Kodak Vision3 500T 5219"
     aspect_ratio: str = "2.39:1"
     character_details: Optional[str] = None
+    economy_mode: bool = False
 
 
 class UpdateCharacterRequest(BaseModel):
@@ -1583,6 +1596,7 @@ class GeneratePortraitRequest(BaseModel):
     facial_features: str
     role: str = "Key Character"
     dop_preset: str = "Roger Deakins"
+    economy_mode: bool = False
 
 
 @router.post("/script/characters/update")
@@ -1639,7 +1653,8 @@ async def generate_character_portrait(req: GeneratePortraitRequest):
         look_and_costume=req.look_and_costume,
         facial_features=req.facial_features,
         role=req.role,
-        dop_preset=req.dop_preset
+        dop_preset=req.dop_preset,
+        economy_mode=req.economy_mode
     )
 
     return {
@@ -1730,6 +1745,25 @@ def get_dop_presets():
     }
 
 
+@router.post("/script/presets/suggest")
+def suggest_dop_preset(req: SuggestDoPPresetRequest):
+    """
+    Generates an AI-suggested DoP preset name, tagline, description, and prompt style
+    tag matching current optical and lighting parameters.
+    """
+    return suggest_dop_preset_metadata(
+        focal_length=req.focal_length or 35,
+        aperture=req.aperture or "T2.8",
+        color_temperature_k=req.color_temperature_k or 5600,
+        white_balance_k=req.white_balance_k or 5600,
+        lighting_ratio=req.lighting_ratio or "4:1",
+        sensor_format=req.sensor_format or "Large Format 35mm",
+        lut_emulation=req.lut_emulation or "Kodak 5219 Vision3 500T",
+        custom_prompt=req.custom_prompt,
+        aspect_ratio=req.aspect_ratio or "2.39:1"
+    )
+
+
 @router.post("/script/breakdown")
 def generate_shot_breakdown(req: ScriptBreakdownRequest):
     """
@@ -1797,7 +1831,8 @@ async def generate_storyboard_frame(req: GenerateStoryboardRequest):
         color_temp_k=req.color_temp_k,
         lut_emulation=req.lut_emulation,
         aspect_ratio=req.aspect_ratio,
-        character_details=req.character_details
+        character_details=req.character_details,
+        economy_mode=req.economy_mode
     )
 
     return {

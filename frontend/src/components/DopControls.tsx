@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Camera, Aperture, Crosshair, Sun, Palette, Terminal, Save } from 'lucide-react';
+import { Camera, Aperture, Crosshair, Sun, Palette, Terminal, Save, Sparkles, Loader2 } from 'lucide-react';
 import { parseStop, SENSOR_FORMATS, formatDistance, depthOfField, computeViewfinderGeometry } from '../optics';
+import { suggestDoPPreset } from '../api';
 
 export interface DopSettings {
   dopMode: 'preset' | 'matrix' | 'prompt';
@@ -27,9 +28,51 @@ export interface DopControlsProps {
 
 export const DopControls: React.FC<DopControlsProps> = ({ settings, onChange, presetsDict, onSavePreset, hideAspectRatio = false }) => {
   const [isSavingPreset, setIsSavingPreset] = useState(false);
+  const [isSuggesting, setIsSuggesting] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
   const [newPresetTagline, setNewPresetTagline] = useState('');
   const [newPresetDesc, setNewPresetDesc] = useState('');
+
+  const handleSuggestAI = async () => {
+    setIsSuggesting(true);
+    try {
+      const res = await suggestDoPPreset({
+        focal_length: settings.customFocalLength,
+        aperture: settings.customAperture,
+        color_temperature_k: settings.customColorTemp,
+        white_balance_k: settings.whiteBalanceK,
+        lighting_ratio: settings.customLightingRatio,
+        sensor_format: settings.customSensorFormat,
+        lut_emulation: settings.customLutEmulation,
+        custom_prompt: settings.customMoodPrompt,
+        aspect_ratio: settings.aspectRatio
+      });
+      if (res.name) setNewPresetName(res.name);
+      if (res.tagline) setNewPresetTagline(res.tagline);
+      if (res.description) setNewPresetDesc(res.description);
+    } catch (err) {
+      console.warn("Failed to auto-suggest DoP preset:", err);
+    } finally {
+      setIsSuggesting(false);
+    }
+  };
+
+  const [presetSearch, setPresetSearch] = useState('');
+
+  const filteredPresets = useMemo(() => {
+    if (!presetSearch.trim()) return Object.entries(presetsDict);
+    const q = presetSearch.toLowerCase();
+    return Object.entries(presetsDict).filter(([name, data]: [string, any]) => {
+      return (
+        name.toLowerCase().includes(q) ||
+        (data.name && data.name.toLowerCase().includes(q)) ||
+        (data.tagline && data.tagline.toLowerCase().includes(q)) ||
+        (data.description && data.description.toLowerCase().includes(q)) ||
+        (data.lens_type && data.lens_type.toLowerCase().includes(q)) ||
+        (data.lut_emulation && data.lut_emulation.toLowerCase().includes(q))
+      );
+    });
+  }, [presetsDict, presetSearch]);
 
   const handleSaveClick = () => {
     if (!newPresetName) return;
@@ -61,7 +104,7 @@ export const DopControls: React.FC<DopControlsProps> = ({ settings, onChange, pr
             }`}
           >
             <Palette className="w-3 h-3" />
-            Presets
+            Presets ({Object.keys(presetsDict).length})
           </button>
           <button
             onClick={() => onChange({ dopMode: 'matrix' })}
@@ -104,9 +147,19 @@ export const DopControls: React.FC<DopControlsProps> = ({ settings, onChange, pr
       <div className="overflow-y-auto pr-1 pb-4 flex-1 space-y-4 custom-scrollbar">
         {/* MODE 1: PRESETS */}
         {settings.dopMode === 'preset' && (
-          <div className="space-y-3">
+          <div className="space-y-2.5">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search master DoP presets (e.g. Deakins, Fraser, IMAX, Noir)..."
+                value={presetSearch}
+                onChange={e => setPresetSearch(e.target.value)}
+                className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
-              {Object.entries(presetsDict).map(([presetName, presetData]: [string, any]) => (
+              {filteredPresets.map(([presetName, presetData]: [string, any]) => (
                 <div
                   key={presetName}
                   onClick={() => {
@@ -117,21 +170,47 @@ export const DopControls: React.FC<DopControlsProps> = ({ settings, onChange, pr
                       customColorTemp: presetData.color_temperature_k || settings.customColorTemp,
                       customLightingRatio: presetData.lighting_ratio || settings.customLightingRatio,
                       customLutEmulation: presetData.lut_emulation || settings.customLutEmulation,
-                      customMoodPrompt: presetData.prompt_style_tag || settings.customMoodPrompt
+                      customMoodPrompt: presetData.prompt_style_tag || settings.customMoodPrompt,
+                      customSensorFormat: presetData.sensor_format || settings.customSensorFormat
                     });
                   }}
-                  className={`p-2 rounded-xl border transition cursor-pointer ${
+                  className={`p-2.5 rounded-xl border transition cursor-pointer flex flex-col justify-between ${
                     settings.selectedPreset === presetName
-                      ? 'bg-purple-950/60 border-purple-500 shadow-lg shadow-purple-500/20'
-                      : 'bg-slate-900/50 border-slate-800 hover:border-slate-700'
+                      ? 'bg-purple-950/70 border-purple-500 shadow-lg shadow-purple-500/20 ring-1 ring-purple-500'
+                      : 'bg-slate-900/50 border-slate-800 hover:border-slate-700 hover:bg-slate-900/80'
                   }`}
                 >
-                  <h4 className="text-xs font-bold text-white leading-tight">{presetData.name || presetName}</h4>
-                  <p className="text-[9px] text-purple-300 mt-0.5 line-clamp-1">{presetData.tagline}</p>
-                  <p className="text-[10px] text-slate-400 line-clamp-2 mt-1 leading-relaxed">{presetData.description}</p>
+                  <div>
+                    <div className="flex items-center justify-between gap-1">
+                      <h4 className="text-xs font-bold text-white leading-tight">{presetData.name || presetName}</h4>
+                      {settings.selectedPreset === presetName && (
+                        <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
+                      )}
+                    </div>
+                    <p className="text-[9px] font-medium text-purple-300 mt-0.5 line-clamp-1">{presetData.tagline}</p>
+                    <p className="text-[10px] text-slate-400 line-clamp-2 mt-1 leading-relaxed">{presetData.description}</p>
+                  </div>
+
+                  <div className="mt-2 pt-1.5 border-t border-slate-800/80 flex items-center gap-1 flex-wrap text-[9px] font-mono text-slate-400">
+                    <span className="px-1.5 py-0.5 bg-slate-950/80 rounded border border-slate-800 text-slate-200 font-bold">
+                      {presetData.focal_length}mm {presetData.aperture}
+                    </span>
+                    <span className="px-1.5 py-0.5 bg-slate-950/80 rounded border border-slate-800 text-amber-300 font-bold">
+                      {presetData.color_temperature_k}K
+                    </span>
+                    <span className="px-1.5 py-0.5 bg-slate-950/80 rounded border border-slate-800 text-pink-300 font-bold truncate max-w-[100px]">
+                      {presetData.lut_emulation?.replace('Kodak ', '')?.replace('Fujifilm ', '') || 'LUT'}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
+
+            {filteredPresets.length === 0 && (
+              <div className="text-center py-6 text-slate-500 text-xs">
+                No DoP presets found matching "{presetSearch}"
+              </div>
+            )}
           </div>
         )}
 
@@ -355,39 +434,83 @@ export const DopControls: React.FC<DopControlsProps> = ({ settings, onChange, pr
         {settings.dopMode !== 'preset' && (
           <div className="mt-6 border-t border-slate-800 pt-4">
             {isSavingPreset ? (
-              <div className="space-y-2 bg-slate-900/50 p-2.5 rounded-xl border border-purple-500/30">
-                <input
-                  type="text"
-                  placeholder="Preset Name (e.g. Dark Neon Alley)"
-                  value={newPresetName}
-                  onChange={e => setNewPresetName(e.target.value)}
-                  className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-white"
-                />
-                <input
-                  type="text"
-                  placeholder="Tagline (e.g. High contrast, gritty textures)"
-                  value={newPresetTagline}
-                  onChange={e => setNewPresetTagline(e.target.value)}
-                  className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-white"
-                />
-                <textarea
-                  rows={2}
-                  placeholder="Full description..."
-                  value={newPresetDesc}
-                  onChange={e => setNewPresetDesc(e.target.value)}
-                  className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-white custom-scrollbar"
-                />
+              <div className="space-y-2.5 bg-slate-900/90 p-3 rounded-xl border border-purple-500/40 shadow-lg shadow-purple-500/10">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-800">
+                  <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
+                    <Save className="w-3.5 h-3.5 text-purple-400" />
+                    Save Custom Preset
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleSuggestAI}
+                    disabled={isSuggesting}
+                    className="px-2 py-0.5 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-300 hover:text-purple-200 text-[10px] font-bold rounded-md transition flex items-center gap-1 shadow-sm disabled:opacity-50"
+                    title="Generate creative name, tagline and description with AI based on current optics"
+                  >
+                    {isSuggesting ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin text-purple-400" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3 h-3 text-purple-400" />
+                        AI Auto-Fill
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-0.5">Preset Name</label>
+                    <input
+                      type="text"
+                      placeholder="Preset Name (e.g. Amber Noir Chiaroscuro)"
+                      value={newPresetName}
+                      onChange={e => setNewPresetName(e.target.value)}
+                      disabled={isSuggesting}
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 focus:border-purple-500 rounded text-xs text-white placeholder-slate-600 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-0.5">Aesthetic Tagline</label>
+                    <input
+                      type="text"
+                      placeholder="Tagline (e.g. Deep 8:1 Contrast & Warm Amber Glow)"
+                      value={newPresetTagline}
+                      onChange={e => setNewPresetTagline(e.target.value)}
+                      disabled={isSuggesting}
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 focus:border-purple-500 rounded text-xs text-white placeholder-slate-600 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-0.5">Cinematography Description</label>
+                    <textarea
+                      rows={2}
+                      placeholder="Full description..."
+                      value={newPresetDesc}
+                      onChange={e => setNewPresetDesc(e.target.value)}
+                      disabled={isSuggesting}
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 focus:border-purple-500 rounded text-xs text-white placeholder-slate-600 focus:outline-none custom-scrollbar"
+                    />
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     onClick={handleSaveClick}
-                    disabled={!newPresetName}
-                    className="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold rounded"
+                    disabled={!newPresetName || isSuggesting}
+                    className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition shadow-md flex items-center gap-1.5"
                   >
+                    <Save className="w-3.5 h-3.5" />
                     Save Preset
                   </button>
                   <button
                     onClick={() => setIsSavingPreset(false)}
-                    className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded"
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg transition"
                   >
                     Cancel
                   </button>
@@ -395,11 +518,16 @@ export const DopControls: React.FC<DopControlsProps> = ({ settings, onChange, pr
               </div>
             ) : (
               <button
-                onClick={() => setIsSavingPreset(true)}
-                className="w-full py-2 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-300 text-[11px] font-bold rounded-lg transition flex items-center justify-center gap-1.5"
+                onClick={() => {
+                  setIsSavingPreset(true);
+                  if (!newPresetName) {
+                    handleSuggestAI();
+                  }
+                }}
+                className="w-full py-2 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-300 text-[11px] font-bold rounded-lg transition flex items-center justify-center gap-1.5 group"
               >
-                <Save className="w-3.5 h-3.5" />
-                Save as Custom Preset
+                <Sparkles className="w-3.5 h-3.5 text-purple-400 group-hover:rotate-12 transition-transform" />
+                Save as Custom Preset (with AI Suggestion)
               </button>
             )}
           </div>

@@ -242,3 +242,62 @@ export interface NotificationResponse {
 }
 
 
+export interface DialogueLine {
+  character: string;
+  parenthetical?: string;
+  line: string;
+}
+
+export interface CharacterRelationship {
+  target_character: string;
+  relationship_type: string;
+  dynamic_description: string;
+  shared_scenes: string[];
+  interaction_count: number;
+}
+
+export interface CharacterProfile {
+  id: string;
+  name: string;
+  role: string;
+  actor_reference: string;
+  look_and_costume: string;
+  facial_features: string;
+  personality_traits: string[];
+  avatar_url?: string;
+  portrait_prompt?: string;
+  dialogue_count: number;
+  scenes_present: string[];
+  relationships?: CharacterRelationship[];
+}
+
+export interface ScreenplayScene {
+  scene_number: string;
+  heading: string;
+  raw_content: string;
+  characters?: string[];
+  action_blocks: string[];
+  dialogue?: DialogueLine[];
+}
+
+export interface ShotProposal {
+  id: string;
+  scene_number: string;
+  shot_name: string;
+  subject_description: string;
+  lighting_mood: string;
+  characters?: string[];
+  cameras: CameraSetup[];
+}
+
+export interface CameraSetup {
+  camera_letter: string;
+  shot_size: string;
+  focal_length: number;
+  aperture: number;
+  angle: string;
+  movement: string;
+  image_url?: string;
+  image_prompt?: string;
+  focus_distance?: number;
+}

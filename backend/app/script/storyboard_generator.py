@@ -11,6 +11,57 @@ import os
 from typing import Optional, Dict, Any
 
 
+# Ordinary exterior nouns, not vocabulary from any one production: the
+# placeholder must not encode a particular script's world.
+_EXTERIOR_HINTS = (
+    "street", "road", "sky", "rain", "snow", "forest", "field", "beach",
+    "rooftop", "courtyard", "alley", "park", "desert", "mountain", "outside",
+    "outdoors", "daylight", "sunset", "sunrise", "horizon",
+)
+
+# Coverage vocabulary, which is the same on every production.
+_WIDE_TERMS = ("wide", "panoramic", "establishing", "master")
+_MEDIUM_TERMS = ("ots", "shoulder", "medium", "two-shot", "two shot")
+_TIGHT_TERMS = ("macro", "close", "insert", "detail", "extreme")
+
+_WIDE_SIZES = ("WS", "EWS", "VWS")
+_MEDIUM_SIZES = ("MS", "MCU", "OTS", "MWS", "LOW_ANGLE")
+_TIGHT_SIZES = ("CU", "ECU", "INSERT")
+
+
+def detect_setting(prompt: str) -> str:
+    """
+    Interior or exterior, from the screenplay's own scene-heading convention.
+
+    Where a prompt carries no heading, falls back to generic exterior nouns and
+    then to interior, which is the safer default for dialogue coverage.
+    """
+    text = prompt.lower()
+    if "ext." in text or "exterior" in text:
+        return "exterior"
+    if "int." in text or "interior" in text:
+        return "interior"
+    if any(hint in text for hint in _EXTERIOR_HINTS):
+        return "exterior"
+    return "interior"
+
+
+def _variant_letter(prompt: str, shot_size: str, camera_letter: str) -> str:
+    """Picks the placeholder whose framing is closest to the requested coverage."""
+    text = prompt.lower()
+    size = (shot_size or "").upper()
+
+    if size in _WIDE_SIZES or any(t in text for t in _WIDE_TERMS):
+        return "a"
+    if size in _MEDIUM_SIZES or any(t in text for t in _MEDIUM_TERMS):
+        return "b"
+    if size in _TIGHT_SIZES or any(t in text for t in _TIGHT_TERMS):
+        return "c"
+
+    cam = (camera_letter or "A").lower()
+    return cam if cam in ("a", "b", "c") else "a"
+
+
 def render_cinematic_storyboard_svg(
     prompt: str,
     scene_number: str,
@@ -26,34 +77,4 @@ def render_cinematic_storyboard_svg(
     Renders or resolves a photorealistic cinematic film still customized
     for Camera A, B, or C angle perspectives with authentic 35mm cinematography.
     """
-    prompt_lower = prompt.lower()
-    cam_upper = camera_letter.upper()
-
-    # Match Photorealistic 35mm Film Still Assets
-    is_great_hall_organ = any(k in prompt_lower for k in ["organ", "great_hall", "nave", "church", "gothic", "stained", "sanctuary", "lead", "support"])
-    is_rain_square = any(k in prompt_lower for k in ["rain", "square", "police", "vehicle", "street", "siren", "spotlight", "car", "vance", "commander"])
-
-    if is_great_hall_organ:
-        if cam_upper == "A" or "wide" in prompt_lower or "panoramic" in prompt_lower or shot_size in ["WS", "EWS"]:
-            return "/previz/interior_cam_a.jpg"
-        elif cam_upper == "B" or "ots" in prompt_lower or "shoulder" in prompt_lower or shot_size in ["MS", "MCU", "OTS"]:
-            return "/previz/interior_cam_b.jpg"
-        elif cam_upper == "C" or "macro" in prompt_lower or "keys" in prompt_lower or "stop" in prompt_lower or shot_size in ["CU", "ECU", "INSERT"]:
-            return "/previz/interior_cam_c.jpg"
-        return "/previz/interior_cam_a.jpg"
-
-    if is_rain_square:
-        if cam_upper == "A" or "wide" in prompt_lower or "square" in prompt_lower or shot_size in ["WS", "EWS"]:
-            return "/previz/exterior_cam_a.jpg"
-        elif cam_upper == "B" or "vance" in prompt_lower or "commander" in prompt_lower or "spotlight" in prompt_lower or shot_size in ["MS", "MCU", "LOW_ANGLE"]:
-            return "/previz/exterior_cam_b.jpg"
-        elif cam_upper == "C" or "siren" in prompt_lower or "dutch" in prompt_lower or "splash" in prompt_lower or shot_size in ["CU", "MWS"]:
-            return "/previz/exterior_cam_c.jpg"
-        return "/previz/exterior_cam_a.jpg"
-
-    # Default to Great Hall Cam A for general drama
-    if cam_upper == "B":
-        return "/previz/interior_cam_b.jpg"
-    elif cam_upper == "C":
-        return "/previz/interior_cam_c.jpg"
-    return "/previz/interior_cam_a.jpg"
+    return f"/previz/{detect_setting(prompt)}_cam_{_variant_letter(prompt, shot_size, camera_letter)}.jpg"

@@ -156,6 +156,26 @@ def test_api_script_presets_endpoint(client):
     assert "2.39:1" in data["aspect_ratios"]
 
 
+def test_api_script_preset_suggest_endpoint(client):
+    res = client.post("/api/script/presets/suggest", json={
+        "focal_length": 24,
+        "aperture": "T1.4",
+        "color_temperature_k": 3200,
+        "white_balance_k": 5600,
+        "lighting_ratio": "8:1",
+        "sensor_format": "Large Format 35mm",
+        "lut_emulation": "Kodak 5219 Vision3 500T",
+        "custom_prompt": "Neon alley rain reflexions",
+        "aspect_ratio": "2.39:1"
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert "name" in data and len(data["name"]) > 0
+    assert "tagline" in data and len(data["tagline"]) > 0
+    assert "description" in data and len(data["description"]) > 0
+    assert "prompt_style_tag" in data and len(data["prompt_style_tag"]) > 0
+
+
 def test_api_script_breakdown_endpoint(client):
     sc_payload = {
         "scene_number": "27",
@@ -427,6 +447,100 @@ def test_api_generate_character_portrait_endpoint(client):
     assert data["image_url"].startswith("data:image/") or data["image_url"].startswith("/previz/")
     assert "LEAD" in data["compiled_prompt"]
     assert "85mm" in data["compiled_prompt"] or "portrait" in data["compiled_prompt"].lower()
+
+
+CUT_TO_SCRIPT_SAMPLE = """Title: The Heist Setup
+Author: CineSpine
+
+INT. VAULT ROOM - NIGHT
+
+MARCUS (40s) crouches before the titanium safe, adjusting his optical stethoscope.
+
+MARCUS
+(whispering)
+Three clicks left. Hold the frequency.
+
+CUT TO:
+
+Extreme close-up on the safe's dial tumblers shifting in slow motion.
+
+CUT TO:
+
+HELENA (30s) watches the security monitors in the surveillance van outside.
+
+HELENA
+Patrol team is turning the corner. You have forty seconds.
+
+SMASH CUT TO:
+
+Marcus yanks the heavy vault lever downward with a resounding metallic clang.
+"""
+
+
+def test_fountain_parser_with_cut_to_transitions():
+    screenplay = parse_fountain_screenplay(CUT_TO_SCRIPT_SAMPLE, title="The Heist Setup")
+    assert screenplay.scenes_count == 1
+    sc = screenplay.scenes[0]
+    
+    # Verify CUT TO transitions do not become characters
+    char_names = [c.name for c in screenplay.characters]
+    assert "MARCUS" in char_names
+    assert "HELENA" in char_names
+    assert "CUT TO" not in char_names
+    assert "CUT TO:" not in char_names
+    assert "SMASH CUT TO" not in char_names
+    assert "SMASH CUT TO:" not in char_names
+    
+    # Dialogues should be preserved cleanly
+    assert len(sc.dialogues) == 2
+    assert sc.dialogues[0].character == "MARCUS"
+    assert sc.dialogues[1].character == "HELENA"
+
+
+def test_ai_cam_breakdown_with_cut_to_transitions():
+    screenplay = parse_fountain_screenplay(CUT_TO_SCRIPT_SAMPLE, title="The Heist Setup")
+    sc = screenplay.scenes[0]
+    
+    shots = breakdown_scene_to_shots(
+        scene=sc,
+        dop_style_name="David Fincher",
+        aspect_ratio="2.39:1",
+        character_profiles=screenplay.characters
+    )
+    
+    # The scene has 4 distinct cut segments:
+    # 1. Master/Opening with Marcus at the safe
+    # 2. CUT TO: Close-up on tumblers
+    # 3. CUT TO: Helena at the monitors
+    # 4. SMASH CUT TO: Marcus yanking vault lever
+    assert len(shots) == 4
+    
+    # Shot 1: Opening
+    assert shots[0].shot_number == "1"
+    assert "MARCUS" in shots[0].characters
+    
+    # Shot 2: CUT TO dial tumblers (should infer ECU / CU / INSERT)
+    assert shots[1].shot_number == "2"
+    assert shots[1].shot_size in ["ECU", "CU", "INSERT"]
+    assert "CUT TO" in shots[1].shot_name or "Cut" in shots[1].dramatic_beat
+    
+    # Shot 3: CUT TO Helena
+    assert shots[2].shot_number == "3"
+    assert "HELENA" in shots[2].characters
+    assert shots[2].shot_size in ["MS", "MCU"]
+    
+    # Shot 4: SMASH CUT TO Marcus yanking lever
+    assert shots[3].shot_number == "4"
+    assert "SMASH CUT" in shots[3].shot_name or "SMASH CUT" in shots[3].dramatic_beat
+    
+    # Each shot must contain full multi-camera proposals (A, B, C)
+    for shot in shots:
+        assert len(shot.cameras) == 3
+        assert shot.cameras[0].camera_letter == "A"
+        assert shot.cameras[1].camera_letter == "B"
+        assert shot.cameras[2].camera_letter == "C"
+        assert shot.cameras[0].prompt != ""
+
 
 
 

@@ -19,11 +19,19 @@ must never be the reason an upload fails.
 """
 import asyncio
 import json
+import logging
 import os
 import re
 from typing import Any, Dict, List, Optional
 
+from backend.app.script.cache_service import (
+    generate_hash,
+    get_cached_response,
+    set_cached_response,
+)
 from backend.app.script.parser import Screenplay, ScreenplayScene
+
+logger = logging.getLogger(__name__)
 
 MODEL = os.environ.get("CINESPINE_GEMINI_MODEL", "gemini-3.6-flash")
 # A timeout discards the whole inference, so the default is generous: measured
@@ -97,7 +105,7 @@ TOO VAGUE - never write anything like this:
   "facial_features": "Striking, characterful features with cinematic catchlights"
 
 CORRECT - this level of specificity is required:
-  "actor_reference": "Late 40s, 5'6\\", thickset through the shoulders from manual work,
+  "actor_reference": "Late 40s woman, 5'6\\", thickset through the shoulders from manual work,
     grey-streaked black hair scraped into a short tail, stands squared and still"
   "look_and_costume": "Navy quilted donkey jacket with cracked PVC shoulder patches,
     oil-darkened cuffs, fingerless wool gloves, steel-toed boots worn white at the caps,
@@ -144,7 +152,7 @@ def build_prompt(screenplay: Screenplay, retry_feedback: Optional[str] = None) -
         "3. Banned words, because they describe nothing: cinematic, expressive, "
         "distinctive, striking, mysterious, intense, rugged, appropriate, "
         "suitable, typical, generic, various, certain, undefined, presence.\n"
-        "4. actor_reference must give age, height or build, hair, and bearing.\n"
+        "4. actor_reference must explicitly state gender characteristics / physical presentation (e.g., woman, man, female, male, non-binary / androgynous presentation), along with age, height or build, hair, and bearing.\n"
         "5. look_and_costume must name at least three specific garments or props, "
         "with fabric, colour and condition. Say how the clothes are worn or "
         "damaged, not just what they are.\n"
@@ -157,7 +165,7 @@ def build_prompt(screenplay: Screenplay, retry_feedback: Optional[str] = None) -
         "Return ONLY a JSON array. One object per character, with exactly these keys:\n"
         '  "name": the character name exactly as given\n'
         '  "role": role and narrative archetype, at most 8 words\n'
-        '  "actor_reference": one sentence, 15-40 words\n'
+        '  "actor_reference": one sentence (15-40 words) specifying gender presentation, age, physique, hair, and bearing\n'
         '  "look_and_costume": one sentence, 20-50 words\n'
         '  "facial_features": one sentence, 15-40 words\n'
         '  "personality_traits": array of 3 to 5 single-word traits, each specific '
@@ -177,8 +185,16 @@ def build_prompt(screenplay: Screenplay, retry_feedback: Optional[str] = None) -
 
 
 def _call_gemini(prompt: str) -> str:
-    """Blocking Gemini call; run off the event loop by the caller."""
+    """Blocking Gemini call; run off the event loop by the caller. Uses SQLite cache."""
     from google import genai
+
+    req_hash = generate_hash(prompt=prompt, model=MODEL)
+    cached = get_cached_response(req_hash)
+    if cached:
+        logger.info("Character inference cache hit for %s", req_hash)
+        return cached["text"]
+        
+    logger.info("Character inference cache miss for %s", req_hash)
 
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     client = genai.Client(api_key=api_key)
@@ -187,7 +203,10 @@ def _call_gemini(prompt: str) -> str:
         contents=prompt,
         config={"response_mime_type": "application/json", "temperature": 0.4},
     )
-    return response.text or ""
+    text = response.text or ""
+    if text:
+        set_cached_response(req_hash, {"text": text})
+    return text
 
 
 def parse_ai_response(raw: str) -> Dict[str, Dict[str, Any]]:
@@ -375,7 +394,7 @@ async def enrich_screenplay_characters(screenplay: Screenplay) -> Screenplay:
         )
         return screenplay
     except Exception as exc:  # noqa: BLE001 - inference must never fail an upload
-        print(f"[Character AI] inference failed: {exc}")
+        logger.warning("Character inference failed: %s", exc)
         screenplay.parse_warnings.append(
             "AI character inference was unavailable; showing details derived from "
             "the script text."
@@ -404,7 +423,7 @@ async def enrich_screenplay_characters(screenplay: Screenplay) -> Screenplay:
             )
             retried = parse_ai_response(retry_raw)
         except Exception as exc:  # noqa: BLE001 - the first pass is still usable
-            print(f"[Character AI] specificity retry failed: {exc}")
+            logger.warning("Character specificity retry failed: %s", exc)
             retried = {}
 
         # Keep a retried field only when it is actually better than what it replaces.

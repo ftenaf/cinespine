@@ -82,8 +82,32 @@ NON_CHARACTER_TOKENS = {
     "WITH", "CUT TO", "FADE IN", "FADE OUT", "FADE TO", "DISSOLVE TO", "SMASH CUT",
     "MATCH CUT", "BACK TO", "CONTINUED", "SCENE", "TITLE", "SUPER", "INSERT",
     "MONTAGE", "END MONTAGE", "INTERCUT", "THE END", "OMITTED", "LATER",
-    "CONTINUOUS", "MOMENTS LATER", "WRITTEN BY", "BY",
+    "CONTINUOUS", "MOMENTS LATER", "WRITTEN BY", "BY", "CUT TO BLACK", "FADE TO BLACK",
+    "SMASH CUT TO", "MATCH CUT TO", "JUMP CUT TO", "QUICK CUT TO", "HARD CUT TO",
+    "TIME CUT TO", "FLASH CUT TO", "CROSS CUT TO", "DISSOLVE TO",
 }
+
+# Regex for standard screenplay / fountain transitions (e.g. "CUT TO:", "> SMASH CUT TO:", "DISSOLVE TO:")
+TRANSITION_REGEX = re.compile(
+    r"^(?:>|>\s*)?(?:(?:SMASH|MATCH|DISSOLVE|JUMP|QUICK|HARD|TIME|FLASH|CROSS)?\s*CUT\s+TO(?:\s+BLACK|\s+WHITE)?|FADE\s+(?:IN|OUT|TO\s+BLACK|TO\s+WHITE)|DISSOLVE\s+TO|INTERCUT)(?:\:|\.|\s*<)?$",
+    re.IGNORECASE
+)
+
+
+def is_transition_cue(line: str) -> bool:
+    """
+    Identifies whether a line is a screenplay transition slug (e.g., 'CUT TO:', '> SMASH CUT TO:', 'DISSOLVE TO:').
+    Transitions signal shot/scene boundary shifts and must never be treated as characters.
+    """
+    clean = re.sub(r"^[#*_\s>]+|[#*_\s<]+$", "", line).strip()
+    if not clean:
+        return False
+    if TRANSITION_REGEX.match(clean):
+        return True
+    if clean.isupper() and (clean.endswith("TO:") or clean.endswith("TO BLACK.") or clean.endswith("TO WHITE.") or clean == "CUT TO"):
+        return True
+    return False
+
 
 # Metadata keys that may appear in a title block before the first scene heading.
 TITLE_BLOCK_KEYS = (
@@ -326,6 +350,43 @@ def infer_personality_traits(name: str, scenes: List[ScreenplayScene]) -> List[s
     return traits[:4]
 
 
+def infer_character_gender(name: str, scenes: List[ScreenplayScene], description: str = "") -> str:
+    """
+    Infers gender characteristics from introduction descriptions or action line pronouns.
+    Returns 'woman', 'man', 'non-binary', or '' if ambiguous.
+    """
+    desc_lower = description.lower()
+    if any(w in desc_lower for w in ("woman", "female", "girl", "lady", "she", "her", "actress", "mother", "sister", "daughter")):
+        return "woman"
+    if any(w in desc_lower for w in ("man", "male", "guy", "boy", "gentleman", "he", "his", "him", "actor", "father", "brother", "son")):
+        return "man"
+    if any(w in desc_lower for w in ("non-binary", "androgynous", "gender-non-conforming")):
+        return "non-binary"
+
+    # Scan action lines in scenes where this character appears for pronouns
+    she_count = 0
+    he_count = 0
+    they_count = 0
+    name_upper = name.upper()
+
+    for sc in scenes:
+        if name in sc.characters:
+            for action in sc.action_blocks:
+                if name_upper in action.upper():
+                    act_lower = action.lower()
+                    she_count += len(re.findall(r"\b(she|her|hers)\b", act_lower))
+                    he_count += len(re.findall(r"\b(he|him|his)\b", act_lower))
+                    they_count += len(re.findall(r"\b(they|them|their)\b", act_lower))
+
+    if she_count > he_count and she_count > they_count and she_count >= 1:
+        return "woman"
+    elif he_count > she_count and he_count > they_count and he_count >= 1:
+        return "man"
+    elif they_count > she_count and they_count > he_count and they_count >= 1:
+        return "non-binary"
+    return ""
+
+
 def extract_character_profiles(scenes: List[ScreenplayScene], script_text: str) -> List[CharacterProfile]:
     """
     Extracts all characters from dialogue cues and action descriptions across the screenplay,
@@ -337,7 +398,7 @@ def extract_character_profiles(scenes: List[ScreenplayScene], script_text: str) 
         scene_chars = set()
         for d in sc.dialogues:
             name = clean_character_name(d.character)
-            if not name or len(name) < 2 or name in ["CUT TO", "FADE IN", "FADE OUT", "SCENE", "CONTINUED"]:
+            if not name or len(name) < 2 or is_transition_cue(name) or name in NON_CHARACTER_TOKENS:
                 continue
             
             if name not in char_stats:
@@ -356,7 +417,7 @@ def extract_character_profiles(scenes: List[ScreenplayScene], script_text: str) 
     for sc in scenes:
         for action in sc.action_blocks:
             for word in re.findall(r"\b[A-Z]{2,}(?:\s+[A-Z]{2,})*\b", action):
-                if word in NON_CHARACTER_TOKENS:
+                if word in NON_CHARACTER_TOKENS or is_transition_cue(word):
                     continue
                 if word in char_stats:
                     char_stats[word]["scenes"].add(sc.scene_number)
@@ -387,6 +448,7 @@ def extract_character_profiles(scenes: List[ScreenplayScene], script_text: str) 
         described_as = seed.get("description")
         age = seed.get("age")
         full_name = seed.get("full_name", name)
+        gender = infer_character_gender(name, scenes, described_as or "")
 
         if rank == 0 and c["dialogue_count"] > 0:
             role_desc = "Lead"
@@ -400,12 +462,21 @@ def extract_character_profiles(scenes: List[ScreenplayScene], script_text: str) 
         if described_as:
             actor_reference = f"{full_name.title()}, {described_as}"
         elif age:
-            actor_reference = f"{full_name.title()}, {age}"
+            if gender:
+                actor_reference = f"{full_name.title()}, {age} {gender}"
+            else:
+                actor_reference = f"{full_name.title()}, {age}"
         else:
-            actor_reference = (
-                f"{full_name.title()} — appearance not described in the screenplay; "
-                f"set a reference to lock this character's look"
-            )
+            if gender:
+                actor_reference = (
+                    f"{full_name.title()} ({gender}) — appearance not described in the screenplay; "
+                    f"set a reference to lock this character's look"
+                )
+            else:
+                actor_reference = (
+                    f"{full_name.title()} — appearance not described in the screenplay; "
+                    f"set a reference to lock this character's look"
+                )
 
         profile = CharacterProfile(
             id=char_id,
@@ -563,12 +634,15 @@ def parse_fountain_screenplay(script_text: str, title: str = "Screenplay") -> Sc
 
             # Character Cue (Uppercase name, often centered or standalone)
             clean_cue = re.sub(r"^[#*_\s]+|[#*_\s]+$", "", stripped)
+            is_trans = is_transition_cue(stripped)
             is_char_cue = (
+                not is_trans and
                 clean_cue.isupper() and
                 len(clean_cue) > 1 and
                 len(clean_cue) < 35 and
                 not clean_cue.endswith(":") and
-                not any(clean_cue.startswith(x) for x in ["INT.", "EXT.", "CUT TO", "FADE", "SCENE"])
+                clean_cue not in NON_CHARACTER_TOKENS and
+                not any(clean_cue.startswith(x) for x in ["INT.", "EXT.", "CUT TO", "FADE", "SCENE", "MATCH CUT", "SMASH CUT", "DISSOLVE"])
             )
 
             if is_char_cue and not pending_character:
@@ -582,7 +656,8 @@ def parse_fountain_screenplay(script_text: str, title: str = "Screenplay") -> Sc
                 flush_dialogue()
             else:
                 flush_dialogue()
-                current_actions.append(stripped)
+                if not is_trans:
+                    current_actions.append(stripped)
 
     # Save final scene
     save_current_scene()

@@ -69,3 +69,7 @@ data/examples/
 *.kdm
 *.db
 spine.db
+
+# Local code-intelligence indexes (rebuilt on demand, machine-specific)
+.codegraph/
+graphify-out/

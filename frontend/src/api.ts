@@ -247,5 +247,26 @@ export async function markAllNotificationsRead(userHandle: string): Promise<any>
   return res.json();
 }
 
+export async function suggestDoPPreset(params: {
+  focal_length?: number;
+  aperture?: string;
+  color_temperature_k?: number;
+  white_balance_k?: number;
+  lighting_ratio?: string;
+  sensor_format?: string;
+  lut_emulation?: string;
+  custom_prompt?: string;
+  aspect_ratio?: string;
+}): Promise<{ name: string; tagline: string; description: string; prompt_style_tag: string }> {
+  const res = await fetch(`${API_BASE}/script/presets/suggest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error('Failed to generate DoP preset suggestions');
+  return res.json();
+}
+
+
 
 

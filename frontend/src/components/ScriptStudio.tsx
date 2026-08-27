@@ -12,7 +12,7 @@ import {
   Users,
   ShieldCheck,
   Save,
-  
+  Loader2,
   Aperture,
   Crosshair,
   
@@ -39,6 +39,8 @@ import {
   backgroundBlurRadius
 } from '../optics';
 import { DopControls, DopSettings } from './DopControls';
+import { CharacterProfileCard } from './CharacterProfileCard';
+import { DEFAULT_DOP_PRESETS } from '../presets';
 
 export interface DialogueLine {
   character: string;
@@ -169,6 +171,42 @@ Rain lashes against ancient cobblestones. Black tactical sedans screech to a hal
 COMMANDER VANCE steps out into the downpour, pointing a high-power spotlight at the stained-glass facade.
 `;
 
+/**
+ * Tracks an element's rendered width in CSS pixels.
+ *
+ * The depth of field simulator converts a blur circle on the sensor into screen
+ * pixels, so it needs to know how many pixels the frame is actually drawn
+ * across. Assuming a fixed width overstates the blur on any smaller viewfinder.
+ */
+function useMeasuredWidth<T extends HTMLElement>(): [React.RefCallback<T>, number] {
+  // The node is held in state, not a ref, so attaching it re-runs the effect
+  // below. A ref plus a mount-effect looks equivalent but silently breaks under
+  // StrictMode: setup/cleanup/setup leaves the observer disconnected, because
+  // the node has not changed and the ref callback therefore never re-runs.
+  const [node, setNode] = useState<T | null>(null);
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    if (!node) return;
+
+    // Runs after paint, so a panel that was still laying out when its tab
+    // opened reports its real width rather than zero.
+    const measure = () => setWidth(node.getBoundingClientRect().width);
+    measure();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node]);
+
+  return [setNode as React.RefCallback<T>, width];
+}
+
 export const ScriptStudio: React.FC = () => {
   // Screenplay Editor State
   const [scriptTitle, setScriptTitle] = useState<string>('Demo Production');
@@ -179,6 +217,7 @@ export const ScriptStudio: React.FC = () => {
   const [studioSubTab, setStudioSubTab] = useState<'previz' | 'cast' | 'dop'>('previz');
   const [savingCharId, setSavingCharId] = useState<string | null>(null);
   const [charSaveSuccess, setCharSaveSuccess] = useState<string | null>(null);
+  const [economyMode, setEconomyMode] = useState<boolean>(false);
 
   // Breakdown & Multi-Cam Shots State
   const [shotsMap, setShotsMap] = useState<Record<string, ShotProposal[]>>({});
@@ -208,17 +247,21 @@ export const ScriptStudio: React.FC = () => {
   const [focusDistanceM, setFocusDistanceM] = useState<number>(3);
   const [whiteBalanceK, setWhiteBalanceK] = useState<number>(5600);
   const [customPresets, setCustomPresets] = useState<Record<string, any>>({});
-  const [presetsDict, setPresetsDict] = useState<Record<string, any>>({});
+  const [presetsDict, setPresetsDict] = useState<Record<string, any>>(DEFAULT_DOP_PRESETS);
   const [enlargedImage, setEnlargedImage] = useState<{ url: string; prompt: string; title: string } | null>(null);
   const [generatingCamMap, setGeneratingCamMap] = useState<Record<string, boolean>>({});
   const [showCamSettings, setShowCamSettings] = useState<boolean>(false);
+  const [showShotScript, setShowShotScript] = useState<boolean>(false);
+  const [popupCharacter, setPopupCharacter] = useState<CharacterProfile | null>(null);
 
-  // Load custom presets on mount
+  // Load custom presets on mount and merge with DEFAULT_DOP_PRESETS
   React.useEffect(() => {
     try {
       const stored = localStorage.getItem('cinespine_custom_presets');
       if (stored) {
-        setCustomPresets(JSON.parse(stored));
+        const parsed = JSON.parse(stored);
+        setCustomPresets(parsed);
+        setPresetsDict(prev => ({ ...DEFAULT_DOP_PRESETS, ...prev, ...parsed }));
       }
     } catch (e) {
       console.warn("Failed to load custom presets:", e);
@@ -243,10 +286,16 @@ export const ScriptStudio: React.FC = () => {
     [geometry.frame, customFocalLength, customAperture, focusDistanceM]
   );
 
-  // CSS pixel blur simulation for the visual DoF engine
+  // CSS pixel blur simulation for the visual DoF engine. Measured against the
+  // viewfinder's real width so the same lens reads the same at any panel size,
+  // and against the extraction rather than the gate so a height-limited ratio
+  // is not understated.
+  const [viewfinderRef, viewfinderWidthPx] = useMeasuredWidth<HTMLDivElement>();
   const visualBlurRadius = useMemo(
-    () => backgroundBlurRadius(customFocalLength, dof.fNumber, focusDistanceM, geometry.sensor.widthMm),
-    [customFocalLength, dof.fNumber, focusDistanceM, geometry.sensor.widthMm]
+    () => backgroundBlurRadius(
+      customFocalLength, dof.fNumber, focusDistanceM, geometry.frame.widthMm, viewfinderWidthPx || 1000
+    ),
+    [customFocalLength, dof.fNumber, focusDistanceM, geometry.frame.widthMm, viewfinderWidthPx]
   );
 
   // Pixel dimensions the current extraction actually delivers
@@ -270,18 +319,6 @@ export const ScriptStudio: React.FC = () => {
     const v = Math.min(Math.max(m, DEPTH_SCALE_MIN_M), DEPTH_SCALE_MAX_M);
     return (Math.log(v / DEPTH_SCALE_MIN_M) / Math.log(DEPTH_SCALE_MAX_M / DEPTH_SCALE_MIN_M)) * 100;
   };
-
-  /**
-   * Background blur strength as a stand-in for shallow focus. Derived from the
-   * computed depth of field rather than a hardcoded aperture list, but still an
-   * approximation: a real defocus needs a depth map, not a radial mask.
-   */
-  const defocusPx = useMemo(() => {
-    if (!isFinite(dof.totalM)) return 0;
-    // Roughly: under ~10cm of depth is very shallow, beyond ~3m is deep focus.
-    const shallowness = Math.min(Math.max((3 - dof.totalM) / 3, 0), 1);
-    return +(shallowness * 4).toFixed(2);
-  }, [dof.totalM]);
 
   // Dynamic Real-Time DoP Prompt Compiler
   const compileDoPPromptPreview = (): string => {
@@ -326,6 +363,7 @@ export const ScriptStudio: React.FC = () => {
           color_temp_k: customColorTemp,
           lut_emulation: customLutEmulation,
           aspect_ratio: aspectRatio,
+          economy_mode: economyMode,
           // Use the characters actually present in the selected scene, not the
           // first in the cast list.
           character_details: getActiveCharacterDetails() || undefined
@@ -348,17 +386,19 @@ export const ScriptStudio: React.FC = () => {
       .then(res => res.json())
       .then(data => {
         if (data.presets) {
-          setPresetsDict(_prev => ({ ...data.presets, ...customPresets }));
+          setPresetsDict(prev => ({ ...DEFAULT_DOP_PRESETS, ...data.presets, ...prev, ...customPresets }));
         }
       })
-      .catch(err => console.error('Failed to load DoP presets:', err));
+      .catch(err => {
+        console.warn('Using built-in Master DoP catalog (backend offline or loading):', err);
+      });
 
     handleParseScript(DEMO_FOUNTAIN_SCRIPT);
   }, []);
 
   // Update presetsDict when customPresets changes
   useEffect(() => {
-    setPresetsDict(prev => ({ ...prev, ...customPresets }));
+    setPresetsDict(prev => ({ ...DEFAULT_DOP_PRESETS, ...prev, ...customPresets }));
   }, [customPresets]);
 
   const globalDopSettings: DopSettings = {
@@ -442,8 +482,13 @@ export const ScriptStudio: React.FC = () => {
     });
   };
 
+  const [isParsingDemo, setIsParsingDemo] = useState<boolean>(false);
+  const [uploadStage, setUploadStage] = useState<string>('Ingesting screenplay file...');
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+
   // Parse Script Handler
   const handleParseScript = async (textToParse: string, title?: string) => {
+    setIsParsingDemo(true);
     try {
       const activeTitle = title || scriptTitle;
       const res = await fetch('/api/script/parse', {
@@ -465,6 +510,8 @@ export const ScriptStudio: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to parse screenplay:', err);
+    } finally {
+      setIsParsingDemo(false);
     }
   };
 
@@ -562,7 +609,8 @@ export const ScriptStudio: React.FC = () => {
           color_temp_k: cam.dop_spec?.color_temp_k || customColorTemp,
           lut_emulation: cam.dop_spec?.lut_emulation || customLutEmulation,
           aspect_ratio: aspectRatio,
-          character_details: charDetails
+          character_details: charDetails,
+          economy_mode: economyMode
         })
       });
 
@@ -796,7 +844,8 @@ export const ScriptStudio: React.FC = () => {
           look_and_costume: char.look_and_costume,
           facial_features: char.facial_features,
           role: char.role,
-          dop_preset: selectedPreset
+          dop_preset: selectedPreset,
+          economy_mode: economyMode
         })
       });
       if (res.ok) {
@@ -861,9 +910,13 @@ export const ScriptStudio: React.FC = () => {
     () => depthOfField(selectedCamGeometry.frame, selectedCamFocalLength, customAperture, focusDistanceM),
     [selectedCamGeometry.frame, selectedCamFocalLength, customAperture, focusDistanceM]
   );
+  const [previzFrameRef, previzFrameWidthPx] = useMeasuredWidth<HTMLDivElement>();
   const selectedCamBlurRadius = useMemo(
-    () => backgroundBlurRadius(selectedCamFocalLength, selectedCamDof.fNumber, focusDistanceM, selectedCamGeometry.sensor.widthMm),
-    [selectedCamFocalLength, selectedCamDof.fNumber, focusDistanceM, selectedCamGeometry.sensor.widthMm]
+    () => backgroundBlurRadius(
+      selectedCamFocalLength, selectedCamDof.fNumber, focusDistanceM,
+      selectedCamGeometry.frame.widthMm, previzFrameWidthPx || 1000
+    ),
+    [selectedCamFocalLength, selectedCamDof.fNumber, focusDistanceM, selectedCamGeometry.frame.widthMm, previzFrameWidthPx]
   );
 
   // Script Upload State
@@ -876,6 +929,28 @@ export const ScriptStudio: React.FC = () => {
     if (!file) return;
     setIsUploading(true);
     setUploadedFileName(file.name);
+    setUploadStage('Ingesting file & normalizing screenplay text...');
+    setUploadProgress(15);
+
+    const timer1 = setTimeout(() => {
+      setUploadStage('Extracting scene headers, action blocks & dialogue...');
+      setUploadProgress(38);
+    }, 1200);
+
+    const timer2 = setTimeout(() => {
+      setUploadStage('Running Gemini AI character inference & cast profiling...');
+      setUploadProgress(68);
+    }, 3800);
+
+    const timer3 = setTimeout(() => {
+      setUploadStage('Compiling multi-camera setups (Cam A, B, C) & optical matrix...');
+      setUploadProgress(88);
+    }, 8000);
+
+    const timer4 = setTimeout(() => {
+      setUploadStage('Finalizing persistent character profiles & studio scenes...');
+      setUploadProgress(95);
+    }, 14000);
 
     try {
       const formData = new FormData();
@@ -901,23 +976,30 @@ export const ScriptStudio: React.FC = () => {
         setSelectedShotId(null);
       } else {
         const text = await file.text();
-        handleParseScript(text, file.name.replace(/\.[^/.]+$/, ''));
+        await handleParseScript(text, file.name.replace(/\.[^/.]+$/, ''));
       }
     } catch (err) {
       console.error('Screenplay upload failed, parsing locally:', err);
       try {
         const text = await file.text();
-        handleParseScript(text, file.name.replace(/\.[^/.]+$/, ''));
+        await handleParseScript(text, file.name.replace(/\.[^/.]+$/, ''));
       } catch (readErr) {
         console.error('Local text read failed:', readErr);
       }
     } finally {
-      setIsUploading(false);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      clearTimeout(timer3);
+      clearTimeout(timer4);
+      setUploadProgress(100);
+      setTimeout(() => {
+        setIsUploading(false);
+      }, 400);
     }
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#090D16] text-slate-100 font-sans">
+    <div className="flex flex-col h-full bg-[#090D16] text-slate-100 font-sans relative">
       {/* Hidden File Input for Screenplay Upload */}
       <input
         type="file"
@@ -969,10 +1051,18 @@ export const ScriptStudio: React.FC = () => {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isUploading}
-            className="px-3.5 py-1.5 text-xs font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-200 rounded-md border border-purple-500/40 transition flex items-center gap-1.5 shadow-sm"
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-md border transition flex items-center gap-1.5 shadow-sm ${
+              isUploading
+                ? 'bg-purple-900/80 text-purple-200 border-purple-400 animate-pulse cursor-wait'
+                : 'bg-purple-950/60 hover:bg-purple-900/80 text-purple-200 border-purple-500/40'
+            }`}
           >
-            <Upload className={`w-3.5 h-3.5 text-purple-400 ${isUploading ? 'animate-bounce' : ''}`} />
-            {isUploading ? 'Uploading & Parsing...' : 'Upload Script (.fountain / .md / .txt / .pdf)'}
+            {isUploading ? (
+              <Loader2 className="w-3.5 h-3.5 text-purple-300 animate-spin" />
+            ) : (
+              <Upload className="w-3.5 h-3.5 text-purple-400" />
+            )}
+            {isUploading ? 'Ingesting Screenplay...' : 'Upload Script (.fountain / .md / .txt / .pdf)'}
           </button>
 
           <button
@@ -980,10 +1070,29 @@ export const ScriptStudio: React.FC = () => {
               setUploadedFileName(null);
               handleParseScript(DEMO_FOUNTAIN_SCRIPT);
             }}
-            className="px-3.5 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md border border-slate-700 transition flex items-center gap-1.5"
+            disabled={isUploading || isParsingDemo}
+            className="px-3.5 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md border border-slate-700 transition flex items-center gap-1.5 disabled:opacity-50"
           >
-            <FileText className="w-3.5 h-3.5 text-slate-400" />
-            Load Demo Script
+            {isParsingDemo ? (
+              <Loader2 className="w-3.5 h-3.5 text-slate-400 animate-spin" />
+            ) : (
+              <FileText className="w-3.5 h-3.5 text-slate-400" />
+            )}
+            {isParsingDemo ? 'Loading Demo...' : 'Load Demo Script'}
+          </button>
+
+          {/* Economy Mode Toggle */}
+          <button
+            onClick={() => setEconomyMode(!economyMode)}
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-md border transition flex items-center gap-1.5 shadow-sm ${
+              economyMode
+                ? 'bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border-emerald-500/40'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700'
+            }`}
+            title="Economy Mode uses free APIs and caches to save AI credits"
+          >
+            <ShieldCheck className={`w-3.5 h-3.5 ${economyMode ? 'text-emerald-400' : 'text-slate-500'}`} />
+            Economy Mode {economyMode ? 'ON' : 'OFF'}
           </button>
         </div>
       </div>
@@ -1216,7 +1325,10 @@ export const ScriptStudio: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Actor Screen Reference &amp; Physical Appearance</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-bold text-slate-300">Actor Screen Reference &amp; Physical Appearance</label>
+                      <span className="text-[10px] font-medium text-purple-400">Gender, Age &amp; Build</span>
+                    </div>
                     <textarea
                       rows={2}
                       value={selectedCharacter.actor_reference}
@@ -1224,10 +1336,39 @@ export const ScriptStudio: React.FC = () => {
                         const val = e.target.value;
                         setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, actor_reference: val } : c)));
                       }}
-                      placeholder="e.g. Late 30s man, intense sunken eyes, dark wavy hair, weathered features, rugged jawline..."
+                      placeholder="e.g. Early 30s woman, 5'7&quot; wiry athletic build, dark cropped hair, resolute bearing, intense gaze..."
                       className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500 font-sans"
                     />
-                    <p className="text-[10px] text-slate-400 mt-1">Defines actor age, physique, build, hair, and baseline screen presence.</p>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Quick Traits:</span>
+                      {[
+                        'Woman',
+                        'Man',
+                        'Non-Binary',
+                        '20s',
+                        '30s',
+                        '40s',
+                        '50s+',
+                        'Athletic build',
+                        'Wiry frame',
+                        'Tall & commanding',
+                        'Broad shoulders'
+                      ].map(tag => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => {
+                            const current = (selectedCharacter.actor_reference || '').trim();
+                            const updated = current ? `${current}, ${tag.toLowerCase()}` : `${tag}, `;
+                            setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, actor_reference: updated } : c)));
+                          }}
+                          className="px-2 py-0.5 text-[10px] font-semibold bg-slate-800 hover:bg-purple-900/60 hover:text-purple-200 text-slate-300 border border-slate-700 hover:border-purple-500/40 rounded-md transition"
+                        >
+                          + {tag}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">Defines actor gender presentation (e.g. woman, man, non-binary), age, physique, build, hair, and baseline screen presence.</p>
                   </div>
 
                   <div>
@@ -1323,9 +1464,9 @@ export const ScriptStudio: React.FC = () => {
                                 {rel.shared_scenes.length > 0 ? `Scenes: ${rel.shared_scenes.join(', ')}` : 'Shared Scene'}
                               </span>
                               {rel.interaction_count > 0 && (
-                                <span className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">
+                                <button onClick={() => setPopupCharacter(characters.find(char => char.name === rel.target_character) || null)} className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30 hover:bg-emerald-500/30 transition">
                                   {rel.interaction_count} Dialogue Turns
-                                </span>
+                                </button>
                               )}
                             </div>
 
@@ -1403,15 +1544,15 @@ export const ScriptStudio: React.FC = () => {
                       <p className="text-[11px] text-slate-400 line-clamp-2 mt-1 leading-relaxed">
                         {sc.action_blocks[0] || 'No action description'}
                       </p>
-                      {sc.characters && sc.characters.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {sc.characters.map((cName, cIdx) => (
-                            <span key={cIdx} className="px-1.5 py-0.2 text-[9px] font-semibold bg-slate-800 text-purple-300 rounded border border-purple-500/20">
-                              {cName}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                        {sc.characters && sc.characters.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {sc.characters.map((cName, cIdx) => (
+                              <button key={cIdx} onClick={(e) => { e.stopPropagation(); setPopupCharacter(characters.find(c => c.name === cName) || null); }} className="px-1.5 py-0.2 text-[9px] font-semibold bg-slate-800 text-purple-300 rounded border border-purple-500/20 hover:bg-slate-700 transition cursor-pointer">
+                                {cName}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                     </div>
 
                     {/* Dedicated Scene Card Breakdown Button */}
@@ -1436,7 +1577,7 @@ export const ScriptStudio: React.FC = () => {
                       ) : (
                         <>
                           <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                          {hasShots ? `⚡ Re-Run AI 3-Cam Breakdown` : `⚡ Run AI 3-Cam Breakdown`}
+                          {hasShots ? `⚡ Re-Run AI-Cam Breakdown` : `⚡ Run AI-Cam Breakdown`}
                         </>
                       )}
                     </button>
@@ -1464,7 +1605,7 @@ export const ScriptStudio: React.FC = () => {
                   <div>
                     <p className="text-xs font-bold text-slate-200">No Shot Setups Generated Yet</p>
                     <p className="text-[11px] text-slate-500 mt-1 max-w-xs">
-                      Click <strong className="text-purple-400">"⚡ Run AI 3-Cam Breakdown"</strong> on any scene card on the left to generate 3 synchronized camera angles.
+                      Click <strong className="text-purple-400">"⚡ Run AI-Cam Breakdown"</strong> on any scene card on the left to generate synchronized camera angles.
                     </p>
                   </div>
                   {currentScene && (
@@ -1624,17 +1765,31 @@ export const ScriptStudio: React.FC = () => {
                       {selectedCam.focal_length}mm • {selectedCam.aperture} • {aspectRatio}
                     </span>
                     <button
-                      onClick={() => setShowCamSettings(!showCamSettings)}
+                      onClick={() => {
+                        setShowCamSettings(!showCamSettings);
+                        if (!showCamSettings) setShowShotScript(false);
+                      }}
                       className={`p-1.5 rounded-lg transition ${showCamSettings ? 'bg-purple-600 text-white shadow-md' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
                       title="Camera DoP Overrides"
                     >
                       <Sliders className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowShotScript(!showShotScript);
+                        if (!showShotScript) setShowCamSettings(false);
+                      }}
+                      className={`p-1.5 rounded-lg transition ${showShotScript ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+                      title="Shot Script & Scene Context"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
 
                 {/* Main Previz Frame Display */}
                 <div
+                  ref={previzFrameRef}
                   className="relative rounded-xl overflow-hidden border border-slate-700 bg-slate-950 shadow-2xl group"
                   style={{ aspectRatio: `${selectedCamGeometry.aspect}` }}
                 >
@@ -1729,6 +1884,68 @@ export const ScriptStudio: React.FC = () => {
                     </div>
                   </div>
                 )}
+
+                {showShotScript && (() => {
+                  const shotScene = parsedScenes.find(s => s.scene_number === selectedShot.scene_number);
+                  if (!shotScene) return null;
+                  const rawLines = (shotScene.raw_content || '').split('\n');
+                  return (
+                    <div className="p-5 bg-slate-900/95 border border-indigo-500/50 rounded-xl shadow-lg shadow-indigo-500/10 h-[500px] flex flex-col">
+                      <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
+                        <div>
+                          <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-indigo-400" />
+                            Script Context: Scene {selectedShot.scene_number} ({selectedShot.shot_name})
+                          </h4>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mr-1">Cast in Shot:</span>
+                            {selectedShot.characters && selectedShot.characters.length > 0 ? (
+                              selectedShot.characters.map(c => (
+                                <button key={c} onClick={() => setPopupCharacter(characters.find(char => char.name === c) || null)} className="px-1.5 py-0.5 text-[9px] font-bold bg-indigo-950/60 text-indigo-200 border border-indigo-500/30 rounded hover:bg-indigo-900 transition cursor-pointer">
+                                  {c}
+                                </button>
+                              ))
+                            ) : (
+                              <span className="text-[10px] text-slate-500 italic">None specified</span>
+                            )}
+                          </div>
+                        </div>
+                        <button onClick={() => setShowShotScript(false)} className="text-slate-400 hover:text-white self-start">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="flex-1 overflow-y-auto pr-2 space-y-1.5 font-mono text-[11px] leading-relaxed custom-scrollbar">
+                        <h4 className="text-xs font-black text-slate-200 mb-4">{shotScene.heading}</h4>
+                        {(() => {
+                          let insideCharBlock = false;
+                          let currentSpeaker = "";
+                          return rawLines.map((line, lIdx) => {
+                            const trimmed = line.trim();
+                            if (!trimmed) {
+                              insideCharBlock = false;
+                              currentSpeaker = "";
+                              return <div key={lIdx} className="h-2" />;
+                            }
+                            
+                            const isCharMatch = selectedShot.characters?.includes(trimmed);
+                            if (isCharMatch) {
+                              insideCharBlock = true;
+                              currentSpeaker = trimmed;
+                            }
+                            
+                            const isHighlighted = insideCharBlock && selectedShot.characters?.includes(currentSpeaker);
+                            
+                            return (
+                              <div key={lIdx} className={`whitespace-pre-wrap ${isHighlighted ? 'bg-indigo-900/50 text-indigo-100 border-l-[3px] border-indigo-500 pl-3 -ml-3 py-0.5 font-medium shadow-sm' : 'text-slate-400'}`}>
+                                {line}
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Quick Optics Tuners (Focal Length, Aperture, Shot Size) */}
                 <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2.5">
@@ -1918,6 +2135,7 @@ export const ScriptStudio: React.FC = () => {
 
             {/* Optical Viewfinder Canvas — open gate with delivery extraction */}
             <div
+              ref={viewfinderRef}
               className="relative rounded-2xl overflow-hidden border-2 border-slate-700 bg-black shadow-2xl group flex items-center justify-center"
               style={{
                 // Open gate when the surround view is on, delivery ratio when off.
@@ -1964,22 +2182,6 @@ export const ScriptStudio: React.FC = () => {
                   mixBlendMode: 'multiply'
                 }}
               />
-
-              {/* Shallow-focus approximation, strength driven by the computed depth of
-                  field. Masked to the frame edges — a true defocus needs a depth map. */}
-              {defocusPx > 0.05 && (
-                <div
-                  className="absolute inset-0 pointer-events-none"
-                  style={{
-                    backdropFilter: `blur(${defocusPx}px)`,
-                    WebkitBackdropFilter: `blur(${defocusPx}px)`,
-                    WebkitMaskImage:
-                      'radial-gradient(ellipse 60% 65% at 50% 50%, transparent 35%, black 100%)',
-                    maskImage:
-                      'radial-gradient(ellipse 60% 65% at 50% 50%, transparent 35%, black 100%)'
-                  } as React.CSSProperties}
-                />
-              )}
 
               {/* Delivery Extraction Window.
                   When the surround is on, the container is the full open gate and this
@@ -2328,6 +2530,124 @@ export const ScriptStudio: React.FC = () => {
             <div className="p-4 bg-slate-900/90 text-xs font-mono text-slate-300">
               {enlargedImage.prompt}
             </div>
+          </div>
+        </div>
+      )}
+    
+      {popupCharacter && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setPopupCharacter(null)}>
+          <div className="relative w-full max-w-4xl max-h-[90vh] bg-[#090D16] border border-slate-700 rounded-2xl shadow-2xl overflow-y-auto custom-scrollbar flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 right-0 p-4 flex justify-end z-10 bg-gradient-to-b from-[#090D16] to-transparent">
+              <button onClick={() => setPopupCharacter(null)} className="p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white rounded-full backdrop-blur transition shadow-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-8 pb-8 -mt-6">
+              <CharacterProfileCard
+                selectedCharacter={popupCharacter}
+                characters={characters}
+                setCharacters={setCharacters}
+                savingCharId={savingCharId}
+                charSaveSuccess={charSaveSuccess}
+                charSaveError={charSaveError}
+                handleUpdateCharacter={handleUpdateCharacter}
+                generatingPortraitMap={generatingPortraitMap}
+                handleGenerateCharacterPortrait={handleGenerateCharacterPortrait}
+                setEnlargedImage={setEnlargedImage}
+                setSelectedCharId={(id) => {
+                  setSelectedCharId(id);
+                  setPopupCharacter(characters.find(c => c.id === id) || null);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Screenplay Ingestion & AI Parsing HUD Modal */}
+      {isUploading && (
+        <div className="fixed inset-0 z-[120] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="max-w-md w-full bg-[#0F172A] border border-purple-500/50 rounded-2xl p-6 shadow-2xl shadow-purple-500/20 text-center flex flex-col items-center relative overflow-hidden">
+            {/* Top Glowing Gradient Bar */}
+            <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 animate-pulse"></div>
+
+            {/* Pulsing Film Clapper & Orbit Glow */}
+            <div className="relative my-3">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-purple-600 via-purple-700 to-pink-600 flex items-center justify-center shadow-xl shadow-purple-600/40 animate-pulse">
+                <Film className="w-8 h-8 text-white" />
+              </div>
+              <div className="absolute -inset-2 rounded-2xl border-2 border-purple-500/30 animate-ping opacity-25 pointer-events-none"></div>
+            </div>
+
+            <h3 className="text-base font-bold text-white mb-1">
+              Ingesting &amp; Parsing Screenplay
+            </h3>
+            <p className="text-xs font-mono font-semibold text-purple-300 mb-4 truncate max-w-full px-2">
+              {uploadedFileName || 'Processing document...'}
+            </p>
+
+            {/* Smooth Dynamic Progress Bar */}
+            <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800 mb-3 shadow-inner">
+              <div
+                className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 rounded-full transition-all duration-700 ease-out shadow-sm"
+                style={{ width: `${Math.max(10, uploadProgress)}%` }}
+              ></div>
+            </div>
+
+            {/* Live Pipeline Action Indicator */}
+            <div className="w-full flex items-center justify-center gap-2 text-xs font-bold text-slate-200 mb-4 bg-slate-950/80 py-2 px-3 rounded-xl border border-purple-500/30 shadow-inner">
+              <Loader2 className="w-4 h-4 text-purple-400 animate-spin shrink-0" />
+              <span className="truncate">{uploadStage}</span>
+            </div>
+
+            {/* Step-by-Step Architecture Pipeline */}
+            <div className="w-full space-y-2 text-left text-[11px] font-mono text-slate-400 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
+              <div className={`flex items-center gap-2.5 transition-colors ${uploadProgress >= 20 ? 'text-emerald-400 font-bold' : 'text-slate-500'}`}>
+                {uploadProgress >= 20 ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : (
+                  <div className="w-4 h-4 rounded-full border border-slate-700 flex items-center justify-center text-[9px] text-slate-600">1</div>
+                )}
+                <span>Multi-Format File Ingest &amp; Normalization</span>
+              </div>
+
+              <div className={`flex items-center gap-2.5 transition-colors ${uploadProgress >= 50 ? 'text-emerald-400 font-bold' : uploadProgress >= 20 ? 'text-purple-300 font-bold' : 'text-slate-500'}`}>
+                {uploadProgress >= 50 ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : uploadProgress >= 20 ? (
+                  <Loader2 className="w-4 h-4 text-purple-400 animate-spin shrink-0" />
+                ) : (
+                  <div className="w-4 h-4 rounded-full border border-slate-700 flex items-center justify-center text-[9px] text-slate-600">2</div>
+                )}
+                <span>Scene Sluglines, Actions &amp; Dialogue Blocks</span>
+              </div>
+
+              <div className={`flex items-center gap-2.5 transition-colors ${uploadProgress >= 80 ? 'text-emerald-400 font-bold' : uploadProgress >= 50 ? 'text-purple-300 font-bold' : 'text-slate-500'}`}>
+                {uploadProgress >= 80 ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : uploadProgress >= 50 ? (
+                  <Loader2 className="w-4 h-4 text-purple-400 animate-spin shrink-0" />
+                ) : (
+                  <div className="w-4 h-4 rounded-full border border-slate-700 flex items-center justify-center text-[9px] text-slate-600">3</div>
+                )}
+                <span>Gemini AI Cast Profiler &amp; Visual Traits</span>
+              </div>
+
+              <div className={`flex items-center gap-2.5 transition-colors ${uploadProgress >= 95 ? 'text-emerald-400 font-bold' : uploadProgress >= 80 ? 'text-purple-300 font-bold' : 'text-slate-500'}`}>
+                {uploadProgress >= 95 ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : uploadProgress >= 80 ? (
+                  <Loader2 className="w-4 h-4 text-purple-400 animate-spin shrink-0" />
+                ) : (
+                  <div className="w-4 h-4 rounded-full border border-slate-700 flex items-center justify-center text-[9px] text-slate-600">4</div>
+                )}
+                <span>Multi-Camera (A, B, C) Previz Initialization</span>
+              </div>
+            </div>
+
+            <p className="text-[10px] text-slate-500 mt-3 italic">
+              AI evaluates character action and dialogue to ensure visual consistency across all camera angles.
+            </p>
           </div>
         </div>
       )}
