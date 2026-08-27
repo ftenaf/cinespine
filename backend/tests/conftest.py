@@ -44,6 +44,7 @@ def no_live_ai_calls(monkeypatch):
     # Same reasoning for lined pages: uploading a facing-pages PDF would
     # otherwise make a live, billed vision call on every run.
     monkeypatch.setenv("CINESPINE_DISABLE_LINING_EXTRACTION", "1")
+    monkeypatch.setenv("CINESPINE_DISABLE_CAMERA_REPORT_VISION", "1")
     yield
 
 

@@ -18,7 +18,7 @@ from backend.app.parsers.pdf_parsers import (
     parse_silverstack_volume_text,
     parse_silverstack_pdf_text,
 )
-from backend.app.parsers.base import ParserFailureError
+from backend.app.parsers.base import ParsedCameraRecord, ParserFailureError
 from backend.app.normalizers.slates import normalize_slate
 from backend.app.normalizers.takes import normalize_take
 
@@ -82,8 +82,14 @@ class IngestionDispatcher:
             fn = (envelope.filename or "").upper()
             content = envelope.raw_content
 
-            # Check if PDF format
-            if fn.endswith(".PDF") or "ZOELOG" in content.upper():
+            # A handwritten report has already been read, as a picture, during
+            # upload: its rows are ink and no text parser can see them. Where
+            # those rows exist they are the document, so parsing the text layer
+            # would add nothing and find nothing.
+            handwritten = envelope.metadata.get("handwritten_rows") or []
+            if handwritten:
+                records = [ParsedCameraRecord(**row) for row in handwritten]
+            elif fn.endswith(".PDF") or "ZOELOG" in content.upper():
                 records = parse_zoelog_camera_text(content)
             else:
                 records = parse_camera_csv(content)
@@ -111,6 +117,7 @@ class IngestionDispatcher:
                         "is_pickup": rec.is_pickup,
                         "is_vfx": rec.is_vfx,
                         "note": rec.note,
+                        "raw_payload": rec.raw_payload,
                     },
                     "metadata": envelope.metadata,
                     "timestamp": envelope.timestamp,
@@ -140,6 +147,16 @@ class IngestionDispatcher:
                 except Exception:
                     records = parse_editors_log_text(content)
 
+            # A lined page's circles are ink drawn on the printed script. The
+            # asterisk in its text layer is the export's typed marker, and the
+            # absence of one is not evidence that nobody drew a circle -- the
+            # drawing simply does not reach us. So this document may report that
+            # a take was circled and may not report that it was not: None means
+            # "no claim", which the reconciliation engine already skips.
+            # Reading silence as a denial produced conflicts against the
+            # timecode log on every take the export did not mark.
+            can_deny_circle = envelope.doc_type != DocumentType.SCRIPT_LINED
+
             for rec in records:
                 spine_event: Dict[str, Any] = {
                     "event_id": envelope.event_id,
@@ -157,7 +174,7 @@ class IngestionDispatcher:
                         "recording_date": rec.recording_date,
                         "timecode_in": rec.timecode_in,
                         "timecode_out": rec.timecode_out,
-                        "is_starred": rec.is_starred,
+                        "is_starred": True if rec.is_starred else (False if can_deny_circle else None),
                         "is_pickup": rec.is_pickup,
                         "is_wild_track": rec.is_wild_track,
                         "is_vfx": rec.is_vfx,

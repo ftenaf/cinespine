@@ -116,3 +116,70 @@ Lens: LH: D: Fltr: T:
         assert rec.is_starred is True
         assert rec.timecode_in == "13:52:08:10"
         assert rec.timecode_out == "13:53:19:13"
+
+
+# --------------------------------------------------------------------------- #
+# A shot that plays in more than one scene
+# --------------------------------------------------------------------------- #
+
+# Taken from the facing pages for scene 117: three consecutive shots, each with
+# its own camera card. The middle and last slates name compound scenes.
+FACING_PAGE_COMPOUND_SLATES = """
+LAC - V31 Scene:117
+Slate Take Description CR SR Time Camera Info Comments
+119/5 1 Scene(s): 117 A046 300626 0:34 FrR: 48 WE DO NOT HAVE A
+Shot on Day: Day 11 REVERSE SHOT TO
+Sticks - cu. H/A CU Emily CUT TO.
+41+122A/4 1 Scene(s): 38, 117 A068 060726 0:18
+Shot on Day: Day 15
+Dolly - cu. MC2s Julian/Emily, slide in
+3 0:20
+97+121/4 1 Scene(s): 93, 117 A080 090726 0:17 Tail Sticks
+Shot on Day: Day 18
+"""
+
+
+class TestCompoundSceneSlates:
+    """
+    A slate's scene half can be a compound -- 41+122A/4 -- which is how one setup
+    covering two scenes is filed. Read as a bare number it matched no header, so
+    the row was absorbed into the shot above and handed it a card belonging to a
+    different shot.
+    """
+
+    def _by_slate(self):
+        recs = parse_scripte_detailed_editor_log_text(FACING_PAGE_COMPOUND_SLATES)
+        return {(r.slate, r.take_id): r for r in recs}
+
+    def test_a_compound_scene_slate_is_a_slate(self):
+        found = self._by_slate()
+        assert ("41+122A/4", "1") in found
+        assert ("97+121/4", "1") in found
+
+    def test_each_shot_keeps_its_own_card(self):
+        found = self._by_slate()
+        assert found[("119/5", "1")].camera_roll == "A046"
+        assert found[("41+122A/4", "1")].camera_roll == "A068"
+        assert found[("97+121/4", "1")].camera_roll == "A080"
+
+    def test_a_shot_does_not_collect_the_cards_of_the_shots_below_it(self):
+        """The reported symptom: 119/5 Take 1 claiming A046, A068 and A080."""
+        rolls = {r.camera_roll for r in parse_scripte_detailed_editor_log_text(
+            FACING_PAGE_COMPOUND_SLATES) if r.slate == "119/5"}
+        assert rolls == {"A046"}
+
+    def test_the_scene_is_the_whole_compound(self):
+        assert self._by_slate()[("41+122A/4", "1")].scene == "41+122A"
+
+    def test_a_row_whose_slate_cannot_be_read_is_dropped_not_reassigned(self):
+        """
+        An unplaceable header is worth losing. Attributing its card to whatever
+        shot came before it is what turned one take into three conflicting ones.
+        """
+        text = """
+Slate Take Description CR SR Time Camera Info Comments
+119/5 1 Scene(s): 117 A046 300626 0:34
+??? Scene(s): 93, 117 A080 090726 0:17
+"""
+        recs = parse_scripte_detailed_editor_log_text(text)
+        assert [(r.slate, r.camera_roll) for r in recs] == [("119/5", "A046")]
