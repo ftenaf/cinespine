@@ -369,6 +369,45 @@ def extract_script_camera_roll_and_date(text: str) -> tuple[Optional[str], Optio
     return None, None
 
 
+def unify_take_level_marks(records: List[ParsedScriptRecord]) -> List[ParsedScriptRecord]:
+    """
+    Applies each take's marks to every row that take produced.
+
+    A multi-camera take is one take recorded on several cameras, and the script
+    supervisor writes its marks once -- the circle goes on the first camera's
+    row, and the rows beneath it just repeat the take number. Read row by row,
+    camera A comes back circled and cameras B and C come back not circled, so
+    one take disagrees with itself and the reconciliation engine reports a
+    conflict that nobody on set would recognise.
+
+    These are properties of the take, not of the camera, so a mark found on any
+    row belongs to all of them.
+    """
+    marks = ("is_starred", "is_pickup", "is_false_start", "is_wild_track", "is_vfx", "is_mos")
+
+    by_take: Dict[tuple, Dict[str, bool]] = {}
+    for rec in records:
+        if not rec.slate or not rec.take_id:
+            continue
+        key = (rec.slate, rec.take_id)
+        seen = by_take.setdefault(key, {m: False for m in marks})
+        for m in marks:
+            if getattr(rec, m, False):
+                seen[m] = True
+
+    for rec in records:
+        if not rec.slate or not rec.take_id:
+            continue
+        seen = by_take.get((rec.slate, rec.take_id))
+        if not seen:
+            continue
+        for m in marks:
+            if seen[m] and not getattr(rec, m, False):
+                setattr(rec, m, True)
+
+    return records
+
+
 def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
     """
     Parses Scripte Daily Timecode Log text (e.g. DEMO_TCLog_D031_280726.pdf) using state machine.
@@ -487,7 +526,7 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
         # Fallback to general editor log parser
         return parse_editors_log_text(text)
 
-    return records
+    return unify_take_level_marks(records)
 
 
 def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord]:
@@ -649,7 +688,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
     if not records:
         return parse_editors_log_text(text)
 
-    return records
+    return unify_take_level_marks(records)
 
 
 def parse_editors_log_text(text: str) -> List[ParsedScriptRecord]:
@@ -701,7 +740,7 @@ def parse_editors_log_text(text: str) -> List[ParsedScriptRecord]:
     if not records:
         raise ParserFailureError("Editor's Log parser yielded zero valid records")
 
-    return records
+    return unify_take_level_marks(records)
 
 
 def parse_silverstack_volume_text(text: str) -> List[ParsedSilverstackClip]:
