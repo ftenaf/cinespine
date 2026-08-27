@@ -3,7 +3,7 @@
 > **The Autonomous Append-Only Event Spine, 3-Axis Discrepancy Engine & Multi-Camera AI Previz Studio for Film & TV Production**  
 > *Submitted to [Agentic Cinema: The Blockbuster Hackathon](https://agentic-cinema.devpost.com/) (Google Cloud & Partner Ecosystem: ClickHouse, Grafana Labs, Replit).*
 
-[![CI Test Suite](https://img.shields.io/badge/Pytest-100%2F100%20Green-brightgreen.svg)](https://github.com/ftenaf/cinespine/actions)
+[![CI Test Suite](https://img.shields.io/badge/Pytest-173%20passed-brightgreen.svg)](https://github.com/ftenaf/cinespine/actions)
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11%20%7C%203.14-blue.svg)](https://python.org)
 [![Google Cloud: Gemini & Imagen 3](https://img.shields.io/badge/Google%20Cloud-Gemini%202.0%20%26%20Imagen%203-4285F4.svg)](https://cloud.google.com/vertex-ai)
 [![Event Spine: ClickHouse](https://img.shields.io/badge/Event%20Spine-ClickHouse%20OLAP-FEE000.svg)](https://clickhouse.com)
@@ -184,154 +184,6 @@ flowchart LR
     end
 
     Producers -->|"POST /api/events/publish"| EventSpine
-# 🎬 CineSpine
-
-> **The Autonomous Append-Only Event Spine, 3-Axis Discrepancy Engine & Multi-Camera AI Previz Studio for Film & TV Production**  
-> *Submitted to [Agentic Cinema: The Blockbuster Hackathon](https://agentic-cinema.devpost.com/) (Google Cloud & Partner Ecosystem: ClickHouse, Grafana Labs, Replit).*
-
-[![CI Test Suite](https://img.shields.io/badge/Pytest-100%2F100%20Green-brightgreen.svg)](https://github.com/ftenaf/cinespine/actions)
-[![Python: 3.11+](https://img.shields.io/badge/Python-3.11%20%7C%203.14-blue.svg)](https://python.org)
-[![Google Cloud: Gemini & Imagen 3](https://img.shields.io/badge/Google%20Cloud-Gemini%202.0%20%26%20Imagen%203-4285F4.svg)](https://cloud.google.com/vertex-ai)
-[![Event Spine: ClickHouse](https://img.shields.io/badge/Event%20Spine-ClickHouse%20OLAP-FEE000.svg)](https://clickhouse.com)
-[![Observability: Grafana](https://img.shields.io/badge/Observability-Grafana%20Labs-F46800.svg)](https://grafana.com)
-[![Frontend: React 18 + Vite](https://img.shields.io/badge/Frontend-React%2018%20%2B%20Vite%20%2B%20Tailwind-61DAFB.svg)](https://vitejs.dev)
-[![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](https://opensource.org/licenses/MIT)
-
----
-
-## 🌟 Executive Summary & The Problem Space
-
-In motion picture and episodic television production, **the bottleneck is never the creative talent—it is the catastrophic breakdown of documentation, communication, and handoffs between departments.**
-
-Every department maintains its own version of reality:
-* **The Office (Intent):** Screenplay scenes, call sheets, one-liners, actor schedules, and planned shot lists.
-* **The Set (Belief):** Script supervisor logs, camera logs (*parte de cámara*), sound reports (*parte de sonido*), and false take notes.
-* **The Lab / DIT (Existence):** Verified camera raw clips, offload checksum manifests, multi-track poly-WAVs, and editorial conforms.
-
-When a script supervisor notes a take as *False Start*, but the sound recordist files it as *Good*, or when a roll spelling typo (`A120` vs `A_0120`) silently drops audio tracks, **no computer crashes.** The mistake sits undetected for weeks until the editorial conform, creating emergency panic and costing studios hundreds of thousands of dollars in re-shoots.
-
-**CineSpine** solves this by enforcing a single immutable truth:  
-> *"A document is a witness. Witnesses disagree, and **the disagreement is the product**."*
-
-### 🏛️ Animated System Architecture & C4 Model
-
-### 1. Multi-Persona User Event Flows & Append-Only Event Spine
-![CineSpine Multi-Persona User Event Flows](docs/architecture/cinespine-user-event-flows-animated.svg)
-
-### 2. End-to-End System Architecture (Production to Cloud)
-![CineSpine Animated Architecture Diagram](docs/architecture/cinespine-architecture-animated.svg)
-
-> *See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for full C4 Level 1–4 diagrams and sequence flows.*
-
-### Level 1: System Context Diagram
-
-```mermaid
-C4Context
-  title System Context Diagram - CineSpine Production Intelligence
-
-  Person(script_sup, "Script Supervisor", "Logs takes, slates, lined pages, and circled takes on set")
-  Person(sound_mixer, "Sound Mixer", "Records multi-track poly-WAVs and exports Sound ALE / CSV logs")
-  Person(camera_crew, "Camera Department", "Generates ZoeLog CSV reports and camera card manifests")
-  Person(dit_crew, "DIT / Data Manager", "Offloads cards, computes checksums, and produces Silverstack reports")
-  Person(editorial, "Editorial Team", "Assistant & Lead Editors cutting dailies and resolving discrepancies")
-  Person(director, "Director / DoP", "Decomposes screenplay, defines optics, reviews multi-camera AI previz")
-
-  System(cinespine, "CineSpine Platform", "Append-only event spine, 3-axis discrepancy reconciler, and multi-camera AI previz studio")
-
-  System_Ext(sound_dev, "Sound Devices 664 / 8-Series", "Generates BEXT timecoded poly-WAVs and Sound Reports")
-  System_Ext(silverstack, "Pomfort Silverstack Lab", "Generates offload volume XMLs and thumbnail contact sheets")
-  System_Ext(gemini_api, "Google Cloud Gemini 2.0 & Imagen 3", "Extracts semantic narrative tension & synthesizes 35mm concept stills")
-  System_Ext(gcs_bucket, "Google Cloud Storage (GCS)", "Archives screenplay PDFs and verified production media assets")
-  System_Ext(clickhouse_cloud, "ClickHouse Cloud", "Analytical OLAP storage for historical event replays & audit logs")
-  System_Ext(grafana_cloud, "Grafana Cloud Lighthouse", "Real-time production sync lag and telemetry dashboards")
-
-  Rel(script_sup, cinespine, "Uploads Daily Timecode Logs & Lined Pages", "PDF/Text")
-  Rel(sound_mixer, cinespine, "Uploads Sound ALE Reports & Day Logs", "CSV/ALE")
-  Rel(camera_crew, cinespine, "Uploads ZoeLog Camera Reports", "CSV")
-  Rel(dit_crew, cinespine, "Uploads Silverstack Volume & Thumbnail Reports", "XML/PDF")
-  Rel(editorial, cinespine, "Inspects takes, tracks requirements, resolves discrepancies", "HTTPS / SSE")
-  Rel(director, cinespine, "Uploads screenplay, selects DoP styles, edits camera prompts", "HTTPS / UI")
-
-  Rel(cinespine, gemini_api, "Executes semantic breakdown & Imagen 3 synthesis", "google.genai SDK")
-  Rel(cinespine, gcs_bucket, "Archives source scripts & media bytes", "google.cloud.storage SDK")
-  Rel(cinespine, clickhouse_cloud, "Appends immutable production events", "Native / HTTPS")
-  Rel(cinespine, grafana_cloud, "Pushes operational telemetry & lag metrics", "Prometheus / OTLP")
-```
-
----
-
-### Level 2: Container Diagram
-
-```mermaid
-C4Container
-  title Container Diagram - CineSpine Technical Architecture
-
-  Person(user, "Production Crew & Directors", "Interacts via web browser")
-
-  Container_Boundary(cinespine_app, "CineSpine Platform") {
-    Container(spa, "CineSpine Frontend Studio", "React 18, Vite, Tailwind CSS, Lucide Icons", "Single-Page App offering Script Studio, Slate Navigator, Discrepancy Matrix, and Previz Lightbox")
-    Container(api_gateway, "FastAPI Backend Gateway", "FastAPI, Python 3.11/3.14, Uvicorn", "Provides REST endpoints for takes, sequences, discrepancies, documents, and script breakdown")
-    Container(sse_broker, "Live Event Broker", "Async Server-Sent Events (SSE)", "Maintains push connections scoped by production/day/user with zero-polling sync")
-    Container(dispatcher, "Ingestion & Dispatch Pipeline", "Python Async Event Bus", "Classifies documents, validates schemas, and routes to deterministic extractors")
-    Container(parsers, "Deterministic & Screenplay Extractors", "Python, pdfplumber, pypdf, Fountain parser", "Normalizes slates, takes, rolls, timecodes, and screenplay scenes")
-    Container(recon_engine, "3-Axis Reconciliation Engine", "Python Rule Engine", "Cross-references Intent, Belief, and Existence to flag conflicts")
-    Container(previz_engine, "AI Multi-Camera Previz Synthesizer", "google.genai SDK, DoP Matrix", "Compiles multi-camera setups (Cam A/B/C/D...) and renders photorealistic stills")
-    ContainerDb(event_store, "Append-Only Event Spine", "SQLite / ClickHouse DB", "Immutable store for raw documents, parsed take facts, discrepancies, and audit trails")
-  }
-
-  Rel(user, spa, "Edits camera prompts, views dailies, resolves conflicts", "HTTPS")
-  Rel(spa, api_gateway, "Queries takes, sequences, requirements, script breakdown", "JSON / HTTPS")
-  Rel(spa, sse_broker, "Subscribes to live event stream (/api/events/subscribe)", "text/event-stream")
-  Rel(api_gateway, sse_broker, "Publishes lifecycle events (Ingest, Resolve, Alert)")
-  Rel(api_gateway, dispatcher, "Dispatches uploaded documents")
-  Rel(dispatcher, parsers, "Executes parsing & normalization")
-  Rel(parsers, event_store, "Appends normalized take and document facts")
-  Rel(recon_engine, event_store, "Scans multi-witness facts, appends discrepancies")
-  Rel(api_gateway, previz_engine, "Dispatches multi-camera breakdown & image generation")
-  Rel(previz_engine, event_store, "Persists generated camera coverage packs")
-```
-
----
-
-### ⚡ Event System & Real-Time SSE Broker Architecture
-
-![CineSpine Event System Animated](docs/architecture/cinespine-event-system-animated.svg)
-
-```mermaid
-flowchart LR
-    subgraph Producers["1. Multi-Persona Event Producers"]
-        P1["Director / DoP<br/>Screenplay & Previz"]
-        P2["Script Supervisor<br/>Lined Logs & Takes"]
-        P3["Sound Mixer<br/>ALE & Multi-Track"]
-        P4["DIT / Lab<br/>Silverstack Offloads"]
-        P5["Editor / Post<br/>Discrepancy Triage"]
-    end
-
-    subgraph EventSpine["2. ClickHouse Event Spine (Immutable Append-Only)"]
-        direction TB
-        E1["#1040 [SCREENPLAY_PARSED] Scene 1 & 2 • 3 Cast"]
-        E2["#1041 [TAKE_LOGGED] Slate 101/1 • ⭐ Circled"]
-        E3["#1042 [FALSE_START_RECORDED] Slate 101/2 • 'Aborted'"]
-        E4["#1043 [DISCREPANCY_FLAGGED] Take 2 Belief vs Sound"]
-        E5["#1044 [CAMERA_ANGLE_ADDED] Setup 1 • Cam D Crane"]
-        E6["#1045 [DISCREPANCY_RESOLVED] Consensus Recorded"]
-        E1 --> E2 --> E3 --> E4 --> E5 --> E6
-    end
-
-    subgraph Broker["3. LiveEventBroker (Zero-Polling SSE)"]
-        B1["/api/events/subscribe?prod=DEMO_PRODUCTION"]
-        B2["Role Filter: SOUND / CAMERA / EDITORIAL"]
-        B3["User Dispatch: @assistant_editor"]
-    end
-
-    subgraph Consumers["4. Reactive Client State (Sub-5ms Push)"]
-        C1["🎬 Previz Studio (3-Cam Concept Frames)"]
-        C2["🎞️ Composed Master Sheet (Live Ledger)"]
-        C3["🚨 3-Axis Discrepancy Matrix (Auto-Resolves)"]
-        C4["📊 Grafana Telemetry & Sync Lag Monitors"]
-    end
-
-    Producers -->|"POST /api/events/publish"| EventSpine
     EventSpine -->|"broadcast"| Broker
     Broker -->|"Server-Sent Events (SSE)"| Consumers
 ```
@@ -359,6 +211,10 @@ CineSpine decouples filmmaking operations into two distinct, distraction-free he
     * **Camera-Specific DoP Overrides:** Need the A-Cam to use a clean neutral profile but the B-Cam to emulate an 85mm anamorphic vintage look? CineSpine supports custom side-panel overrides per camera.
     * **Custom DoP Presets:** Dial in the perfect matrix of focal length, T-stop, Kelvin, and lighting ratios, and save them as reusable "Custom Presets" natively in the frontend to quickly deploy across your shot list.
   * **Dynamic Cast Profiler:** Auto-extracts character descriptions from your uploaded script and standardizes appearance, age, and attire to ensure temporal character consistency across all generated AI shots.
+
+```mermaid
+flowchart LR
+  BODY["Camera body<br/>open-gate mm + photosites"] --> EXT
   AR["Delivery ratio<br/>2.39 / 1.85 / 16:9 / 4:3"] --> EXT["Extraction<br/>largest frame inside the gate"]
   EXT --> RES["Delivered resolution<br/>4608 x 1928 - DCI 4K"]
   EXT --> COC["Circle of confusion<br/>frame diagonal / 1500"]
@@ -534,7 +390,19 @@ pytest
 ```
 
 ```
-142 passed, 7 skipped in 68s
+173 passed, 7 skipped in 75s
+```
+
+The frontend suite covers the optics module — sensor geometry, angle of view,
+depth of field and the blur simulator:
+
+```bash
+cd frontend && npm test
+```
+
+```
+Test Files  1 passed (1)
+     Tests  49 passed (49)
 ```
 
 Coverage by area:
