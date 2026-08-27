@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from starlette.testclient import TestClient
 from backend.app.main import app
 from backend.app.integrations import google_cloud
+from backend.app.script.llm_router import get_optimal_gemini_model
 from backend.app.integrations.google_cloud import (
     get_google_cloud_runtime_status,
     upload_media_to_google_cloud_storage,
@@ -168,11 +169,14 @@ async def test_gemini_analysis_uses_sdk_when_configured(monkeypatch):
 
     assert res["success"] is True
     assert res["provider"] == "Google Cloud Gemini Enterprise"
-    assert res["model"] == "gemini-3.7-flash"
+    # Asserted against the router rather than a literal: hardcoding the model id
+    # here is what let a non-existent one ship green in the first place.
+    expected_model = get_optimal_gemini_model(SAMPLE_SCENE, task_complexity="simple")
+    assert res["model"] == expected_model
     assert res["analysis"] == "FAKE GEMINI ANALYSIS"
 
     assert captured["api_key"] == "test-key-123"
-    assert captured["model"] == "gemini-3.7-flash"
+    assert captured["model"] == expected_model
     assert "Roger Deakins" in captured["contents"]
     assert "LEAD plays the organ" in captured["contents"]
 

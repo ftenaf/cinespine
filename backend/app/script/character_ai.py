@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any, Dict, List, Optional
 
 from backend.app.script.cache_service import (
@@ -184,46 +185,93 @@ def build_prompt(screenplay: Screenplay, retry_feedback: Optional[str] = None) -
     return prompt
 
 
+# A model reporting overload is not a reason to downgrade the whole cast: the
+# spikes are short, and one retry costs far less than a generic profile.
+TRANSIENT_RETRIES = 1
+TRANSIENT_BACKOFF_SECONDS = 3.0
+
+# Matched on the message because the SDK raises one exception type for all of
+# these, and the status code is only present in the text.
+_TRANSIENT_MARKERS = ("503", "UNAVAILABLE", "high demand", "overloaded", "500", "INTERNAL")
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Whether retrying the same model in a moment is worth trying."""
+    text = str(exc)
+    return any(marker in text for marker in _TRANSIENT_MARKERS)
+
+
 def _call_gemini(prompt: str) -> str:
-    """Blocking Gemini call; run off the event loop by the caller. Uses SQLite cache."""
+    """
+    Blocking Gemini call; run off the event loop by the caller. Uses SQLite cache.
+
+    Tries each candidate model in turn. A model being unavailable to this key --
+    retired, over quota, temporarily overloaded -- is an ordinary condition, and
+    the caller above turns any exception into a parse warning, so without this
+    loop one bad first choice silently downgrades every character profile.
+    """
     from google import genai
-    from backend.app.script.llm_router import get_optimal_gemini_model
+    from backend.app.script.llm_router import get_model_candidates
     from backend.app.core.telemetry import LLM_TOKENS_CONSUMED, AI_CACHE_HITS, LLM_LATENCY
 
-    # Use a 'complex' task type since we're generating rich narrative descriptions
-    optimal_model = get_optimal_gemini_model(prompt, task_complexity="complex")
-
-    req_hash = generate_hash(prompt=prompt, model=optimal_model)
-    cached = get_cached_response(req_hash)
-    if cached:
-        logger.info("Character inference cache hit for %s", req_hash)
-        AI_CACHE_HITS.labels(model=optimal_model, status="hit").inc()
-        return cached["text"]
-        
-    logger.info("Character inference cache miss for %s", req_hash)
-    AI_CACHE_HITS.labels(model=optimal_model, status="miss").inc()
+    # Rich narrative descriptions are the 'complex' end of the routing.
+    candidates = get_model_candidates(prompt, task_complexity="complex")
 
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     client = genai.Client(api_key=api_key)
-    
-    with LLM_LATENCY.labels(model=optimal_model).time():
-        response = client.models.generate_content(
-            model=optimal_model,
-            contents=prompt,
-            config={"response_mime_type": "application/json", "temperature": 0.4},
-        )
-        
-    text = response.text or ""
-    if text:
-        set_cached_response(req_hash, {"text": text})
-        
-    # GenAI SDK for Gemini returns usage metadata
-    if hasattr(response, "usage_metadata") and response.usage_metadata:
-        tokens = response.usage_metadata.total_token_count
-        if tokens:
-            LLM_TOKENS_CONSUMED.labels(model=optimal_model, task_complexity="complex").inc(tokens)
-            
-    return text
+
+    last_error: Optional[Exception] = None
+    for model in candidates:
+        req_hash = generate_hash(prompt=prompt, model=model)
+        cached = get_cached_response(req_hash)
+        if cached:
+            logger.info("Character inference cache hit for %s (%s)", req_hash, model)
+            AI_CACHE_HITS.labels(model=model, status="hit").inc()
+            return cached["text"]
+
+        logger.info("Character inference cache miss for %s (%s)", req_hash, model)
+        AI_CACHE_HITS.labels(model=model, status="miss").inc()
+
+        response = None
+        for attempt in range(TRANSIENT_RETRIES + 1):
+            try:
+                with LLM_LATENCY.labels(model=model).time():
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=prompt,
+                        config={"response_mime_type": "application/json", "temperature": 0.4},
+                    )
+                break
+            except Exception as exc:  # noqa: BLE001 - any failure means try again or move on
+                last_error = exc
+                if attempt < TRANSIENT_RETRIES and _is_transient(exc):
+                    logger.info(
+                        "Model %s temporarily unavailable, retrying in %.0fs: %s",
+                        model, TRANSIENT_BACKOFF_SECONDS, exc,
+                    )
+                    time.sleep(TRANSIENT_BACKOFF_SECONDS)
+                    continue
+                logger.warning("Model %s unavailable, trying next candidate: %s", model, exc)
+                break
+
+        if response is None:
+            continue
+
+        text = response.text or ""
+        if text:
+            set_cached_response(req_hash, {"text": text})
+
+        usage = getattr(response, "usage_metadata", None)
+        if usage and usage.total_token_count:
+            LLM_TOKENS_CONSUMED.labels(
+                model=model, task_complexity="complex"
+            ).inc(usage.total_token_count)
+
+        return text
+
+    raise RuntimeError(
+        f"No Gemini model available; tried {', '.join(candidates)}"
+    ) from last_error
 
 
 def parse_ai_response(raw: str) -> Dict[str, Dict[str, Any]]:

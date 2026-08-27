@@ -18,7 +18,10 @@ It handles real production paperwork, resolves discrepancies across departments,
 
 ### 2. Backend (Python 3.11+, FastAPI)
 - **Directory:** `backend/`
-- **Port:** `8000` (`python -m uvicorn app.main:app --reload --port 8000`)
+- **Port:** `8000` — run from the **repository root**, not from `backend/`:
+  `python -m uvicorn backend.app.main:app --reload --port 8000`
+  (modules import each other as `backend.app.*`, so `app.main:app` from inside
+  `backend/` fails with `ModuleNotFoundError: No module named 'backend'`.)
 - **Key Modules:**
   - `app/api/routes.py`: FastAPI endpoints bridging the frontend to the engine.
   - `app/script/parser.py`: Parses multiple screenplay formats (`.fountain`, `.md`, `.txt`, `.pdf`).
