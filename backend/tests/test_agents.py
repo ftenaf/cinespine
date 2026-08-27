@@ -37,6 +37,47 @@ class TestGeminiScriptLiningExtractor:
         assert result.takes[2].is_starred is True
         assert result.takes[1].is_pickup is True
 
+    def test_no_pinned_model_and_no_end_of_life_sdk(self):
+        """
+        This class used to pin "gemini-1.5-flash" and build its client with
+        google.generativeai, which is end of life. A pinned id 404s the day its
+        version is retired, and the constructor swallows the failure, so the
+        breakage would be silent.
+        """
+        import inspect
+
+        from backend.app.agents import multimodal
+        from backend.app.script.llm_router import get_optimal_gemini_model
+
+        source = inspect.getsource(multimodal)
+        assert "google.generativeai" not in source, "the end-of-life SDK is back"
+        assert "gemini-1.5" not in source, "a pinned model id is back"
+
+        extractor = GeminiScriptLiningExtractor(api_key=None)
+        assert extractor.model_name == get_optimal_gemini_model("", "simple")
+
+    def test_reports_whether_a_model_can_actually_be_called(self):
+        """Validation works with no key; extraction does not. Say which."""
+        assert GeminiScriptLiningExtractor(api_key=None).is_available is False
+
+    def test_an_explicit_model_name_still_wins(self):
+        extractor = GeminiScriptLiningExtractor(api_key=None, model_name="gemini-3.5-flash")
+        assert extractor.model_name == "gemini-3.5-flash"
+
+    def test_a_bad_key_degrades_instead_of_raising(self):
+        """A construction failure must not take down the caller."""
+        extractor = GeminiScriptLiningExtractor(api_key="not-a-real-key")
+        assert isinstance(extractor.is_available, bool)
+
+    def test_validation_still_works_without_any_model(self):
+        """The half the parsers actually use must not need a client."""
+        extractor = GeminiScriptLiningExtractor(api_key=None)
+        page = extractor.validate_and_normalize(
+            '{"scene": "12A", "slates": ["3/1"], "takes": [{"take_id": "2", "camera_rolls": ["B039"]}]}'
+        )
+        assert page.scene == "12A"
+        assert page.takes[0].camera_rolls == ["B039"]
+
     def test_pii_sanitization_removes_personal_contact_info(self):
         extractor = GeminiScriptLiningExtractor(api_key=None)
         raw_text_with_pii = "Script Supervisor: Jane Doe (Tel: +34 600 123 456, email: jane@filmmaking.com)\nScene 64A Slate 21/1 Take 3"

@@ -12,6 +12,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 from backend.app.normalizers.takes import normalize_take
 from backend.app.normalizers.rolls import normalize_camera_roll
+from backend.app.script.llm_router import get_optimal_gemini_model
 
 logger = logging.getLogger(__name__)
 
@@ -34,19 +35,34 @@ class ExtractedScriptPage(BaseModel):
 
 
 class GeminiScriptLiningExtractor:
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-1.5-flash"):
+    """
+    Reads handwritten lining pages, then normalises what the model returned.
+
+    The validation half runs without any model at all, which is how the parsers
+    use it today: `validate_and_normalize` and `sanitize_pii` are pure.
+    """
+
+    def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
         self.api_key = api_key
-        self.model_name = model_name
+        # No pinned default. A pinned id 404s the day that version is retired,
+        # and every caller here degrades quietly, so the failure would be
+        # invisible. The router owns the choice; see llm_router.
+        self.model_name = model_name or get_optimal_gemini_model("", task_complexity="simple")
         self._client = None
 
         if api_key:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=api_key)
-                self._client = genai.GenerativeModel(model_name)
-                logger.info(f"Initialized Gemini model {model_name}")
-            except Exception as e:
-                logger.warning(f"Could not initialize Google Generative AI: {e}")
+                from google import genai
+
+                self._client = genai.Client(api_key=api_key)
+                logger.info("Initialised Gemini client for model %s", self.model_name)
+            except Exception as exc:  # noqa: BLE001 - extraction is optional
+                logger.warning("Could not initialise the Google GenAI client: %s", exc)
+
+    @property
+    def is_available(self) -> bool:
+        """Whether a model can actually be called, as opposed to only validated."""
+        return self._client is not None
 
     def sanitize_pii(self, text: str) -> str:
         """
