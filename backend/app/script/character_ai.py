@@ -187,8 +187,12 @@ def build_prompt(screenplay: Screenplay, retry_feedback: Optional[str] = None) -
 def _call_gemini(prompt: str) -> str:
     """Blocking Gemini call; run off the event loop by the caller. Uses SQLite cache."""
     from google import genai
+    from backend.app.script.llm_router import get_optimal_gemini_model
 
-    req_hash = generate_hash(prompt=prompt, model=MODEL)
+    # Use a 'complex' task type since we're generating rich narrative descriptions
+    optimal_model = get_optimal_gemini_model(prompt, task_complexity="complex")
+
+    req_hash = generate_hash(prompt=prompt, model=optimal_model)
     cached = get_cached_response(req_hash)
     if cached:
         logger.info("Character inference cache hit for %s", req_hash)
@@ -199,7 +203,7 @@ def _call_gemini(prompt: str) -> str:
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     client = genai.Client(api_key=api_key)
     response = client.models.generate_content(
-        model=MODEL,
+        model=optimal_model,
         contents=prompt,
         config={"response_mime_type": "application/json", "temperature": 0.4},
     )

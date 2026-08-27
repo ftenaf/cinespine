@@ -107,20 +107,24 @@ async def run_gemini_screenplay_analysis(
 
     if GENAI_AVAILABLE and api_key:
         try:
+            from backend.app.script.llm_router import get_optimal_gemini_model
             client = genai.Client(api_key=api_key)
             prompt = (
                 f"Analyze this screenplay scene for Director of Photography style '{dop_style}'. "
                 f"Extract: 1) Mood & Atmosphere, 2) Key Lighting contrast ratio, 3) Suggested 3-camera setup (Wide A, OTS B, Macro C). "
                 f"Scene text: {scene_text[:1200]}"
             )
+            # This is a short semantic extraction task, so route as 'simple'
+            optimal_model = get_optimal_gemini_model(prompt, task_complexity="simple")
+            
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model=optimal_model,
                 contents=prompt
             )
             return {
                 "success": True,
                 "analysis": response.text,
-                "model": "gemini-2.0-flash",
+                "model": optimal_model,
                 "provider": "Google Cloud Gemini Enterprise"
             }
         except Exception as e:

@@ -283,7 +283,7 @@ def suggest_dop_preset_metadata(
     if api_key and not disabled:
         try:
             from google import genai
-            model_name = os.environ.get("CINESPINE_GEMINI_MODEL", "gemini-3.6-flash")
+            from backend.app.script.llm_router import get_optimal_gemini_model
             client = genai.Client(api_key=api_key)
             prompt = f"""You are a master Hollywood Director of Photography and Film Colorist.
 Based on the following camera, optics, and lighting setup, suggest a creative preset profile:
@@ -303,8 +303,9 @@ Respond ONLY with a JSON object containing:
 - "description": A 1-2 sentence cinematography description detailing the optical texture, lighting balance, and visual atmosphere
 - "prompt_style_tag": A generative prompt style tag for photorealistic film still synthesis
 """
+            optimal_model = get_optimal_gemini_model(prompt, task_complexity="simple")
             response = client.models.generate_content(
-                model=model_name,
+                model=optimal_model,
                 contents=prompt,
                 config={"response_mime_type": "application/json", "temperature": 0.6}
             )
