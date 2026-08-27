@@ -21,6 +21,7 @@ import {
   Trash2,
   X
 } from 'lucide-react';
+import { CharacterProfileCard } from './CharacterProfileCard';
 import {
   
   DEFAULT_SENSOR_ID,
@@ -40,7 +41,6 @@ import {
 } from '../optics';
 import { DopControls, DopSettings } from './DopControls';
 import {
-  DEFAULT_DOP_PRESETS,
   loadCustomPresets,
   saveCustomPresets,
   loadDeletedPresets,
@@ -1048,31 +1048,31 @@ export const ScriptStudio: React.FC = () => {
       {/* Studio Header Toolbar */}
       <div className="flex items-center justify-between px-6 py-3.5 bg-[#0F172A]/90 border-b border-slate-800 backdrop-blur shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
+          <div className="w-9 h-9 rounded-lg bg-gradient-to-tr bg-spine-800 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
             <Film className="w-5 h-5 text-white" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base font-bold text-white tracking-wide">Screenplay &amp; Visual Director Studio</h1>
-              <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-full">
+              <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-spine-accent/20 text-spine-accent border border-spine-accent/30 rounded-full">
                 Multi-Camera (A, B, C) Previz
               </span>
               {uploadedFileName && (
-                <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-md">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold bg-spine-success/20 text-spine-success border border-spine-success/30 rounded-md">
+                  <CheckCircle2 className="w-3 h-3 text-spine-success" />
                   {uploadedFileName}
                 </span>
               )}
             </div>
             {parseWarnings.length > 0 && (
-              <div className="mt-2 p-3 bg-amber-950/50 border border-amber-500/40 rounded-lg text-[11px] text-amber-200 space-y-1">
+              <div className="mt-2 p-3 bg-spine-warning/50 border border-spine-warning/40 rounded-lg text-[11px] text-spine-warning space-y-1">
                 <div className="font-bold">Parsed with warnings:</div>
                 {parseWarnings.map((w, i) => (
                   <div key={i}>• {w}</div>
                 ))}
               </div>
             )}
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-gray-300">
               Multi-Format Screenplay Ingestion (.fountain / .md / .txt / .pdf) • Cast Character Profiler • Tri-Modal DoP Previz
             </p>
           </div>
@@ -1086,14 +1086,14 @@ export const ScriptStudio: React.FC = () => {
             disabled={isUploading}
             className={`px-3.5 py-1.5 text-xs font-semibold rounded-md border transition flex items-center gap-1.5 shadow-sm ${
               isUploading
-                ? 'bg-purple-900/80 text-purple-200 border-purple-400 animate-pulse cursor-wait'
-                : 'bg-purple-950/60 hover:bg-purple-900/80 text-purple-200 border-purple-500/40'
+                ? 'bg-spine-900/80 text-spine-accent border-spine-accent animate-pulse cursor-wait'
+                : 'bg-spine-900/60 hover:bg-spine-900/80 text-spine-accent border-spine-accent/40'
             }`}
           >
             {isUploading ? (
-              <Loader2 className="w-3.5 h-3.5 text-purple-300 animate-spin" />
+              <Loader2 className="w-3.5 h-3.5 text-spine-accent animate-spin" />
             ) : (
-              <Upload className="w-3.5 h-3.5 text-purple-400" />
+              <Upload className="w-3.5 h-3.5 text-spine-accent" />
             )}
             {isUploading ? 'Ingesting Screenplay...' : 'Upload Script (.fountain / .md / .txt / .pdf)'}
           </button>
@@ -1104,12 +1104,12 @@ export const ScriptStudio: React.FC = () => {
               handleParseScript(DEMO_FOUNTAIN_SCRIPT);
             }}
             disabled={isUploading || isParsingDemo}
-            className="px-3.5 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md border border-slate-700 transition flex items-center gap-1.5 disabled:opacity-50"
+            className="px-3.5 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-gray-200 rounded-md border border-slate-700 transition flex items-center gap-1.5 disabled:opacity-50"
           >
             {isParsingDemo ? (
-              <Loader2 className="w-3.5 h-3.5 text-slate-400 animate-spin" />
+              <Loader2 className="w-3.5 h-3.5 text-gray-300 animate-spin" />
             ) : (
-              <FileText className="w-3.5 h-3.5 text-slate-400" />
+              <FileText className="w-3.5 h-3.5 text-gray-300" />
             )}
             {isParsingDemo ? 'Loading Demo...' : 'Load Demo Script'}
           </button>
@@ -1119,12 +1119,12 @@ export const ScriptStudio: React.FC = () => {
             onClick={() => setEconomyMode(!economyMode)}
             className={`px-3.5 py-1.5 text-xs font-semibold rounded-md border transition flex items-center gap-1.5 shadow-sm ${
               economyMode
-                ? 'bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border-emerald-500/40'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700'
+                ? 'bg-spine-success/60 hover:bg-emerald-900/80 text-spine-success border-spine-success/40'
+                : 'bg-slate-800 hover:bg-slate-700 text-gray-300 border-slate-700'
             }`}
             title="Economy Mode uses free APIs and caches to save AI credits"
           >
-            <ShieldCheck className={`w-3.5 h-3.5 ${economyMode ? 'text-emerald-400' : 'text-slate-500'}`} />
+            <ShieldCheck className={`w-3.5 h-3.5 ${economyMode ? 'text-spine-success' : 'text-gray-400'}`} />
             Economy Mode {economyMode ? 'ON' : 'OFF'}
           </button>
         </div>
@@ -1137,8 +1137,8 @@ export const ScriptStudio: React.FC = () => {
             onClick={() => setStudioSubTab('previz')}
             className={`px-4 py-1.5 text-xs font-bold rounded-md flex items-center gap-2 transition ${
               studioSubTab === 'previz'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                ? 'bg-spine-accent text-white shadow-md shadow-purple-600/20'
+                : 'text-gray-300 hover:text-gray-100 hover:bg-slate-800/60'
             }`}
           >
             <Camera className="w-3.5 h-3.5" />
@@ -1149,13 +1149,13 @@ export const ScriptStudio: React.FC = () => {
             onClick={() => setStudioSubTab('cast')}
             className={`px-4 py-1.5 text-xs font-bold rounded-md flex items-center gap-2 transition ${
               studioSubTab === 'cast'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                ? 'bg-spine-accent text-white shadow-md shadow-purple-600/20'
+                : 'text-gray-300 hover:text-gray-100 hover:bg-slate-800/60'
             }`}
           >
             <Users className="w-3.5 h-3.5" />
             Cast &amp; Character Profiles
-            <span className="px-1.5 py-0.2 text-[10px] font-extrabold bg-purple-950 text-purple-300 rounded-full border border-purple-500/40">
+            <span className="px-1.5 py-0.2 text-[10px] font-extrabold bg-spine-900 text-spine-accent rounded-full border border-spine-accent/40">
               {characters.length}
             </span>
           </button>
@@ -1164,8 +1164,8 @@ export const ScriptStudio: React.FC = () => {
             onClick={() => setStudioSubTab('dop')}
             className={`px-4 py-1.5 text-xs font-bold rounded-md flex items-center gap-2 transition ${
               studioSubTab === 'dop'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                ? 'bg-spine-accent text-white shadow-md shadow-purple-600/20'
+                : 'text-gray-300 hover:text-gray-100 hover:bg-slate-800/60'
             }`}
           >
             <Sliders className="w-3.5 h-3.5" />
@@ -1174,10 +1174,10 @@ export const ScriptStudio: React.FC = () => {
         </div>
 
         {/* Character Consistency Indicator */}
-        <div className="flex items-center gap-2 px-3 py-1 bg-purple-950/40 border border-purple-500/30 rounded-md">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="text-[11px] font-semibold text-purple-200">
-            Character Visual Consistency: <strong className="text-emerald-400 font-bold">{characters.length} Profiles Active</strong>
+        <div className="flex items-center gap-2 px-3 py-1 bg-spine-900/40 border border-spine-accent/30 rounded-md">
+          <ShieldCheck className="w-3.5 h-3.5 text-spine-success" />
+          <span className="text-[11px] font-semibold text-spine-accent">
+            Character Visual Consistency: <strong className="text-spine-success font-bold">{characters.length} Profiles Active</strong>
           </span>
         </div>
       </div>
@@ -1192,10 +1192,10 @@ export const ScriptStudio: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Users className="w-4 h-4 text-purple-400" />
+                  <Users className="w-4 h-4 text-spine-accent" />
                   Detected Cast ({characters.length})
                 </h3>
-                <p className="text-[11px] text-slate-400">Click a character to polish physical look, wardrobe, and facial traits.</p>
+                <p className="text-[11px] text-gray-300">Click a character to polish physical look, wardrobe, and facial traits.</p>
               </div>
             </div>
 
@@ -1206,24 +1206,24 @@ export const ScriptStudio: React.FC = () => {
                   onClick={() => setSelectedCharId(char.id)}
                   className={`p-3.5 rounded-xl border transition cursor-pointer flex items-start gap-3.5 ${
                     selectedCharacter?.id === char.id
-                      ? 'bg-purple-950/60 border-purple-500 shadow-lg shadow-purple-500/10'
+                      ? 'bg-spine-900/60 border-spine-accent shadow-lg shadow-purple-500/10'
                       : 'bg-slate-900/60 border-slate-800 hover:border-slate-700 hover:bg-slate-900'
                   }`}
                 >
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-purple-700 to-indigo-500 flex items-center justify-center font-black text-sm text-white shrink-0 shadow-md">
+                  <div className="w-10 h-10 rounded-full bg-spine-800 flex items-center justify-center font-black text-sm text-white shrink-0 shadow-md">
                     {char.name.charAt(0)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <h4 className="text-xs font-black text-white tracking-wider">{char.name}</h4>
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-800 text-purple-300 rounded border border-purple-500/20">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-800 text-spine-accent rounded border border-spine-accent/20">
                         {char.dialogue_count} cues
                       </span>
                     </div>
-                    <p className="text-[11px] font-medium text-slate-300 truncate mt-0.5">{char.role}</p>
+                    <p className="text-[11px] font-medium text-gray-200 truncate mt-0.5">{char.role}</p>
                     <div className="flex flex-wrap gap-1 mt-2">
                       {char.personality_traits.slice(0, 3).map((t, idx) => (
-                        <span key={idx} className="px-1.5 py-0.5 text-[9px] bg-slate-800/80 text-slate-300 rounded border border-slate-700">
+                        <span key={idx} className="px-1.5 py-0.5 text-[9px] bg-slate-800/80 text-gray-200 rounded border border-slate-700">
                           {t}
                         </span>
                       ))}
@@ -1241,19 +1241,19 @@ export const ScriptStudio: React.FC = () => {
                 {/* Header Profile Bar */}
                 <div className="flex items-center justify-between pb-4 border-b border-slate-800">
                   <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 flex items-center justify-center font-black text-xl text-white shadow-xl shadow-purple-600/30">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr bg-spine-800 via-indigo-600 to-pink-500 flex items-center justify-center font-black text-xl text-white shadow-xl shadow-purple-600/30">
                       {selectedCharacter.name.charAt(0)}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <h2 className="text-lg font-black text-white tracking-wider">{selectedCharacter.name}</h2>
-                        <span className="px-2 py-0.5 text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full flex items-center gap-1">
-                          <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                        <span className="px-2 py-0.5 text-[10px] font-extrabold bg-spine-success/20 text-spine-success border border-spine-success/30 rounded-full flex items-center gap-1">
+                          <ShieldCheck className="w-3 h-3 text-spine-success" />
                           Visual Consistency Locked
                         </span>
                       </div>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Dialogue Cues: <strong className="text-purple-300">{selectedCharacter.dialogue_count}</strong> • Scenes Present: <strong className="text-purple-300">{selectedCharacter.scenes_present.join(', ') || '1'}</strong>
+                      <p className="text-xs text-gray-300 mt-0.5">
+                        Dialogue Cues: <strong className="text-spine-accent">{selectedCharacter.dialogue_count}</strong> • Scenes Present: <strong className="text-spine-accent">{selectedCharacter.scenes_present.join(', ') || '1'}</strong>
                       </p>
                     </div>
                   </div>
@@ -1269,15 +1269,15 @@ export const ScriptStudio: React.FC = () => {
                 </div>
 
                 {charSaveSuccess && (
-                  <div className="p-3 bg-emerald-950/60 border border-emerald-500/40 rounded-lg flex items-center gap-2 text-xs text-emerald-200">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <div className="p-3 bg-spine-success/60 border border-spine-success/40 rounded-lg flex items-center gap-2 text-xs text-spine-success">
+                    <CheckCircle2 className="w-4 h-4 text-spine-success" />
                     Saved. This look is stored against the screenplay and reused in every Gen-AI render featuring this character.
                   </div>
                 )}
 
                 {charSaveError && (
-                  <div className="p-3 bg-red-950/60 border border-red-500/40 rounded-lg flex items-center gap-2 text-xs text-red-200">
-                    <X className="w-4 h-4 text-red-400 shrink-0" />
+                  <div className="p-3 bg-spine-critical/60 border border-spine-critical/40 rounded-lg flex items-center gap-2 text-xs text-spine-critical">
+                    <X className="w-4 h-4 text-spine-critical shrink-0" />
                     {charSaveError}
                   </div>
                 )}
@@ -1285,7 +1285,7 @@ export const ScriptStudio: React.FC = () => {
                 {/* Portrait Showcase Card & Generation */}
                 <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-2xl flex items-center justify-between gap-6 shadow-xl">
                   <div className="flex items-center gap-5">
-                    <div className="relative w-28 h-28 rounded-xl overflow-hidden border-2 border-purple-500/50 bg-black shrink-0 shadow-lg group">
+                    <div className="relative w-28 h-28 rounded-xl overflow-hidden border-2 border-spine-accent/50 bg-black shrink-0 shadow-lg group">
                       {selectedCharacter.avatar_url ? (
                         <img
                           src={selectedCharacter.avatar_url}
@@ -1293,7 +1293,7 @@ export const ScriptStudio: React.FC = () => {
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-purple-900 to-indigo-900 font-black text-3xl text-purple-200">
+                        <div className="w-full h-full flex items-center justify-center bg-spine-800 font-black text-3xl text-spine-accent">
                           {selectedCharacter.name.charAt(0)}
                         </div>
                       )}
@@ -1313,11 +1313,11 @@ export const ScriptStudio: React.FC = () => {
                       )}
                     </div>
                     <div>
-                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-full">
+                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 bg-spine-accent/20 text-spine-accent border border-spine-accent/30 rounded-full">
                         35mm Cinematic Character Still
                       </span>
                       <h3 className="text-sm font-bold text-white mt-1.5">Photorealistic Portrait &amp; Lookbook Headshot</h3>
-                      <p className="text-xs text-slate-400 mt-0.5">
+                      <p className="text-xs text-gray-300 mt-0.5">
                         Generates a dedicated 85mm T1.4 portrait frame locking the actor's facial likeness and wardrobe for all camera coverage.
                       </p>
                     </div>
@@ -1326,7 +1326,7 @@ export const ScriptStudio: React.FC = () => {
                   <button
                     onClick={() => handleGenerateCharacterPortrait(selectedCharacter)}
                     disabled={generatingPortraitMap[selectedCharacter.id]}
-                    className="px-4 py-2.5 text-xs font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-xl shadow-lg shadow-purple-600/30 transition flex items-center gap-2 shrink-0 disabled:opacity-50"
+                    className="px-4 py-2.5 text-xs font-bold bg-gradient-to-r bg-spine-800 via-indigo-600 to-pink-600 hover:bg-spine-800 hover:to-pink-500 text-white rounded-xl shadow-lg shadow-purple-600/30 transition flex items-center gap-2 shrink-0 disabled:opacity-50"
                   >
                     {generatingPortraitMap[selectedCharacter.id] ? (
                       <>
@@ -1345,7 +1345,7 @@ export const ScriptStudio: React.FC = () => {
                 {/* Form Fields */}
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Role / Narrative Archetype</label>
+                    <label className="block text-xs font-bold text-gray-200 mb-1">Role / Narrative Archetype</label>
                     <input
                       type="text"
                       value={selectedCharacter.role}
@@ -1353,14 +1353,14 @@ export const ScriptStudio: React.FC = () => {
                         const val = e.target.value;
                         setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, role: val } : c)));
                       }}
-                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-spine-accent"
                     />
                   </div>
 
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-bold text-slate-300">Actor Screen Reference &amp; Physical Appearance</label>
-                      <span className="text-[10px] font-medium text-purple-400">Gender, Age &amp; Build</span>
+                      <label className="text-xs font-bold text-gray-200">Actor Screen Reference &amp; Physical Appearance</label>
+                      <span className="text-[10px] font-medium text-spine-accent">Gender, Age &amp; Build</span>
                     </div>
                     <textarea
                       rows={2}
@@ -1370,10 +1370,10 @@ export const ScriptStudio: React.FC = () => {
                         setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, actor_reference: val } : c)));
                       }}
                       placeholder="e.g. Early 30s woman, 5'7&quot; wiry athletic build, dark cropped hair, resolute bearing, intense gaze..."
-                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500 font-sans"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-spine-accent font-sans"
                     />
                     <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Quick Traits:</span>
+                      <span className="text-[10px] font-bold text-gray-300 uppercase tracking-wider">Quick Traits:</span>
                       {[
                         'Woman',
                         'Man',
@@ -1395,17 +1395,17 @@ export const ScriptStudio: React.FC = () => {
                             const updated = current ? `${current}, ${tag.toLowerCase()}` : `${tag}, `;
                             setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, actor_reference: updated } : c)));
                           }}
-                          className="px-2 py-0.5 text-[10px] font-semibold bg-slate-800 hover:bg-purple-900/60 hover:text-purple-200 text-slate-300 border border-slate-700 hover:border-purple-500/40 rounded-md transition"
+                          className="px-2 py-0.5 text-[10px] font-semibold bg-slate-800 hover:bg-spine-900/60 hover:text-spine-accent text-gray-200 border border-slate-700 hover:border-spine-accent/40 rounded-md transition"
                         >
                           + {tag}
                         </button>
                       ))}
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-1">Defines actor gender presentation (e.g. woman, man, non-binary), age, physique, build, hair, and baseline screen presence.</p>
+                    <p className="text-[10px] text-gray-300 mt-1">Defines actor gender presentation (e.g. woman, man, non-binary), age, physique, build, hair, and baseline screen presence.</p>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Costume, Wardrobe &amp; Props</label>
+                    <label className="block text-xs font-bold text-gray-200 mb-1">Costume, Wardrobe &amp; Props</label>
                     <textarea
                       rows={2}
                       value={selectedCharacter.look_and_costume}
@@ -1414,13 +1414,13 @@ export const ScriptStudio: React.FC = () => {
                         setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, look_and_costume: val } : c)));
                       }}
                       placeholder="e.g. Drenched dark linen shirt with rolled-up sleeves, charcoal wool vest, silver pocket watch..."
-                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500 font-sans"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-spine-accent font-sans"
                     />
-                    <p className="text-[10px] text-slate-400 mt-1">Wardrobe textures, fabrics, tailoring, distress level, and accessories.</p>
+                    <p className="text-[10px] text-gray-300 mt-1">Wardrobe textures, fabrics, tailoring, distress level, and accessories.</p>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Facial Features &amp; Catchlights</label>
+                    <label className="block text-xs font-bold text-gray-200 mb-1">Facial Features &amp; Catchlights</label>
                     <textarea
                       rows={2}
                       value={selectedCharacter.facial_features}
@@ -1429,13 +1429,13 @@ export const ScriptStudio: React.FC = () => {
                         setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, facial_features: val } : c)));
                       }}
                       placeholder="e.g. Sharp cheekbones, subtle 5 o'clock shadow, piercing hazel eyes filled with obsessive fervor..."
-                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500 font-sans"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-spine-accent font-sans"
                     />
-                    <p className="text-[10px] text-slate-400 mt-1">Eyes, cheekbones, complexion, expressions, and key facial lighting marks.</p>
+                    <p className="text-[10px] text-gray-300 mt-1">Eyes, cheekbones, complexion, expressions, and key facial lighting marks.</p>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Personality Traits (Comma-separated)</label>
+                    <label className="block text-xs font-bold text-gray-200 mb-1">Personality Traits (Comma-separated)</label>
                     <input
                       type="text"
                       value={selectedCharacter.personality_traits.join(', ')}
@@ -1444,7 +1444,7 @@ export const ScriptStudio: React.FC = () => {
                         setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, personality_traits: traits } : c)));
                       }}
                       placeholder="e.g. Obsessive, Perfectionist, Haunted, Virtuoso"
-                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-spine-accent"
                     />
                   </div>
                 </div>
@@ -1454,10 +1454,10 @@ export const ScriptStudio: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        <Users className="w-4 h-4 text-purple-400" />
+                        <Users className="w-4 h-4 text-spine-accent" />
                         Dramatic Relationships &amp; Co-Occurrences ({selectedCharacter.relationships?.length || 0})
                       </h3>
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-gray-300">
                         Tracks co-present scene blocks, dialogue interaction turns, and dramatic relational dynamics.
                       </p>
                     </div>
@@ -1470,11 +1470,11 @@ export const ScriptStudio: React.FC = () => {
                         return (
                           <div
                             key={rIdx}
-                            className="p-3.5 bg-slate-900/70 border border-slate-800 rounded-xl space-y-2 hover:border-purple-500/50 transition"
+                            className="p-3.5 bg-slate-900/70 border border-slate-800 rounded-xl space-y-2 hover:border-spine-accent/50 transition"
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 rounded-full bg-purple-950 border border-purple-500/40 flex items-center justify-center font-bold text-xs text-purple-200">
+                                <div className="w-7 h-7 rounded-full bg-spine-900 border border-spine-accent/40 flex items-center justify-center font-bold text-xs text-spine-accent">
                                   {rel.target_character.charAt(0)}
                                 </div>
                                 <h4 className="text-xs font-bold text-white">{rel.target_character}</h4>
@@ -1482,7 +1482,7 @@ export const ScriptStudio: React.FC = () => {
                               {targetObj && (
                                 <button
                                   onClick={() => setSelectedCharId(targetObj.id)}
-                                  className="text-[10px] font-bold text-purple-400 hover:text-purple-300 transition"
+                                  className="text-[10px] font-bold text-spine-accent hover:text-spine-accent transition"
                                 >
                                   Inspect →
                                 </button>
@@ -1490,20 +1490,20 @@ export const ScriptStudio: React.FC = () => {
                             </div>
 
                             <div className="flex flex-wrap gap-1">
-                              <span className="px-1.5 py-0.5 text-[9px] font-extrabold bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">
+                              <span className="px-1.5 py-0.5 text-[9px] font-extrabold bg-spine-accent/20 text-spine-accent rounded border border-spine-accent/30">
                                 {rel.relationship_type}
                               </span>
-                              <span className="px-1.5 py-0.5 text-[9px] font-bold bg-slate-800 text-slate-300 rounded border border-slate-700">
+                              <span className="px-1.5 py-0.5 text-[9px] font-bold bg-slate-800 text-gray-200 rounded border border-slate-700">
                                 {rel.shared_scenes.length > 0 ? `Scenes: ${rel.shared_scenes.join(', ')}` : 'Shared Scene'}
                               </span>
                               {rel.interaction_count > 0 && (
-                                <button onClick={() => setPopupCharacter(characters.find(char => char.name === rel.target_character) || null)} className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30 hover:bg-emerald-500/30 transition">
+                                <button onClick={() => setPopupCharacter(characters.find(char => char.name === rel.target_character) || null)} className="px-1.5 py-0.5 text-[9px] font-bold bg-spine-success/20 text-spine-success rounded border border-spine-success/30 hover:bg-spine-success/30 transition">
                                   {rel.interaction_count} Dialogue Turns
                                 </button>
                               )}
                             </div>
 
-                            <p className="text-[11px] text-slate-300 line-clamp-2 leading-relaxed">
+                            <p className="text-[11px] text-gray-200 line-clamp-2 leading-relaxed">
                               {rel.dynamic_description}
                             </p>
                           </div>
@@ -1511,17 +1511,17 @@ export const ScriptStudio: React.FC = () => {
                       })}
                     </div>
                   ) : (
-                    <div className="p-4 bg-slate-900/40 border border-slate-800 rounded-xl text-center text-xs text-slate-400">
+                    <div className="p-4 bg-slate-900/40 border border-slate-800 rounded-xl text-center text-xs text-gray-300">
                       No direct multi-character interactions detected in script for {selectedCharacter.name}.
                     </div>
                   )}
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center h-full text-slate-400">
+              <div className="flex flex-col items-center justify-center h-full text-gray-300">
                 <Users className="w-12 h-12 text-slate-600 mb-3" />
                 <p className="text-sm font-semibold">No characters selected</p>
-                <p className="text-xs text-slate-500">Upload a script or choose a demo to detect and profile characters.</p>
+                <p className="text-xs text-gray-400">Upload a script or choose a demo to detect and profile characters.</p>
               </div>
             )}
           </div>
@@ -1538,7 +1538,7 @@ export const ScriptStudio: React.FC = () => {
             <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between">
               <div>
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider">Screenplay Scenes</h3>
-                <p className="text-[11px] text-slate-400">{parsedScenes.length} Scenes Extracted</p>
+                <p className="text-[11px] text-gray-300">{parsedScenes.length} Scenes Extracted</p>
               </div>
             </div>
 
@@ -1555,32 +1555,32 @@ export const ScriptStudio: React.FC = () => {
                     onClick={() => setSelectedSceneIndex(idx)}
                     className={`p-3.5 rounded-xl border transition cursor-pointer flex flex-col justify-between ${
                       isSelected
-                        ? 'bg-purple-950/50 border-purple-500 text-white shadow-lg shadow-purple-500/10'
-                        : 'bg-slate-900/40 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-900/80'
+                        ? 'bg-spine-900/50 border-spine-accent text-white shadow-lg shadow-purple-500/10'
+                        : 'bg-slate-900/40 border-slate-800 text-gray-200 hover:border-slate-700 hover:bg-slate-900/80'
                     }`}
                   >
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-500/20 text-purple-300 rounded font-mono">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 bg-spine-accent/20 text-spine-accent rounded font-mono">
                           SCENE {sc.scene_number}
                         </span>
                         <div className="flex items-center gap-1.5">
                           {hasShots && (
-                            <span className="text-[9px] font-extrabold px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded font-mono">
+                            <span className="text-[9px] font-extrabold px-1.5 py-0.2 bg-spine-success/20 text-spine-success border border-spine-success/30 rounded font-mono">
                               {sceneShots.length} Setups
                             </span>
                           )}
-                          <span className="text-[10px] font-semibold text-slate-400">{sc.time_of_day}</span>
+                          <span className="text-[10px] font-semibold text-gray-300">{sc.time_of_day}</span>
                         </div>
                       </div>
                       <h4 className="text-xs font-bold truncate text-slate-100">{sc.heading}</h4>
-                      <p className="text-[11px] text-slate-400 line-clamp-2 mt-1 leading-relaxed">
+                      <p className="text-[11px] text-gray-300 line-clamp-2 mt-1 leading-relaxed">
                         {sc.action_blocks[0] || 'No action description'}
                       </p>
                         {sc.characters && sc.characters.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-2">
                             {sc.characters.map((cName, cIdx) => (
-                              <button key={cIdx} onClick={(e) => { e.stopPropagation(); setPopupCharacter(characters.find(c => c.name === cName) || null); }} className="px-1.5 py-0.2 text-[9px] font-semibold bg-slate-800 text-purple-300 rounded border border-purple-500/20 hover:bg-slate-700 transition cursor-pointer">
+                              <button key={cIdx} onClick={(e) => { e.stopPropagation(); setPopupCharacter(characters.find(c => c.name === cName) || null); }} className="px-1.5 py-0.2 text-[9px] font-semibold bg-slate-800 text-spine-accent rounded border border-spine-accent/20 hover:bg-slate-700 transition cursor-pointer">
                                 {cName}
                               </button>
                             ))}
@@ -1597,19 +1597,19 @@ export const ScriptStudio: React.FC = () => {
                       disabled={isBreakingDownThisScene}
                       className={`w-full mt-3 py-1.5 px-3 text-[11px] font-bold rounded-lg transition flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50 ${
                         hasShots
-                          ? 'bg-purple-950/70 hover:bg-purple-900/90 text-purple-200 border border-purple-500/40'
-                          : 'bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white shadow-lg shadow-purple-600/20'
+                          ? 'bg-spine-900/70 hover:bg-spine-900/90 text-spine-accent border border-spine-accent/40'
+                          : 'bg-gradient-to-r bg-spine-800 via-indigo-600 to-pink-600 hover:bg-spine-800 hover:to-pink-500 text-white shadow-lg shadow-purple-600/20'
                       }`}
                       title={`Run 3-Camera breakdown for Scene ${sc.scene_number}`}
                     >
                       {isBreakingDownThisScene ? (
                         <>
-                          <RotateCw className="w-3.5 h-3.5 animate-spin text-purple-300" />
+                          <RotateCw className="w-3.5 h-3.5 animate-spin text-spine-accent" />
                           Breaking Down Scene {sc.scene_number}...
                         </>
                       ) : (
                         <>
-                          <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                          <Sparkles className="w-3.5 h-3.5 text-spine-warning" />
                           {hasShots ? `⚡ Re-Run AI-Cam Breakdown` : `⚡ Run AI-Cam Breakdown`}
                         </>
                       )}
@@ -1625,7 +1625,7 @@ export const ScriptStudio: React.FC = () => {
             <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between">
               <div>
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider">Multi-Cam Setups</h3>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[11px] text-gray-300">
                   {currentShots.length > 0 ? `${currentShots.length} Setups (3 Cams / Setup)` : 'No breakdown yet'}
                 </p>
               </div>
@@ -1633,21 +1633,21 @@ export const ScriptStudio: React.FC = () => {
 
             <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
               {currentShots.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center p-6 text-slate-400 space-y-3">
+                <div className="flex flex-col items-center justify-center h-full text-center p-6 text-gray-300 space-y-3">
                   <Camera className="w-10 h-10 text-slate-600" />
                   <div>
-                    <p className="text-xs font-bold text-slate-200">No Shot Setups Generated Yet</p>
-                    <p className="text-[11px] text-slate-500 mt-1 max-w-xs">
-                      Click <strong className="text-purple-400">"⚡ Run AI-Cam Breakdown"</strong> on any scene card on the left to generate synchronized camera angles.
+                    <p className="text-xs font-bold text-gray-100">No Shot Setups Generated Yet</p>
+                    <p className="text-[11px] text-gray-400 mt-1 max-w-xs">
+                      Click <strong className="text-spine-accent">"⚡ Run AI-Cam Breakdown"</strong> on any scene card on the left to generate synchronized camera angles.
                     </p>
                   </div>
                   {currentScene && (
                     <button
                       onClick={() => handleBreakdownScene(currentScene, selectedSceneIndex)}
                       disabled={breakingDownSceneMap[currentScene.scene_number]}
-                      className="px-4 py-2 text-xs font-bold bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-lg shadow-lg shadow-purple-600/30 transition flex items-center gap-1.5"
+                      className="px-4 py-2 text-xs font-bold bg-gradient-to-r bg-spine-800 to-pink-600 hover:bg-spine-800 hover:to-pink-500 text-white rounded-lg shadow-lg shadow-purple-600/30 transition flex items-center gap-1.5"
                     >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      <Sparkles className="w-3.5 h-3.5 text-spine-warning" />
                       Breakdown Scene {currentScene.scene_number} Now
                     </button>
                   )}
@@ -1659,18 +1659,18 @@ export const ScriptStudio: React.FC = () => {
                     onClick={() => setSelectedShotId(shot.id)}
                     className={`p-3 rounded-xl border transition cursor-pointer ${
                       selectedShot?.id === shot.id
-                        ? 'bg-purple-950/40 border-purple-500 shadow-md'
+                        ? 'bg-spine-900/40 border-spine-accent shadow-md'
                         : 'bg-slate-900/50 border-slate-800 hover:border-slate-700'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs font-black text-white">{shot.shot_name}</span>
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded border border-slate-700">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-800 text-gray-200 rounded border border-slate-700">
                         {shot.shot_size} • {shot.camera_angle}
                       </span>
                     </div>
 
-                    <p className="text-[11px] text-slate-300 line-clamp-2">{shot.subject_description}</p>
+                    <p className="text-[11px] text-gray-200 line-clamp-2">{shot.subject_description}</p>
 
                     {/* Camera Switcher & Multi-Angle Manager */}
                     <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2 border-t border-slate-800/80">
@@ -1685,8 +1685,8 @@ export const ScriptStudio: React.FC = () => {
                               }}
                               className={`px-2 py-1 text-[10px] font-bold rounded flex items-center gap-1 transition ${
                                 selectedShot?.id === shot.id && activeCamLetter === cam.camera_letter
-                                  ? 'bg-purple-600 text-white shadow-sm'
-                                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
+                                  ? 'bg-spine-accent text-white shadow-sm'
+                                  : 'bg-slate-800/80 text-gray-300 hover:text-gray-100'
                               }`}
                             >
                               <Camera className="w-2.5 h-2.5" />
@@ -1698,7 +1698,7 @@ export const ScriptStudio: React.FC = () => {
                                   e.stopPropagation();
                                   handleRemoveCameraFromShot(shot, cam.camera_letter);
                                 }}
-                                className="opacity-0 group-hover/cam:opacity-100 ml-0.5 p-0.5 text-slate-500 hover:text-rose-400 transition"
+                                className="opacity-0 group-hover/cam:opacity-100 ml-0.5 p-0.5 text-gray-400 hover:text-rose-400 transition"
                                 title={`Remove Camera ${cam.camera_letter}`}
                               >
                                 <X className="w-2.5 h-2.5" />
@@ -1713,7 +1713,7 @@ export const ScriptStudio: React.FC = () => {
                             e.stopPropagation();
                             handleAddCameraToShot(shot);
                           }}
-                          className="px-1.5 py-1 text-[10px] font-bold text-purple-300 hover:text-white bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/30 rounded flex items-center gap-0.5 transition"
+                          className="px-1.5 py-1 text-[10px] font-bold text-spine-accent hover:text-white bg-spine-900/40 hover:bg-spine-900/60 border border-spine-accent/30 rounded flex items-center gap-0.5 transition"
                           title="Add an additional camera angle to this setup"
                         >
                           <Plus className="w-2.5 h-2.5" />
@@ -1727,7 +1727,7 @@ export const ScriptStudio: React.FC = () => {
                           e.stopPropagation();
                           handleRenderAllCamerasForShot(shot);
                         }}
-                        className="px-2 py-1 text-[10px] font-bold text-amber-300 hover:text-white bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded flex items-center gap-1 transition shrink-0"
+                        className="px-2 py-1 text-[10px] font-bold text-spine-warning hover:text-white bg-spine-warning/10 hover:bg-spine-warning/20 border border-spine-warning/30 rounded flex items-center gap-1 transition shrink-0"
                         title={`Batch Render AI Concepts for all ${shot.cameras.length} Cameras`}
                       >
                         <Sparkles className="w-2.5 h-2.5" />
@@ -1753,8 +1753,8 @@ export const ScriptStudio: React.FC = () => {
                         onClick={() => setActiveCamLetter(cam.camera_letter)}
                         className={`px-3 py-1 text-xs font-bold rounded-lg flex items-center gap-1.5 transition ${
                           activeCamLetter === cam.camera_letter
-                            ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                            : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
+                            ? 'bg-spine-accent text-white shadow-md shadow-purple-600/30'
+                            : 'bg-slate-900 border border-slate-800 text-gray-300 hover:text-gray-100'
                         }`}
                       >
                         <Camera className="w-3 h-3" />
@@ -1764,7 +1764,7 @@ export const ScriptStudio: React.FC = () => {
 
                     <button
                       onClick={() => handleAddCameraToShot(selectedShot)}
-                      className="px-2.5 py-1 text-xs font-bold text-purple-300 hover:text-white bg-purple-950/60 hover:bg-purple-900 border border-purple-500/40 rounded-lg flex items-center gap-1 transition"
+                      className="px-2.5 py-1 text-xs font-bold text-spine-accent hover:text-white bg-spine-900/60 hover:bg-spine-900 border border-spine-accent/40 rounded-lg flex items-center gap-1 transition"
                       title="Add New Camera Angle (e.g. Cam D, E, F)"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -1787,14 +1787,14 @@ export const ScriptStudio: React.FC = () => {
                 {/* Visual Frame Canvas Header */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 text-xs font-black bg-purple-600 text-white rounded">
+                    <span className="px-2 py-0.5 text-xs font-black bg-spine-accent text-white rounded">
                       CAMERA {activeCamLetter}
                     </span>
                     <span className="text-xs font-bold text-white">{selectedCam.camera_role}</span>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-mono text-purple-300">
+                    <span className="text-[11px] font-mono text-spine-accent">
                       {selectedCam.focal_length}mm • {selectedCam.aperture} • {aspectRatio}
                     </span>
                     <button
@@ -1802,7 +1802,7 @@ export const ScriptStudio: React.FC = () => {
                         setShowCamSettings(!showCamSettings);
                         if (!showCamSettings) setShowShotScript(false);
                       }}
-                      className={`p-1.5 rounded-lg transition ${showCamSettings ? 'bg-purple-600 text-white shadow-md' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+                      className={`p-1.5 rounded-lg transition ${showCamSettings ? 'bg-spine-accent text-white shadow-md' : 'bg-slate-800 text-gray-300 hover:text-white'}`}
                       title="Camera DoP Overrides"
                     >
                       <Sliders className="w-3.5 h-3.5" />
@@ -1812,7 +1812,7 @@ export const ScriptStudio: React.FC = () => {
                         setShowShotScript(!showShotScript);
                         if (!showShotScript) setShowCamSettings(false);
                       }}
-                      className={`p-1.5 rounded-lg transition ${showShotScript ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+                      className={`p-1.5 rounded-lg transition ${showShotScript ? 'bg-spine-accent text-white shadow-md' : 'bg-slate-800 text-gray-300 hover:text-white'}`}
                       title="Shot Script & Scene Context"
                     >
                       <FileText className="w-3.5 h-3.5" />
@@ -1846,20 +1846,20 @@ export const ScriptStudio: React.FC = () => {
                       />
                     </>
                   ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs">
+                    <div className="flex flex-col items-center justify-center h-full text-gray-400 text-xs">
                       <Camera className="w-8 h-8 mb-2 text-slate-600" />
                       Rendering Previz Frame...
                     </div>
                   )}
 
                   {/* Overlay Badge */}
-                  <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/70 backdrop-blur text-[10px] font-mono font-bold text-purple-300 rounded border border-purple-500/30">
+                  <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/70 backdrop-blur text-[10px] font-mono font-bold text-spine-accent rounded border border-spine-accent/30">
                     35mm Previz • {selectedShot.dop_spec?.dop_preset || selectedPreset}
                   </div>
 
                   {/* Character Lock Badge */}
-                  <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/80 backdrop-blur text-[10px] font-semibold text-emerald-300 rounded border border-emerald-500/30 flex items-center gap-1">
-                    <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                  <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/80 backdrop-blur text-[10px] font-semibold text-spine-success rounded border border-spine-success/30 flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-spine-success" />
                     Consistent Cast Applied
                   </div>
 
@@ -1883,13 +1883,13 @@ export const ScriptStudio: React.FC = () => {
                 </div>
 
                 {showCamSettings && (
-                  <div className="p-4 bg-slate-900/95 border border-purple-500/50 rounded-xl shadow-lg shadow-purple-500/10 h-[500px] flex flex-col">
+                  <div className="p-4 bg-slate-900/95 border border-spine-accent/50 rounded-xl shadow-lg shadow-purple-500/10 h-[500px] flex flex-col">
                     <div className="flex justify-between items-center mb-4">
                       <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                        <Sliders className="w-4 h-4 text-purple-400" />
+                        <Sliders className="w-4 h-4 text-spine-accent" />
                         Camera {activeCamLetter} DoP Overrides
                       </h4>
-                      <button onClick={() => setShowCamSettings(false)} className="text-slate-400 hover:text-white">
+                      <button onClick={() => setShowCamSettings(false)} className="text-gray-300 hover:text-white">
                         <X className="w-4 h-4" />
                       </button>
                     </div>
@@ -1934,24 +1934,24 @@ export const ScriptStudio: React.FC = () => {
                             Script Context: Scene {selectedShot.scene_number} ({selectedShot.shot_name})
                           </h4>
                           <div className="flex flex-wrap gap-1 mt-2">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mr-1">Cast in Shot:</span>
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mr-1">Cast in Shot:</span>
                             {selectedShot.characters && selectedShot.characters.length > 0 ? (
                               selectedShot.characters.map(c => (
-                                <button key={c} onClick={() => setPopupCharacter(characters.find(char => char.name === c) || null)} className="px-1.5 py-0.5 text-[9px] font-bold bg-indigo-950/60 text-indigo-200 border border-indigo-500/30 rounded hover:bg-indigo-900 transition cursor-pointer">
+                                <button key={c} onClick={() => setPopupCharacter(characters.find(char => char.name === c) || null)} className="px-1.5 py-0.5 text-[9px] font-bold bg-indigo-950/60 text-indigo-200 border border-indigo-500/30 rounded hover:bg-spine-900 transition cursor-pointer">
                                   {c}
                                 </button>
                               ))
                             ) : (
-                              <span className="text-[10px] text-slate-500 italic">None specified</span>
+                              <span className="text-[10px] text-gray-400 italic">None specified</span>
                             )}
                           </div>
                         </div>
-                        <button onClick={() => setShowShotScript(false)} className="text-slate-400 hover:text-white self-start">
+                        <button onClick={() => setShowShotScript(false)} className="text-gray-300 hover:text-white self-start">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
                       <div className="flex-1 overflow-y-auto pr-2 space-y-1.5 font-mono text-[11px] leading-relaxed custom-scrollbar">
-                        <h4 className="text-xs font-black text-slate-200 mb-4">{shotScene.heading}</h4>
+                        <h4 className="text-xs font-black text-gray-100 mb-4">{shotScene.heading}</h4>
                         {(() => {
                           let insideCharBlock = false;
                           let currentSpeaker = "";
@@ -1972,7 +1972,7 @@ export const ScriptStudio: React.FC = () => {
                             const isHighlighted = insideCharBlock && selectedShot.characters?.includes(currentSpeaker);
                             
                             return (
-                              <div key={lIdx} className={`whitespace-pre-wrap ${isHighlighted ? 'bg-indigo-900/50 text-indigo-100 border-l-[3px] border-indigo-500 pl-3 -ml-3 py-0.5 font-medium shadow-sm' : 'text-slate-400'}`}>
+                              <div key={lIdx} className={`whitespace-pre-wrap ${isHighlighted ? 'bg-spine-900/50 text-indigo-100 border-l-[3px] border-indigo-500 pl-3 -ml-3 py-0.5 font-medium shadow-sm' : 'text-gray-300'}`}>
                                 {line}
                               </div>
                             );
@@ -1986,26 +1986,26 @@ export const ScriptStudio: React.FC = () => {
                 {/* Quick Optics Tuners (Focal Length, Aperture, Shot Size) */}
                 <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
-                      <Sliders className="w-3 h-3 text-purple-400" />
+                    <span className="text-[11px] font-bold text-gray-200 flex items-center gap-1.5">
+                      <Sliders className="w-3 h-3 text-spine-accent" />
                       Camera {activeCamLetter} Optics &amp; Framing:
                     </span>
-                    <span className="text-[10px] font-mono text-slate-400">
+                    <span className="text-[10px] font-mono text-gray-300">
                       {selectedCam.shot_size} • {selectedCam.focal_length}mm • {selectedCam.aperture}
                     </span>
                   </div>
 
                   {/* Focal Length Pills */}
                   <div className="flex items-center gap-1 flex-wrap">
-                    <span className="text-[10px] font-semibold text-slate-400 mr-1">Lens:</span>
+                    <span className="text-[10px] font-semibold text-gray-300 mr-1">Lens:</span>
                     {[18, 24, 35, 50, 85, 135].map(fl => (
                       <button
                         key={fl}
                         onClick={() => handleUpdateCameraProperty(selectedShot, activeCamLetter, { focal_length: fl })}
                         className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded transition ${
                           selectedCam.focal_length === fl
-                            ? 'bg-purple-600 text-white'
-                            : 'bg-slate-800 text-slate-400 hover:text-white'
+                            ? 'bg-spine-accent text-white'
+                            : 'bg-slate-800 text-gray-300 hover:text-white'
                         }`}
                       >
                         {fl}mm
@@ -2015,15 +2015,15 @@ export const ScriptStudio: React.FC = () => {
 
                   {/* Aperture Pills */}
                   <div className="flex items-center gap-1 flex-wrap">
-                    <span className="text-[10px] font-semibold text-slate-400 mr-1">Iris:</span>
+                    <span className="text-[10px] font-semibold text-gray-300 mr-1">Iris:</span>
                     {['T1.4', 'T2.0', 'T2.8', 'T4.0', 'T5.6', 'T8.0'].map(ap => (
                       <button
                         key={ap}
                         onClick={() => handleUpdateCameraProperty(selectedShot, activeCamLetter, { aperture: ap })}
                         className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded transition ${
                           selectedCam.aperture === ap
-                            ? 'bg-purple-600 text-white'
-                            : 'bg-slate-800 text-slate-400 hover:text-white'
+                            ? 'bg-spine-accent text-white'
+                            : 'bg-slate-800 text-gray-300 hover:text-white'
                         }`}
                       >
                         {ap}
@@ -2033,15 +2033,15 @@ export const ScriptStudio: React.FC = () => {
 
                   {/* Shot Size Pills */}
                   <div className="flex items-center gap-1 flex-wrap">
-                    <span className="text-[10px] font-semibold text-slate-400 mr-1">Framing:</span>
+                    <span className="text-[10px] font-semibold text-gray-300 mr-1">Framing:</span>
                     {['EWS', 'WS', 'MS', 'MCU', 'CU', 'ECU', 'OTS', 'POV'].map(sz => (
                       <button
                         key={sz}
                         onClick={() => handleUpdateCameraProperty(selectedShot, activeCamLetter, { shot_size: sz })}
                         className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded transition ${
                           selectedCam.shot_size === sz
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-slate-800 text-slate-400 hover:text-white'
+                            ? 'bg-spine-accent text-white'
+                            : 'bg-slate-800 text-gray-300 hover:text-white'
                         }`}
                       >
                         {sz}
@@ -2053,8 +2053,8 @@ export const ScriptStudio: React.FC = () => {
                 {/* Prompt Modifier Chips */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-purple-400" />
+                    <label className="text-[11px] font-bold text-gray-200 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-spine-accent" />
                       Quick Cinematography Modifiers:
                     </label>
                   </div>
@@ -2070,7 +2070,7 @@ export const ScriptStudio: React.FC = () => {
                       <button
                         key={mod}
                         onClick={() => handleAppendPromptModifier(mod)}
-                        className="px-2 py-1 text-[10px] font-semibold bg-slate-900 hover:bg-purple-950 text-slate-300 hover:text-purple-200 border border-slate-800 hover:border-purple-500/40 rounded transition shadow-sm"
+                        className="px-2 py-1 text-[10px] font-semibold bg-slate-900 hover:bg-spine-900 text-gray-200 hover:text-spine-accent border border-slate-800 hover:border-spine-accent/40 rounded transition shadow-sm"
                       >
                         {mod}
                       </button>
@@ -2080,14 +2080,14 @@ export const ScriptStudio: React.FC = () => {
 
                 {/* Editable Generative Prompt Box */}
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                  <label className="block text-[11px] font-bold text-gray-200 mb-1">
                     Cinematography &amp; Character Prompt (Camera {activeCamLetter})
                   </label>
                   <textarea
                     rows={4}
                     value={selectedCam.prompt}
                     onChange={e => handleUpdateActivePrompt(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono focus:outline-none focus:border-purple-500"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono focus:outline-none focus:border-spine-accent"
                   />
                 </div>
 
@@ -2095,7 +2095,7 @@ export const ScriptStudio: React.FC = () => {
                 <button
                   onClick={() => handleRegenerateCameraFrame(selectedShot, selectedCam)}
                   disabled={generatingCamMap[`${selectedShot.id}_${selectedCam.camera_letter}`]}
-                  className="w-full py-2.5 text-xs font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-lg shadow-lg shadow-purple-600/30 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="w-full py-2.5 text-xs font-bold bg-gradient-to-r bg-spine-800 via-indigo-600 to-pink-600 hover:bg-spine-800 hover:to-pink-500 text-white rounded-lg shadow-lg shadow-purple-600/30 transition flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {generatingCamMap[`${selectedShot.id}_${selectedCam.camera_letter}`] ? (
                     <>
@@ -2111,7 +2111,7 @@ export const ScriptStudio: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs">
+              <div className="flex flex-col items-center justify-center h-full text-gray-400 text-xs">
                 <Camera className="w-10 h-10 mb-2 text-slate-600" />
                 Select a shot setup to inspect camera perspectives.
               </div>
@@ -2131,10 +2131,10 @@ export const ScriptStudio: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-base font-bold text-white flex items-center gap-2">
-                    <Sliders className="w-4 h-4 text-purple-400" />
+                    <Sliders className="w-4 h-4 text-spine-accent" />
                     Director of Photography (DoP) Studio
                   </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="text-xs text-gray-300 mt-0.5">
                     Define cinematography via Master Presets, Manual Optics Matrix, or Natural Language.
                   </p>
                 </div>
@@ -2157,15 +2157,15 @@ export const ScriptStudio: React.FC = () => {
           <div className="col-span-6 bg-[#090D16] flex flex-col overflow-y-auto p-6 space-y-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Crosshair className="w-4 h-4 text-purple-400" />
+                <Crosshair className="w-4 h-4 text-spine-accent" />
                 <h3 className="text-sm font-bold text-white">Real-Time Optical Viewfinder Simulation</h3>
               </div>
               <button
                 onClick={() => setShowViewfinderGrid(!showViewfinderGrid)}
                 className={`px-2.5 py-1 text-[11px] font-bold rounded border transition ${
                   showViewfinderGrid
-                    ? 'bg-purple-600 text-white border-purple-500'
-                    : 'bg-slate-900 text-slate-400 border-slate-800'
+                    ? 'bg-spine-accent text-white border-spine-accent'
+                    : 'bg-slate-900 text-gray-300 border-slate-800'
                 }`}
               >
                 Grid &amp; Crosshairs: {showViewfinderGrid ? 'ON' : 'OFF'}
@@ -2237,7 +2237,7 @@ export const ScriptStudio: React.FC = () => {
                   transform: 'translate(-50%, -50%)',
                   boxShadow: showSurround ? '0 0 0 9999px rgba(2, 6, 23, 0.74)' : 'none',
                   border: showSurround ? '1px solid rgba(168, 85, 247, 0.9)' : 'none',
-                  transition: 'width 200ms ease, height 200ms ease'
+                  transition: 'transform 200ms ease'
                 }}
               >
                 {/* Protect / shoot-and-protect frame lines inside the delivery frame */}
@@ -2252,7 +2252,7 @@ export const ScriptStudio: React.FC = () => {
                       transform: 'translate(-50%, -50%)'
                     }}
                   >
-                    <span className="absolute top-0.5 left-1 text-[9px] font-mono font-bold text-amber-300/90 drop-shadow">
+                    <span className="absolute top-0.5 left-1 text-[9px] font-mono font-bold text-spine-warning/90 drop-shadow">
                       PROTECT {protectRatio}
                     </span>
                   </div>
@@ -2286,14 +2286,14 @@ export const ScriptStudio: React.FC = () => {
               {/* Plate coverage warning — crop cannot synthesise a wider field of view */}
               {geometry.plateLimited && (
                 <div className="absolute left-1/2 -translate-x-1/2 bottom-12 z-10 pointer-events-none">
-                  <span className="block whitespace-nowrap px-2.5 py-1 rounded bg-purple-600/90 text-white text-[9px] font-mono font-bold tracking-wide shadow-lg border border-purple-400/40">
+                  <span className="block whitespace-nowrap px-2.5 py-1 rounded bg-spine-accent/90 text-white text-[9px] font-mono font-bold tracking-wide shadow-lg border border-spine-accent/40">
                     OPTICAL {customFocalLength}MM WIDE FOV ({geometry.hfovDeg.toFixed(1)}° HFOV) · TEST RENDER FOR 8K NATIVE COVERAGE
                   </span>
                 </div>
               )}
 
               {/* On-Screen Display (OSD HUD) */}
-              <div className="absolute inset-0 p-3 flex flex-col justify-between pointer-events-none font-mono text-[10px] text-emerald-400 select-none">
+              <div className="absolute inset-0 p-3 flex flex-col justify-between pointer-events-none font-mono text-[10px] text-spine-success select-none">
                 <div className="flex items-center justify-between bg-black/50 backdrop-blur-sm px-2 py-1 rounded">
                   <div className="flex items-center gap-2">
                     {resolution ? (
@@ -2304,23 +2304,23 @@ export const ScriptStudio: React.FC = () => {
                         <span
                           className={`px-1.5 py-px rounded text-[9px] font-bold ${
                             resolution.meetsHd
-                              ? 'bg-emerald-500/20 text-emerald-300'
-                              : 'bg-red-500/25 text-red-300'
+                              ? 'bg-spine-success/20 text-spine-success'
+                              : 'bg-spine-critical/25 text-spine-critical'
                           }`}
                         >
                           {resolution.masteringTarget}
                         </span>
-                        <span className="text-slate-400">
+                        <span className="text-gray-300">
                           {resolution.pixelPitchUm.toFixed(2)}µm
                         </span>
                       </>
                     ) : (
-                      <span className="text-slate-300">
+                      <span className="text-gray-200">
                         PHOTOCHEMICAL · resolution set by scan
                       </span>
                     )}
                   </div>
-                  <div className="text-purple-300 font-bold">
+                  <div className="text-spine-accent font-bold">
                     {aspectRatio} • {geometry.sensor.label}
                   </div>
                 </div>
@@ -2343,14 +2343,14 @@ export const ScriptStudio: React.FC = () => {
                       </strong>
                     </span>
                     <span>
-                      WB: <strong className="text-amber-300">{whiteBalanceK}K</strong>
+                      WB: <strong className="text-spine-warning">{whiteBalanceK}K</strong>
                     </span>
                   </div>
                   <div className="flex items-center gap-3 [&>span]:whitespace-nowrap">
                     <span>
-                      RATIO: <strong className="text-purple-300">{customLightingRatio}</strong>
+                      RATIO: <strong className="text-spine-accent">{customLightingRatio}</strong>
                     </span>
-                    <span className="text-slate-300">
+                    <span className="text-gray-200">
                       LUT: <strong className="text-white">{customLutEmulation}</strong>
                     </span>
                   </div>
@@ -2362,28 +2362,28 @@ export const ScriptStudio: React.FC = () => {
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-slate-300">Surround (open gate)</span>
+                  <span className="text-[11px] font-bold text-gray-200">Surround (open gate)</span>
                   <button
                     onClick={() => setShowSurround(!showSurround)}
                     className={`px-2.5 py-1 text-[11px] font-bold rounded border transition ${
                       showSurround
-                        ? 'bg-purple-600 text-white border-purple-500'
-                        : 'bg-slate-900 text-slate-400 border-slate-800'
+                        ? 'bg-spine-accent text-white border-spine-accent'
+                        : 'bg-slate-900 text-gray-300 border-slate-800'
                     }`}
                   >
                     {showSurround ? 'ON' : 'OFF'}
                   </button>
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase">Protect:</span>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Protect:</span>
                   {PROTECT_RATIOS.map(pr => (
                     <button
                       key={pr}
                       onClick={() => setProtectRatio(pr)}
                       className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded transition ${
                         protectRatio === pr
-                          ? 'bg-amber-500/90 text-slate-950'
-                          : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                          ? 'bg-spine-warning/90 text-slate-950'
+                          : 'text-gray-300 hover:text-white hover:bg-slate-800'
                       }`}
                     >
                       {pr}
@@ -2392,37 +2392,37 @@ export const ScriptStudio: React.FC = () => {
                 </div>
               </div>
 
-              <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 font-mono text-[10px] text-slate-300 space-y-1">
+              <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 font-mono text-[10px] text-gray-200 space-y-1">
                 <div className="flex justify-between">
-                  <span className="text-slate-500">EXTRACTION</span>
+                  <span className="text-gray-400">EXTRACTION</span>
                   <strong className="text-white">
                     {geometry.frame.widthMm.toFixed(2)} × {geometry.frame.heightMm.toFixed(2)} mm
                   </strong>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">GATE USED</span>
+                  <span className="text-gray-400">GATE USED</span>
                   <strong className="text-white">
                     {(geometry.frame.sensorAreaUsed * 100).toFixed(1)}% ({geometry.frame.limitedBy}-limited)
                   </strong>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">ANGLE OF VIEW</span>
+                  <span className="text-gray-400">ANGLE OF VIEW</span>
                   <strong className="text-white">
                     {geometry.hfovDeg.toFixed(1)}° H × {geometry.vfovDeg.toFixed(1)}° V
                   </strong>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">CROP FACTOR</span>
+                  <span className="text-gray-400">CROP FACTOR</span>
                   <strong className="text-white">{geometry.cropFactor.toFixed(2)}× vs FF</strong>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">PLATE SCALE</span>
-                  <strong className={geometry.plateLimited ? 'text-amber-300' : 'text-white'}>
+                  <span className="text-gray-400">PLATE SCALE</span>
+                  <strong className={geometry.plateLimited ? 'text-spine-warning' : 'text-white'}>
                     {geometry.framingScale.toFixed(2)}× vs {REFERENCE_FOCAL_MM}mm
                   </strong>
                 </div>
                 {geometry.plateLimited && (
-                  <div className="text-[9px] text-purple-300 leading-snug pt-0.5 font-medium">
+                  <div className="text-[9px] text-spine-accent leading-snug pt-0.5 font-medium">
                     Wide-angle field of view ({geometry.framingScale.toFixed(2)}× optical scale). Run test render for full native {customFocalLength}mm sensor coverage.
                   </div>
                 )}
@@ -2433,10 +2433,10 @@ export const ScriptStudio: React.FC = () => {
             <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
-                  <Aperture className="w-3.5 h-3.5 text-purple-400" />
-                  <span className="text-[11px] font-bold text-slate-200">Depth of Field</span>
+                  <Aperture className="w-3.5 h-3.5 text-spine-accent" />
+                  <span className="text-[11px] font-bold text-gray-100">Depth of Field</span>
                 </div>
-                <span className="font-mono text-[9px] text-slate-500">
+                <span className="font-mono text-[9px] text-gray-400">
                   f/{dof.fNumber.toFixed(2)} from {customAperture} • CoC {dof.cocMm.toFixed(4)}mm
                 </span>
               </div>
@@ -2445,7 +2445,7 @@ export const ScriptStudio: React.FC = () => {
               <div className="pt-3 pb-1">
                 <div className="relative h-1.5 bg-slate-800 rounded-full">
                   <div
-                    className="absolute h-full bg-emerald-500/70 rounded-full"
+                    className="absolute h-full bg-spine-success/70 rounded-full"
                     style={{
                       left: `${depthScalePos(dof.nearM)}%`,
                       width: `${Math.max(depthScalePos(dof.farM) - depthScalePos(dof.nearM), 0.8)}%`
@@ -2475,30 +2475,30 @@ export const ScriptStudio: React.FC = () => {
 
               <div className="grid grid-cols-4 gap-2 font-mono text-[10px]">
                 <div>
-                  <div className="text-slate-500 text-[8px] uppercase tracking-wide">Near</div>
-                  <strong className="text-emerald-300">{formatDistance(dof.nearM)}</strong>
+                  <div className="text-gray-400 text-[8px] uppercase tracking-wide">Near</div>
+                  <strong className="text-spine-success">{formatDistance(dof.nearM)}</strong>
                 </div>
                 <div>
-                  <div className="text-slate-500 text-[8px] uppercase tracking-wide">Far</div>
-                  <strong className="text-emerald-300">{formatDistance(dof.farM)}</strong>
+                  <div className="text-gray-400 text-[8px] uppercase tracking-wide">Far</div>
+                  <strong className="text-spine-success">{formatDistance(dof.farM)}</strong>
                 </div>
                 <div>
-                  <div className="text-slate-500 text-[8px] uppercase tracking-wide">Total</div>
+                  <div className="text-gray-400 text-[8px] uppercase tracking-wide">Total</div>
                   <strong className="text-white">{formatDistance(dof.totalM)}</strong>
                 </div>
                 <div>
-                  <div className="text-slate-500 text-[8px] uppercase tracking-wide">Hyperfocal</div>
-                  <strong className="text-amber-300">{formatDistance(dof.hyperfocalM)}</strong>
+                  <div className="text-gray-400 text-[8px] uppercase tracking-wide">Hyperfocal</div>
+                  <strong className="text-spine-warning">{formatDistance(dof.hyperfocalM)}</strong>
                 </div>
               </div>
 
-              <div className="font-mono text-[9px] text-slate-500">
+              <div className="font-mono text-[9px] text-gray-400">
                 {formatDistance(dof.inFrontM)} in front • {formatDistance(dof.behindM)} behind
                 {dof.atInfinity && ' — focused at or past hyperfocal, far limit is infinite'}
               </div>
             </div>
 
-            <p className="text-[10px] text-slate-500 leading-relaxed">
+            <p className="text-[10px] text-gray-400 leading-relaxed">
               Framing is geometrically exact: angle of view and sensor extraction are computed from
               the selected format's open-gate dimensions. The plate is magnified to match the chosen
               focal length, but perspective compression cannot be recovered from a flat still — run a
@@ -2508,12 +2508,12 @@ export const ScriptStudio: React.FC = () => {
             {/* Live Synthesized Generative Prompt */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                <label className="text-xs font-bold text-gray-200 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-spine-accent" />
                   Live Compiled AI Generative Prompt
                 </label>
               </div>
-              <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono text-purple-200 leading-relaxed max-h-28 overflow-y-auto">
+              <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono text-spine-accent leading-relaxed max-h-28 overflow-y-auto">
                 {compileDoPPromptPreview()}
               </div>
             </div>
@@ -2522,7 +2522,7 @@ export const ScriptStudio: React.FC = () => {
             <button
               onClick={handleExecuteDoPTestRender}
               disabled={isTestRenderingDoP}
-              className="w-full py-3 text-xs font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-xl shadow-lg shadow-purple-600/30 transition flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full py-3 text-xs font-bold bg-gradient-to-r bg-spine-800 via-indigo-600 to-pink-600 hover:bg-spine-800 hover:to-pink-500 text-white rounded-xl shadow-lg shadow-purple-600/30 transition flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {isTestRenderingDoP ? (
                 <>
@@ -2554,7 +2554,7 @@ export const ScriptStudio: React.FC = () => {
               <h3 className="text-sm font-bold text-white">{enlargedImage.title}</h3>
               <button
                 onClick={() => setEnlargedImage(null)}
-                className="text-slate-400 hover:text-white text-sm font-bold"
+                className="text-gray-300 hover:text-white text-sm font-bold"
               >
                 ✕
               </button>
@@ -2566,7 +2566,7 @@ export const ScriptStudio: React.FC = () => {
                 className="max-h-[70vh] object-contain rounded-lg"
               />
             </div>
-            <div className="p-4 bg-slate-900/90 text-xs font-mono text-slate-300">
+            <div className="p-4 bg-slate-900/90 text-xs font-mono text-gray-200">
               {enlargedImage.prompt}
             </div>
           </div>
@@ -2577,7 +2577,7 @@ export const ScriptStudio: React.FC = () => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setPopupCharacter(null)}>
           <div className="relative w-full max-w-4xl max-h-[90vh] bg-[#090D16] border border-slate-700 rounded-2xl shadow-2xl overflow-y-auto custom-scrollbar flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="sticky top-0 right-0 p-4 flex justify-end z-10 bg-gradient-to-b from-[#090D16] to-transparent">
-              <button onClick={() => setPopupCharacter(null)} className="p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white rounded-full backdrop-blur transition shadow-lg">
+              <button onClick={() => setPopupCharacter(null)} className="p-2 bg-slate-800/80 hover:bg-slate-700 text-gray-200 hover:text-white rounded-full backdrop-blur transition shadow-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -2593,7 +2593,7 @@ export const ScriptStudio: React.FC = () => {
                 generatingPortraitMap={generatingPortraitMap}
                 handleGenerateCharacterPortrait={handleGenerateCharacterPortrait}
                 setEnlargedImage={setEnlargedImage}
-                setSelectedCharId={(id) => {
+                setSelectedCharId={(id: string) => {
                   setSelectedCharId(id);
                   setPopupCharacter(characters.find(c => c.id === id) || null);
                 }}
@@ -2606,77 +2606,77 @@ export const ScriptStudio: React.FC = () => {
       {/* Screenplay Ingestion & AI Parsing HUD Modal */}
       {isUploading && (
         <div className="fixed inset-0 z-[120] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="max-w-md w-full bg-[#0F172A] border border-purple-500/50 rounded-2xl p-6 shadow-2xl shadow-purple-500/20 text-center flex flex-col items-center relative overflow-hidden">
+          <div className="max-w-md w-full bg-[#0F172A] border border-spine-accent/50 rounded-2xl p-6 shadow-2xl shadow-purple-500/20 text-center flex flex-col items-center relative overflow-hidden">
             {/* Top Glowing Gradient Bar */}
-            <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 animate-pulse"></div>
+            <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r bg-spine-800 via-pink-500 to-cyan-400 animate-pulse"></div>
 
             {/* Pulsing Film Clapper & Orbit Glow */}
             <div className="relative my-3">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-purple-600 via-purple-700 to-pink-600 flex items-center justify-center shadow-xl shadow-purple-600/40 animate-pulse">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr bg-spine-800 to-pink-600 flex items-center justify-center shadow-xl shadow-purple-600/40 animate-pulse">
                 <Film className="w-8 h-8 text-white" />
               </div>
-              <div className="absolute -inset-2 rounded-2xl border-2 border-purple-500/30 animate-ping opacity-25 pointer-events-none"></div>
+              <div className="absolute -inset-2 rounded-2xl border-2 border-spine-accent/30 animate-ping opacity-25 pointer-events-none"></div>
             </div>
 
             <h3 className="text-base font-bold text-white mb-1">
               Ingesting &amp; Parsing Screenplay
             </h3>
-            <p className="text-xs font-mono font-semibold text-purple-300 mb-4 truncate max-w-full px-2">
+            <p className="text-xs font-mono font-semibold text-spine-accent mb-4 truncate max-w-full px-2">
               {uploadedFileName || 'Processing document...'}
             </p>
 
             {/* Smooth Dynamic Progress Bar */}
             <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800 mb-3 shadow-inner">
               <div
-                className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-400 rounded-full transition-all duration-700 ease-out shadow-sm"
+                className="h-full bg-gradient-to-r bg-spine-800 via-pink-500 to-cyan-400 rounded-full transition-all duration-700 ease-out shadow-sm"
                 style={{ width: `${Math.max(10, uploadProgress)}%` }}
               ></div>
             </div>
 
             {/* Live Pipeline Action Indicator */}
-            <div className="w-full flex items-center justify-center gap-2 text-xs font-bold text-slate-200 mb-4 bg-slate-950/80 py-2 px-3 rounded-xl border border-purple-500/30 shadow-inner">
-              <Loader2 className="w-4 h-4 text-purple-400 animate-spin shrink-0" />
+            <div className="w-full flex items-center justify-center gap-2 text-xs font-bold text-gray-100 mb-4 bg-slate-950/80 py-2 px-3 rounded-xl border border-spine-accent/30 shadow-inner">
+              <Loader2 className="w-4 h-4 text-spine-accent animate-spin shrink-0" />
               <span className="truncate">{uploadStage}</span>
             </div>
 
             {/* Step-by-Step Architecture Pipeline */}
-            <div className="w-full space-y-2 text-left text-[11px] font-mono text-slate-400 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
-              <div className={`flex items-center gap-2.5 transition-colors ${uploadProgress >= 20 ? 'text-emerald-400 font-bold' : 'text-slate-500'}`}>
+            <div className="w-full space-y-2 text-left text-[11px] font-mono text-gray-300 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
+              <div className={`flex items-center gap-2.5 transition-colors ${uploadProgress >= 20 ? 'text-spine-success font-bold' : 'text-gray-400'}`}>
                 {uploadProgress >= 20 ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 text-spine-success shrink-0" />
                 ) : (
                   <div className="w-4 h-4 rounded-full border border-slate-700 flex items-center justify-center text-[9px] text-slate-600">1</div>
                 )}
                 <span>Multi-Format File Ingest &amp; Normalization</span>
               </div>
 
-              <div className={`flex items-center gap-2.5 transition-colors ${uploadProgress >= 50 ? 'text-emerald-400 font-bold' : uploadProgress >= 20 ? 'text-purple-300 font-bold' : 'text-slate-500'}`}>
+              <div className={`flex items-center gap-2.5 transition-colors ${uploadProgress >= 50 ? 'text-spine-success font-bold' : uploadProgress >= 20 ? 'text-spine-accent font-bold' : 'text-gray-400'}`}>
                 {uploadProgress >= 50 ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 text-spine-success shrink-0" />
                 ) : uploadProgress >= 20 ? (
-                  <Loader2 className="w-4 h-4 text-purple-400 animate-spin shrink-0" />
+                  <Loader2 className="w-4 h-4 text-spine-accent animate-spin shrink-0" />
                 ) : (
                   <div className="w-4 h-4 rounded-full border border-slate-700 flex items-center justify-center text-[9px] text-slate-600">2</div>
                 )}
                 <span>Scene Sluglines, Actions &amp; Dialogue Blocks</span>
               </div>
 
-              <div className={`flex items-center gap-2.5 transition-colors ${uploadProgress >= 80 ? 'text-emerald-400 font-bold' : uploadProgress >= 50 ? 'text-purple-300 font-bold' : 'text-slate-500'}`}>
+              <div className={`flex items-center gap-2.5 transition-colors ${uploadProgress >= 80 ? 'text-spine-success font-bold' : uploadProgress >= 50 ? 'text-spine-accent font-bold' : 'text-gray-400'}`}>
                 {uploadProgress >= 80 ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 text-spine-success shrink-0" />
                 ) : uploadProgress >= 50 ? (
-                  <Loader2 className="w-4 h-4 text-purple-400 animate-spin shrink-0" />
+                  <Loader2 className="w-4 h-4 text-spine-accent animate-spin shrink-0" />
                 ) : (
                   <div className="w-4 h-4 rounded-full border border-slate-700 flex items-center justify-center text-[9px] text-slate-600">3</div>
                 )}
                 <span>Gemini AI Cast Profiler &amp; Visual Traits</span>
               </div>
 
-              <div className={`flex items-center gap-2.5 transition-colors ${uploadProgress >= 95 ? 'text-emerald-400 font-bold' : uploadProgress >= 80 ? 'text-purple-300 font-bold' : 'text-slate-500'}`}>
+              <div className={`flex items-center gap-2.5 transition-colors ${uploadProgress >= 95 ? 'text-spine-success font-bold' : uploadProgress >= 80 ? 'text-spine-accent font-bold' : 'text-gray-400'}`}>
                 {uploadProgress >= 95 ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 text-spine-success shrink-0" />
                 ) : uploadProgress >= 80 ? (
-                  <Loader2 className="w-4 h-4 text-purple-400 animate-spin shrink-0" />
+                  <Loader2 className="w-4 h-4 text-spine-accent animate-spin shrink-0" />
                 ) : (
                   <div className="w-4 h-4 rounded-full border border-slate-700 flex items-center justify-center text-[9px] text-slate-600">4</div>
                 )}
@@ -2684,7 +2684,7 @@ export const ScriptStudio: React.FC = () => {
               </div>
             </div>
 
-            <p className="text-[10px] text-slate-500 mt-3 italic">
+            <p className="text-[10px] text-gray-400 mt-3 italic">
               AI evaluates character action and dialogue to ensure visual consistency across all camera angles.
             </p>
           </div>

@@ -6,8 +6,6 @@ import {
   loadCustomPresets,
   saveCustomPresets,
   mergeActivePresets,
-  DELETED_PRESETS_STORAGE_KEY,
-  CUSTOM_PRESETS_STORAGE_KEY,
   DopMasterPreset
 } from './presets';
 
