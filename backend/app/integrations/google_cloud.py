@@ -1,17 +1,24 @@
 """
 Google Cloud & Gemini Enterprise Agent Platform Runtime Integration.
 Demonstrates direct runtime usage of:
-1. Google GenAI SDK (`google.genai.Client`) for Gemini 2.0 / Gemini 1.5 screenplay analysis & DoP prompt compilation.
+1. Google GenAI SDK (`google.genai.Client`) for screenplay analysis & DoP prompt
+   compilation. The model is chosen by `backend.app.script.llm_router`, not pinned here.
 2. Google Imagen 3 (`imagen-3.0-generate-002`) for photorealistic concept generation.
 3. Google Cloud Storage (`google.cloud.storage.Client`) for production media assets, script PDFs, and previz stills.
 """
-import os
+import base64
 import io
 import json
-import base64
+import logging
+import os
 import time
 from typing import Optional, Dict, Any, List
+
 from pydantic import BaseModel
+
+from backend.app.script.llm_router import get_optimal_gemini_model
+
+logger = logging.getLogger(__name__)
 
 # Google GenAI & Google Cloud Storage imports
 try:
@@ -85,7 +92,9 @@ def get_google_cloud_runtime_status() -> Dict[str, Any]:
         "status": "online" if (GENAI_AVAILABLE or GCS_AVAILABLE) else "sdk_missing",
         "genai_sdk_installed": GENAI_AVAILABLE,
         "gcs_sdk_installed": GCS_AVAILABLE,
-        "gemini_model": "gemini-2.0-flash",
+        # Reported from the router rather than hardcoded: a status endpoint that
+        # names a model the code no longer calls is worse than no field at all.
+        "gemini_model": get_optimal_gemini_model("", task_complexity="simple"),
         "imagen_model": "imagen-3.0-generate-002",
         "project_id": project_id,
         "gcs_bucket_name": gcs_bucket,
@@ -107,7 +116,6 @@ async def run_gemini_screenplay_analysis(
 
     if GENAI_AVAILABLE and api_key:
         try:
-            from backend.app.script.llm_router import get_optimal_gemini_model
             from backend.app.core.telemetry import LLM_TOKENS_CONSUMED, LLM_LATENCY
             
             client = genai.Client(api_key=api_key)
@@ -137,13 +145,13 @@ async def run_gemini_screenplay_analysis(
                 "provider": "Google Cloud Gemini Enterprise"
             }
         except Exception as e:
-            print(f"[Google Cloud Integration] Gemini GenAI error: {e}")
+            logger.warning("Gemini analysis failed: %s", e)
 
     # Fallback algorithmic breakdown when running without active cloud secret
     return {
         "success": True,
         "analysis": f"Scene analyzed under {dop_style} cinematography: High dramatic tension with motivated practical light and shallow depth of field.",
-        "model": "gemini-2.0-flash (Emulated / Pre-warmed)",
+        "model": "none (heuristic fallback, no model called)",
         "provider": "Google Cloud Agent Builder Pipeline"
     }
 

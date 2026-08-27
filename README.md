@@ -5,7 +5,7 @@
 
 [![CI Test Suite](https://img.shields.io/badge/Pytest-173%20passed-brightgreen.svg)](https://github.com/ftenaf/cinespine/actions)
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11%20%7C%203.14-blue.svg)](https://python.org)
-[![Google Cloud: Gemini & Imagen 3](https://img.shields.io/badge/Google%20Cloud-Gemini%202.0%20%26%20Imagen%203-4285F4.svg)](https://cloud.google.com/vertex-ai)
+[![Google Cloud: Gemini & Imagen 3](https://img.shields.io/badge/Google%20Cloud-Gemini%20Flash%20%26%20Imagen%203-4285F4.svg)](https://cloud.google.com/vertex-ai)
 [![Event Spine: ClickHouse](https://img.shields.io/badge/Event%20Spine-ClickHouse%20OLAP-FEE000.svg)](https://clickhouse.com)
 [![Observability: Grafana](https://img.shields.io/badge/Observability-Grafana%20Labs-F46800.svg)](https://grafana.com)
 [![Frontend: React 18 + Vite](https://img.shields.io/badge/Frontend-React%2018%20%2B%20Vite%20%2B%20Tailwind-61DAFB.svg)](https://vitejs.dev)
@@ -54,7 +54,7 @@ C4Context
 
   System_Ext(sound_dev, "Sound Devices 664 / 8-Series", "Generates BEXT timecoded poly-WAVs and Sound Reports")
   System_Ext(silverstack, "Pomfort Silverstack Lab", "Generates offload volume XMLs and thumbnail contact sheets")
-  System_Ext(gemini_api, "Google Cloud Gemini 2.0 & Imagen 3", "Extracts semantic narrative tension & synthesizes 35mm concept stills")
+  System_Ext(gemini_api, "Google Cloud Gemini & Imagen 3", "Extracts semantic narrative tension & synthesizes 35mm concept stills")
   System_Ext(gcs_bucket, "Google Cloud Storage (GCS)", "Archives screenplay PDFs and verified production media assets")
   System_Ext(clickhouse_cloud, "ClickHouse Cloud", "Analytical OLAP storage for historical event replays & audit logs")
   System_Ext(grafana_cloud, "Grafana Cloud Lighthouse", "Real-time production sync lag and telemetry dashboards")
@@ -259,12 +259,19 @@ CineSpine executes real runtime API calls to Google Cloud and partner services:
 from google import genai
 from google.genai import types as genai_types
 
-# Gemini 2.0 Screenplay Semantic Breakdown
+# Gemini Screenplay Semantic Breakdown.
+# The model is not pinned: llm_router returns an ordered list of candidates,
+# starting from the floating "-latest" alias, so a retired version or an
+# exhausted per-model quota falls through instead of failing the request.
+from backend.app.script.llm_router import get_model_candidates
+
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-analysis = client.models.generate_content(
-    model="gemini-2.0-flash",
-    contents=prompt
-)
+for model in get_model_candidates(prompt, task_complexity="simple"):
+    try:
+        analysis = client.models.generate_content(model=model, contents=prompt)
+        break
+    except Exception:
+        continue  # 404 retired / 429 quota / 503 overloaded -> next candidate
 
 # Google Imagen 3 Photorealistic 35mm Previz Synthesis
 result = client.models.generate_images(
@@ -282,7 +289,7 @@ blob.upload_from_string(file_bytes, content_type="application/pdf")
 
 | Partner / Service | Role in CineSpine | Verification |
 | :--- | :--- | :--- |
-| **Google Cloud (Gemini 2.0)** | Screenplay semantic analysis & DoP prompt compilation | Runtime imported via `google-genai` SDK |
+| **Google Cloud (Gemini Flash)** | Screenplay semantic analysis, cast inference & DoP prompt compilation | Runtime via `google-genai` SDK; model chosen by `llm_router` |
 | **Google Cloud (Imagen 3)** | Photorealistic 35mm cinematic concept art generation | Model `imagen-3.0-generate-002` |
 | **Google Cloud Storage (GCS)** | Screenplay PDF & high-res media archival | Bucket `gs://cinespine-production-media/` |
 | **ClickHouse** | Immutable high-throughput append-only event spine | Time-series event logging & replay |

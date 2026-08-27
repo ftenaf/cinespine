@@ -46,7 +46,7 @@
 * **Visual:** Quick switch to terminal/code showing:
   - `pytest -v` running 100/100 tests green.
   - `backend/app/integrations/google_cloud.py` showing `google.genai` and `google.cloud.storage` SDK imports.
-  - `GET /api/integrations/google-cloud` returning `{"status": "online", "gemini_model": "gemini-2.0-flash"}`.
+  - `GET /api/integrations/google-cloud` returning `{"status": "online", "gemini_model": "gemini-flash-latest"}`.
 * **Voiceover:**
   > *"Under the hood, CineSpine runs on Python FastAPI, ClickHouse, and the official Google GenAI and Google Cloud Storage SDKs, backed by a 100% green automated test suite. Screenplays and media are archived directly to Google Cloud Storage, while Gemini Enterprise coordinates multi-agent analysis."*
 

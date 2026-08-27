@@ -37,7 +37,8 @@ def test_google_cloud_status_function():
     assert status["status"] == "online"
     assert status["genai_sdk_installed"] is True
     assert status["gcs_sdk_installed"] is True
-    assert status["gemini_model"] == "gemini-2.0-flash"
+    # The status endpoint must name the model the code would actually call.
+    assert status["gemini_model"] == get_optimal_gemini_model("", "simple")
     assert status["imagen_model"] == "imagen-3.0-generate-002"
     assert "google.genai SDK (Gemini 2.0 & Imagen 3)" in status["active_features"]
 
@@ -50,7 +51,7 @@ def test_google_cloud_status_endpoint(client):
     assert data["status"] == "online"
     assert data["genai_sdk_installed"] is True
     assert data["gcs_sdk_installed"] is True
-    assert data["gemini_model"] == "gemini-2.0-flash"
+    assert data["gemini_model"] == get_optimal_gemini_model("", "simple")
 
 
 def test_gcs_upload_uses_sdk_when_available(monkeypatch):
@@ -194,5 +195,8 @@ async def test_gemini_analysis_falls_back_without_api_key(monkeypatch):
 
     assert res["success"] is True
     assert res["provider"] == "Google Cloud Agent Builder Pipeline"
-    assert "Emulated" in res["model"]
+    # With no key nothing was called, so the reported model must not name a real
+    # one: a heuristic answer labelled "gemini-..." reads as a genuine inference.
+    assert "gemini" not in res["model"].lower()
+    assert "no model called" in res["model"]
     assert "Roger Deakins" in res["analysis"]

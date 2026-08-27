@@ -8,7 +8,7 @@ CineSpine incorporates native, runtime integration with Google Cloud and the Gem
 |                             Google Cloud Platform                             |
 |                                                                               |
 |  +-------------------------+  +----------------------+  +------------------+  |
-|  |     Gemini 2.0 Flash    |  |       Imagen 3       |  |  Google Cloud    |  |
+|  |      Gemini Flash       |  |       Imagen 3       |  |  Google Cloud    |  |
 |  |  Screenplay Breakdown   |  |   35mm Cinema Stills |  |     Storage      |  |
 |  |  & Tension Extraction   |  | (imagen-3.0-generate)|  | (PDFs & Media)   |  |
 |  +------------^------------+  +-----------^----------+  +--------^---------+  |
@@ -29,8 +29,14 @@ CineSpine incorporates native, runtime integration with Google Cloud and the Gem
 
 ### A. `google-genai` SDK
 * **Modules:** [`backend/app/integrations/google_cloud.py`](backend/app/integrations/google_cloud.py), [`backend/app/script/ai_image_service.py`](backend/app/script/ai_image_service.py) and [`backend/app/script/character_ai.py`](backend/app/script/character_ai.py)
-* **Character inference (`gemini-3.6-flash`, override with `CINESPINE_GEMINI_MODEL`):** Reads each character's dialogue, parentheticals, the action lines naming them and the settings they appear in, and returns their role, physical appearance, costume and facial features. Called once for the whole cast so the ensemble stays visually coherent, with `response_mime_type: application/json` for structured output.
-* **Screenplay analysis (`gemini-2.0-flash`):** Scene-level tension mapping and DoP camera placement logic.
+* **Character inference (model chosen by `llm_router`, flash tier):** Reads each character's dialogue, parentheticals, the action lines naming them and the settings they appear in, and returns their role, physical appearance, costume and facial features. Called once for the whole cast so the ensemble stays visually coherent, with `response_mime_type: application/json` for structured output.
+* **Screenplay analysis:** Scene-level tension mapping and DoP camera placement logic.
+  The model is not pinned. [`backend/app/script/llm_router.py`](backend/app/script/llm_router.py)
+  returns an ordered candidate list led by the floating `gemini-flash-latest` alias,
+  followed by older flash models. A pinned id 404s the day it is retired, and quota
+  is metered per model, so falling through is what keeps the feature working.
+  Pro routing is opt-in via `CINESPINE_GEMINI_PRO_MODEL`: a free-tier key is quota'd
+  at zero on pro models, not merely throttled.
 * **Image synthesis (`imagen-3.0-generate-002`):** Photorealistic 35mm stills per camera, with a REST fallback if the SDK path fails.
 
 ### B. `google-cloud-storage` SDK

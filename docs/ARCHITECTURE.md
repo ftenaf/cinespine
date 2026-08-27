@@ -35,7 +35,7 @@ C4Context
 
   System_Ext(sound_dev, "Sound Devices 664 / 8-Series", "Generates BEXT timecoded poly-WAVs and Sound Reports")
   System_Ext(silverstack, "Pomfort Silverstack Lab", "Generates offload volume XMLs and thumbnail contact sheets")
-  System_Ext(gemini_api, "Google Cloud Gemini 2.0 & Imagen 3", "Extracts semantic narrative tension & synthesizes 35mm concept stills")
+  System_Ext(gemini_api, "Google Cloud Gemini & Imagen 3", "Extracts semantic narrative tension & synthesizes 35mm concept stills")
   System_Ext(gcs_bucket, "Google Cloud Storage (GCS)", "Archives screenplay PDFs and verified production media assets")
   System_Ext(clickhouse_cloud, "ClickHouse Cloud", "Analytical OLAP storage for historical event replays & audit logs")
   System_Ext(grafana_cloud, "Grafana Cloud Lighthouse", "Real-time production sync lag and telemetry dashboards")
