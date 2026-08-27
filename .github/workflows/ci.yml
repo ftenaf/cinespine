@@ -6,9 +6,18 @@ on:
   pull_request:
     branches: [main]
 
+# Supersede a PR's earlier runs when new commits arrive, but let pushes to main
+# finish: cancelling those would leave a commit on the default branch with no
+# recorded verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test-backend:
     runs-on: ubuntu-latest
+    # Typically ~70s; this catches a hung step without tripping on a cold cache.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -37,6 +46,8 @@ jobs:
 
   build-frontend:
     runs-on: ubuntu-latest
+    # Typically ~25s.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
