@@ -56,3 +56,33 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+# CI gates on this set. It is deliberately narrow: these are rules where a hit
+# means a probable defect, not a style preference, so the check stays worth
+# reading. The style families (UP, I, F401) are not enabled yet -- roughly 800
+# outstanding violations -- and should be adopted one family at a time, each
+# with its own mechanical commit, rather than as one unreviewable sweep.
+[tool.ruff.lint]
+select = [
+    "E9",    # syntax errors and IO errors
+    "F63",   # comparisons that are always true or always false
+    "F7",    # break/return outside a loop or function
+    "F82",   # undefined names
+    "B008",  # function call in a default argument
+    "B023",  # closure over a loop variable
+    "S110",  # try/except/pass, which hides the failure it catches
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's whole parameter API is calls in argument defaults, evaluated once
+# at import and treated as declarations. B008 is a false positive on all of it.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Query",
+    "fastapi.Security",
+    "fastapi.UploadFile",
+]

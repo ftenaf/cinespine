@@ -28,28 +28,31 @@ def parse_camera_csv(content: str) -> List[ParsedCameraRecord]:
 
     records: List[ParsedCameraRecord] = []
 
+    # Takes the row as an argument rather than closing over the loop variable:
+    # a closure defined inside the loop reads whatever `row` holds when it is
+    # called, which is correct only for as long as nobody defers the call.
+    def get_col(row: List[str], *names: str) -> Optional[str]:
+        for n in names:
+            if n.upper() in col_map:
+                idx = col_map[n.upper()]
+                if idx < len(row) and row[idx].strip():
+                    return row[idx].strip()
+        return None
+
     for row in rows[1:]:
         if not row or not any(row):
             continue
 
-        def get_col(*names: str) -> Optional[str]:
-            for n in names:
-                if n.upper() in col_map:
-                    idx = col_map[n.upper()]
-                    if idx < len(row) and row[idx].strip():
-                        return row[idx].strip()
-            return None
-
-        raw_slate = get_col("SLATE", "SCENE/SHOT", "SCENE")
-        raw_take = get_col("TAKE")
-        raw_roll = get_col("ROLL", "CAMERA ROLL", "CAMERAROLL", "REEL")
-        clip_name = get_col("CLIP NAME", "CLIPNAME", "CLIP", "FILE NAME", "FILENAME")
-        tc_in = get_col("START TC", "START", "TC IN", "TIMECODE IN")
-        tc_out = get_col("END TC", "END", "TC OUT", "TIMECODE OUT")
-        lens = get_col("LENS", "FOCAL LENGTH")
-        raw_fps = get_col("FPS", "FRAME RATE")
-        raw_iso = get_col("ISO", "EI/ISO", "EI")
-        shutter = get_col("SHUTTER", "ANGLE")
+        raw_slate = get_col(row, "SLATE", "SCENE/SHOT", "SCENE")
+        raw_take = get_col(row, "TAKE")
+        raw_roll = get_col(row, "ROLL", "CAMERA ROLL", "CAMERAROLL", "REEL")
+        clip_name = get_col(row, "CLIP NAME", "CLIPNAME", "CLIP", "FILE NAME", "FILENAME")
+        tc_in = get_col(row, "START TC", "START", "TC IN", "TIMECODE IN")
+        tc_out = get_col(row, "END TC", "END", "TC OUT", "TIMECODE OUT")
+        lens = get_col(row, "LENS", "FOCAL LENGTH")
+        raw_fps = get_col(row, "FPS", "FRAME RATE")
+        raw_iso = get_col(row, "ISO", "EI/ISO", "EI")
+        shutter = get_col(row, "SHUTTER", "ANGLE")
 
         norm_slate = normalize_slate(raw_slate)
         take_info = normalize_take(raw_take)

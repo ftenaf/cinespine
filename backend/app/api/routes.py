@@ -1,3 +1,4 @@
+import logging
 import asyncio
 import os
 import re
@@ -19,6 +20,8 @@ from backend.app.parsers.pdf_parsers import extract_text_from_pdf, extract_thumb
 from backend.app.normalizers.takes import normalize_take
 from backend.app.normalizers.slates import normalize_slate
 from backend.app.core.telemetry import TelemetryExporter
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api")
 
@@ -213,8 +216,8 @@ def get_document_raw(doc_id: str):
             try:
                 with open(examples_path, "rb") as f:
                     raw_bytes = f.read()
-            except Exception:
-                pass
+            except OSError as exc:
+                logger.debug("Example file %s unreadable: %s", examples_path, exc)
     
     if not raw_bytes:
         raw_bytes = doc.get("content", "").encode("utf-8")

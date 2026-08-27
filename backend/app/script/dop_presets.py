@@ -3,11 +3,14 @@ Cinematography DoP Presets & Technical Matrix for CineSpine.
 Provides curated Director of Photography aesthetic profiles,
 technical lens/lighting parameters, and override resolvers.
 """
+import logging
 import os
 import json
 import re
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class DoPSpecification(BaseModel):
@@ -317,9 +320,9 @@ Respond ONLY with a JSON object containing:
                     "description": str(data.get("description", "")).strip(),
                     "prompt_style_tag": str(data.get("prompt_style_tag", "")).strip(),
                 }
-        except Exception:
-            # Fall back gracefully to cinematic heuristic synthesis
-            pass
+        except Exception as exc:
+            # Falls back to the heuristic synthesis below.
+            logger.debug("AI preset metadata unavailable: %s", exc)
 
     return _synthesize_heuristic_preset_metadata(
         focal_length=focal_length,

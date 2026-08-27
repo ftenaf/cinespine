@@ -4,6 +4,7 @@ Deterministic Parsers for Real Production PDF Reports (ZoeLog Camera, Scripte Ed
 Evidence:
 - data/examples/
 """
+import logging
 import io
 import re
 import base64
@@ -23,6 +24,8 @@ from backend.app.parsers.base import (
 from backend.app.normalizers.rolls import normalize_camera_roll, normalize_sound_roll
 from backend.app.normalizers.slates import normalize_slate
 from backend.app.normalizers.takes import normalize_take
+
+logger = logging.getLogger(__name__)
 
 
 def extract_text_from_pdf(pdf_bytes_or_file) -> str:
@@ -73,8 +76,10 @@ def extract_text_from_pdf(pdf_bytes_or_file) -> str:
                                 line = re.sub(rf"^({re.escape(raw_slate)}\s+){re.escape(raw_take)}", rf"\g<1>{raw_take}* ", line)
                         enriched_lines.append(line)
                     raw_pages[idx] = "\n".join(enriched_lines)
-        except Exception:
-            pass
+        except Exception as exc:
+            # Circled-take enrichment is an improvement, not a requirement:
+            # the unenriched pages are still returned below.
+            logger.debug("Circled-take enrichment skipped: %s", exc)
 
     return "\n".join(raw_pages)
 
@@ -161,8 +166,9 @@ def extract_thumbnails_from_pdf(pdf_bytes_or_file) -> Dict[str, str]:
                     thumbnails[active_norm] = data_uri
                 if slate_key:
                     thumbnails[slate_key] = data_uri
-    except Exception:
-        pass
+    except Exception as exc:
+        # Whatever was collected before the failure is still usable.
+        logger.debug("Thumbnail extraction stopped early: %s", exc)
     return thumbnails
 
 

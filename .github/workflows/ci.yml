@@ -26,6 +26,9 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -e . --no-deps
 
+      - name: Run Ruff
+        run: ruff check backend
+
       - name: Run Pytest
         env:
           PYTHONPATH: .

@@ -3,10 +3,13 @@ Screenplay & Fountain Parser Module for CineSpine.
 Parses standard Screenplay formatting, Markdown (.md), Plaintext (.txt), and Fountain syntax into structured scenes,
 headings, action blocks, dialogues, Character Profiles, and Character Relationship networks.
 """
+import logging
 import hashlib
 import re
 from typing import List, Optional, Dict, Any, Tuple, Set
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 def compute_script_id(script_text: str) -> str:
@@ -702,8 +705,9 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
                     extracted_text.append(t)
         if extracted_text:
             return "\n\n".join(extracted_text)
-    except Exception:
-        pass
+    except Exception as exc:
+        # First of three extraction strategies; the next is tried below.
+        logger.debug("pdfplumber extraction failed: %s", exc)
 
     try:
         from pypdf import PdfReader
@@ -714,8 +718,9 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
                 extracted_text.append(t)
         if extracted_text:
             return "\n\n".join(extracted_text)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Falls through to a raw decode, which always returns something.
+        logger.debug("pypdf extraction failed: %s", exc)
 
     try:
         return pdf_bytes.decode("utf-8", errors="ignore")

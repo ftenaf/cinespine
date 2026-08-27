@@ -86,29 +86,32 @@ def parse_sound_ale(content: str) -> List[ParsedSoundRecord]:
             track_cols.append((h, idx))
     track_cols.sort(key=lambda x: int(''.join(filter(str.isdigit, x[0])) or 0))
 
+    # Takes the row as an argument rather than closing over the loop variable:
+    # a closure defined inside the loop reads whatever `row` holds when it is
+    # called, which is correct only for as long as nobody defers the call.
+    def get_col(row: List[str], *names: str) -> Optional[str]:
+        for n in names:
+            if n.upper() in col_map:
+                idx = col_map[n.upper()]
+                if idx < len(row) and row[idx]:
+                    val = row[idx].strip()
+                    if val:
+                        return val
+        return None
+
     for row in data_rows:
         if len(row) < 2 or not any(row):
             continue
 
-        def get_col(*names: str) -> Optional[str]:
-            for n in names:
-                if n.upper() in col_map:
-                    idx = col_map[n.upper()]
-                    if idx < len(row) and row[idx]:
-                        val = row[idx].strip()
-                        if val:
-                            return val
-            return None
-
-        raw_slate = get_col("SCENE", "SLATE", "NAME")
-        raw_take = get_col("TAKE")
-        file_name = get_col("FILE NAME", "FILENAME", "CLIP NAME")
-        raw_sr = get_col("SOUND ROLL", "TAPE", "ROLL", "SOUND_ROLL")
-        tc_in = get_col("START", "START TC", "TC IN", "TIMECODE IN")
-        tc_out = get_col("END", "END TC", "TC OUT", "TIMECODE OUT")
-        duration = get_col("LENGTH", "DURATION")
-        row_note = get_col("NOTES", "NOTE", "COMMENTS")
-        explicit_tracks = get_col("TRACKS", "CHANNELS")
+        raw_slate = get_col(row, "SCENE", "SLATE", "NAME")
+        raw_take = get_col(row, "TAKE")
+        file_name = get_col(row, "FILE NAME", "FILENAME", "CLIP NAME")
+        raw_sr = get_col(row, "SOUND ROLL", "TAPE", "ROLL", "SOUND_ROLL")
+        tc_in = get_col(row, "START", "START TC", "TC IN", "TIMECODE IN")
+        tc_out = get_col(row, "END", "END TC", "TC OUT", "TIMECODE OUT")
+        duration = get_col(row, "LENGTH", "DURATION")
+        row_note = get_col(row, "NOTES", "NOTE", "COMMENTS")
+        explicit_tracks = get_col(row, "TRACKS", "CHANNELS")
 
         # Collect channel names from Trk 1, Trk 2... columns
         active_tracks = []

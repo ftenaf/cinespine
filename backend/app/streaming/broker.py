@@ -99,8 +99,8 @@ class LiveEventBroker:
                     try:
                         _ = sub.queue.get_nowait()
                         sub.queue.put_nowait(event)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("Subscriber queue drop failed: %s", exc)
                 except Exception as e:
                     logger.debug(f"Queue push notice for subscriber {sub_id}: {e}")
 
