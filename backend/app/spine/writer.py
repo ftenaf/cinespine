@@ -140,6 +140,27 @@ class SpineWriter:
     ) -> Optional[Dict[str, Any]]:
         return character_store.update_character_profile(script_id, character_id, updates)
 
+    def store_screenplay_scenes(self, script_id: str, scenes: List[Dict[str, Any]]) -> int:
+        return character_store.store_screenplay_scenes(script_id, scenes)
+
+    def get_screenplay_scenes(self, script_id: str) -> List[Dict[str, Any]]:
+        return character_store.get_screenplay_scenes(script_id)
+
+    def find_screenplay_scenes(self, script_id: str, scene_number: str) -> List[Dict[str, Any]]:
+        return character_store.find_screenplay_scenes(script_id, scene_number)
+
+    def link_production_script(self, production_id: str, script_id: str) -> Dict[str, Any]:
+        return character_store.link_production_script(production_id, script_id)
+
+    def get_production_script(self, production_id: str) -> Optional[Dict[str, Any]]:
+        return character_store.get_production_script(production_id)
+
+    def unlink_production_script(self, production_id: str) -> bool:
+        return character_store.unlink_production_script(production_id)
+
+    def find_productions_for_script(self, script_id: str) -> List[str]:
+        return character_store.find_productions_for_script(script_id)
+
     # ------------------------------------------------------------------ #
     # Editorial tags
     #

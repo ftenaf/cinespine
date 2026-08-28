@@ -23,6 +23,7 @@ from backend.app.agents.camera_report_vision import read_camera_report_if_enable
 from backend.app.parsers.pdf_parsers import extract_text_from_pdf, extract_thumbnails_from_pdf
 from backend.app.normalizers.takes import normalize_take
 from backend.app.normalizers.slates import normalize_slate
+from backend.app.script.scene_lookup import build_scene_context, scene_numbers_for_target
 from backend.app.core.telemetry import TelemetryExporter
 
 logger = logging.getLogger(__name__)
@@ -1855,6 +1856,9 @@ class SuggestDoPPresetRequest(BaseModel):
 class ScriptParseRequest(BaseModel):
     script_text: str
     title: str = "Screenplay"
+    # Attaching the script to a production is what lets an editor open the
+    # scene behind a slate. Optional: the Script Studio is usable on its own.
+    production_id: Optional[str] = None
 
 
 class ScriptBreakdownRequest(BaseModel):
@@ -1986,10 +1990,18 @@ def get_google_cloud_status():
     return get_google_cloud_runtime_status()
 
 
-def _persist_screenplay(screenplay: Screenplay, filename: Optional[str] = None) -> Screenplay:
+def _persist_screenplay(
+    screenplay: Screenplay,
+    filename: Optional[str] = None,
+    production_id: Optional[str] = None,
+) -> Screenplay:
     """
     Registers a parsed screenplay and reattaches any previously saved character
     edits for the same script.
+
+    The scene text is stored too. It used to live only in the Script Studio
+    tab's memory, which meant an editor working a shot on the reconciliation
+    side had no way to read the scene it came from.
     """
     merged = spine_writer.store_screenplay(
         script_id=screenplay.script_id,
@@ -1998,6 +2010,12 @@ def _persist_screenplay(screenplay: Screenplay, filename: Optional[str] = None) 
         filename=filename,
         profiles=[c.model_dump() for c in screenplay.characters],
     )
+    spine_writer.store_screenplay_scenes(
+        script_id=screenplay.script_id,
+        scenes=[s.model_dump() for s in screenplay.scenes],
+    )
+    if production_id:
+        spine_writer.link_production_script(production_id, screenplay.script_id)
     screenplay.characters = [CharacterProfile(**{k: v for k, v in m.items() if k in CharacterProfile.model_fields}) for m in merged]
     screenplay.characters_count = len(screenplay.characters)
     return screenplay
@@ -2011,11 +2029,14 @@ async def parse_script(req: ScriptParseRequest):
     """
     screenplay = parse_fountain_screenplay(req.script_text, req.title)
     await enrich_screenplay_characters(screenplay)
-    return _persist_screenplay(screenplay)
+    return _persist_screenplay(screenplay, production_id=req.production_id)
 
 
 @router.post("/script/upload", response_model=Screenplay)
-async def upload_script_file(file: UploadFile = File(...)):
+async def upload_script_file(
+    file: UploadFile = File(...),
+    production_id: Optional[str] = Form(None),
+):
     """
     Uploads and parses a screenplay file (.fountain, .txt, .md, .pdf, .fdx) into structured scenes,
     and archives the source document to Google Cloud Storage.
@@ -2040,7 +2061,149 @@ async def upload_script_file(file: UploadFile = File(...)):
     # in _persist_screenplay still lets any existing user edits win.
     await enrich_screenplay_characters(screenplay)
 
-    return _persist_screenplay(screenplay, filename=filename)
+    return _persist_screenplay(screenplay, filename=filename, production_id=production_id)
+
+
+class LinkScriptRequest(BaseModel):
+    production_id: str
+    script_id: str
+
+
+@router.get("/script/link")
+def get_linked_script(production_id: Optional[str] = None, script_id: Optional[str] = None):
+    """
+    The screenplay a production is shooting, or -- asked the other way round,
+    with script_id -- the productions shooting a given screenplay.
+
+    The Script Studio knows only the script it has loaded, so without the
+    reverse reading it would offer to attach a script that is already attached.
+    """
+    if script_id:
+        return {"script_id": script_id, "production_ids": spine_writer.find_productions_for_script(script_id)}
+    if not production_id:
+        raise HTTPException(status_code=422, detail="production_id or script_id is required")
+    return spine_writer.get_production_script(production_id)
+
+
+@router.post("/script/link")
+def link_script(req: LinkScriptRequest):
+    """
+    Attaches a screenplay to a production so its scenes can be opened from a
+    slate. One script per production -- linking a second one replaces the first.
+    """
+    if not spine_writer.get_screenplay(req.script_id):
+        raise HTTPException(status_code=404, detail=f"No screenplay stored under {req.script_id}")
+    return spine_writer.link_production_script(req.production_id, req.script_id)
+
+
+@router.delete("/script/link")
+def unlink_script(production_id: str):
+    return {"unlinked": spine_writer.unlink_production_script(production_id)}
+
+
+# How many of the script supervisor's notes on one shot are worth reading
+# together. Past a handful they stop describing the shot and start describing
+# the day, and every extra word makes the passage match vaguer.
+_MAX_SHOT_NOTES = 6
+
+
+def _shot_description(production_id: str, slate: str) -> Optional[str]:
+    """
+    What the script supervisor wrote beside this shot, across every report.
+
+    This is the only text in the system that describes what a shot contains, so
+    it is the only thing we can match against the scene to place it.
+    """
+    notes: List[str] = []
+    for event in spine_writer.get_events(production_id=production_id):
+        # The script department only. A camera report's note is about the take
+        # -- lens, filter, a reslate -- and would drag the match away from what
+        # the shot is of.
+        if event.get("department") != "script":
+            continue
+        payload = event.get("payload") or {}
+        if normalize_slate(payload.get("slate")) != slate:
+            continue
+        note = (payload.get("note") or "").strip()
+        if note and note not in notes:
+            notes.append(note)
+        if len(notes) >= _MAX_SHOT_NOTES:
+            break
+    return " ".join(notes) or None
+
+
+@router.get("/script/context")
+def get_script_context(production_id: str, target_type: str, target_id: str):
+    """
+    The script behind a scene or a shot.
+
+    Returns the scene text with a highlight over the part that belongs to the
+    target: all of it for a scene, and for a shot the passage its description
+    matched, together with the words that match rests on. When the shot cannot
+    be placed inside the scene, the whole scene comes back with a reason -- a
+    highlight over the wrong half of a page is worse than no highlight.
+    """
+    kind = (target_type or "").strip().lower()
+    if kind not in ("scene", "shot"):
+        raise HTTPException(status_code=422, detail="target_type must be 'scene' or 'shot'")
+
+    result: Dict[str, Any] = {
+        "production_id": production_id,
+        "target_type": kind,
+        "target_id": target_id,
+        "script_id": None,
+        "script_title": None,
+        "scenes": [],
+        "status": "ok",
+        "message": None,
+    }
+
+    link = spine_writer.get_production_script(production_id)
+    if not link:
+        result["status"] = "no_script_linked"
+        result["message"] = (
+            "No screenplay is attached to this production. Open the Screenplay "
+            "Studio, load the script, and attach it to this production."
+        )
+        return result
+
+    result["script_id"] = link.get("script_id")
+    result["script_title"] = link.get("title")
+
+    scene_numbers = scene_numbers_for_target(kind, target_id)
+    if not scene_numbers:
+        result["status"] = "unreadable_target"
+        result["message"] = f"{target_id!r} does not name a scene."
+        return result
+
+    hint = None
+    if kind == "shot":
+        normalized = normalize_slate(target_id)
+        if normalized:
+            hint = _shot_description(production_id, normalized)
+
+    missing: List[str] = []
+    for number in scene_numbers:
+        rows = spine_writer.find_screenplay_scenes(link["script_id"], number)
+        if not rows:
+            missing.append(number)
+            continue
+        for row in rows:
+            result["scenes"].append(build_scene_context(row, kind, hint=hint))
+
+    if not result["scenes"]:
+        result["status"] = "scene_not_in_script"
+        result["message"] = (
+            f"Scene {', '.join(missing)} is not in {link.get('title') or 'the linked script'}. "
+            "The scene numbers on set and in the script may not be the same draft."
+        )
+    elif missing:
+        result["message"] = (
+            f"Scene {', '.join(missing)} is not in the linked script; "
+            "the other scene(s) of this slate are shown."
+        )
+
+    return result
 
 
 @router.get("/script/presets")

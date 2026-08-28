@@ -19,6 +19,8 @@ import {
   
   Plus,
   Trash2,
+  Link2,
+  Check,
   X
 } from 'lucide-react';
 import { CharacterProfileCard } from './CharacterProfileCard';
@@ -148,7 +150,7 @@ export interface ShotProposal {
 const DEMO_FOUNTAIN_SCRIPT = `Title: LA CATHÉDRALE
 Author: Francisco
 
-INT. GREAT HALL - NAVE - DAY
+27 INT. GREAT HALL - NAVE - DAY
 
 Colossal gothic arches soar into the gloom. Beams of volumetric sunlight slice through high stained-glass windows, illuminating floating dust motes.
 
@@ -170,7 +172,18 @@ LEAD doesn't look back. His fingers dance across the keys in relentless counterp
 LEAD
 Then let them hear what they came to destroy.
 
-EXT. PLAZA - NIGHT
+49 INT. GREAT HALL - MAIN CONCERT STAGE - DAY
+
+The nave has been cleared for the recital. Rows of empty chairs face the raised stage.
+
+LEAD takes the stage, sits, and begins. Four bars in, his hands falter and the phrase collapses.
+
+SUPPORT
+It doesn't matter. Play it again.
+
+LEAD closes the lid, stands, and walks out through the side aisle without answering.
+
+50 EXT. PLAZA - NIGHT
 
 Rain lashes against ancient cobblestones. Black tactical sedans screech to a halt around the bronze great_hall doors.
 
@@ -246,6 +259,12 @@ export const ScriptStudio: React.FC = () => {
   const [showViewfinderGrid, setShowViewfinderGrid] = useState<boolean>(true);
   // Identity of the loaded screenplay; character edits are stored against it.
   const [scriptId, setScriptId] = useState<string | null>(null);
+  // Which production is shooting this script. Attaching it is what lets an
+  // editor working the reconciliation side open the scene behind a slate.
+  const [productions, setProductions] = useState<Array<{ production_id: string; name: string }>>([]);
+  const [attachedProductionId, setAttachedProductionId] = useState<string>('');
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [isAttaching, setIsAttaching] = useState<boolean>(false);
   const [charSaveError, setCharSaveError] = useState<string | null>(null);
   const [parseWarnings, setParseWarnings] = useState<string[]>([]);
   const [showSurround, setShowSurround] = useState<boolean>(true);
@@ -392,6 +411,14 @@ export const ScriptStudio: React.FC = () => {
       })
       .catch(err => {
         console.warn('Using built-in Master DoP catalog (backend offline or loading):', err);
+      });
+
+    fetch('/api/productions')
+      .then(res => res.json())
+      .then(data => { if (Array.isArray(data)) setProductions(data); })
+      .catch(() => {
+        // The studio works without a production list; only the attach control
+        // needs it, and it says so itself when there is nothing to attach to.
       });
 
     handleParseScript(DEMO_FOUNTAIN_SCRIPT);
@@ -545,6 +572,57 @@ export const ScriptStudio: React.FC = () => {
       console.error('Failed to parse screenplay:', err);
     } finally {
       setIsParsingDemo(false);
+    }
+  };
+
+  /**
+   * Shows the production this script is already attached to, if any.
+   *
+   * The link is stored against the production, so without asking the other way
+   * round the control would offer to attach a script that is attached already,
+   * and a reload would make an existing link look absent.
+   */
+  useEffect(() => {
+    if (!scriptId) { setAttachedProductionId(''); return; }
+    let live = true;
+    fetch(`/api/script/link?script_id=${encodeURIComponent(scriptId)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (live) setAttachedProductionId(data?.production_ids?.[0] ?? '');
+      })
+      .catch(() => {
+        // Leave the control offering to attach; the attempt itself will say
+        // if the server is unreachable.
+      });
+    return () => { live = false; };
+  }, [scriptId]);
+
+  /**
+   * Attaches the loaded screenplay to a production.
+   *
+   * One script per production: a production with two scripts has no answer to
+   * "what is scene 119", so attaching a second one replaces the first.
+   */
+  const handleAttachToProduction = async (productionId: string) => {
+    setAttachedProductionId(productionId);
+    setAttachError(null);
+    if (!productionId || !scriptId) return;
+    setIsAttaching(true);
+    try {
+      const res = await fetch('/api/script/link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ production_id: productionId, script_id: scriptId })
+      });
+      if (!res.ok) {
+        setAttachedProductionId('');
+        setAttachError('Could not attach this script. Try loading it again.');
+      }
+    } catch {
+      setAttachedProductionId('');
+      setAttachError('Could not reach the server to attach this script.');
+    } finally {
+      setIsAttaching(false);
     }
   };
 
@@ -1080,6 +1158,32 @@ export const ScriptStudio: React.FC = () => {
 
         {/* Action Controls Top Bar */}
         <div className="flex items-center gap-2.5">
+          {/* Attach this script to a production, so an editor working a slate
+              on the reconciliation side can open the scene behind it. */}
+          <div className="flex items-center gap-1.5">
+            <Link2 className={`w-3.5 h-3.5 ${attachedProductionId ? 'text-spine-success' : 'text-gray-500'}`} />
+            <select
+              value={attachedProductionId}
+              onChange={e => handleAttachToProduction(e.target.value)}
+              disabled={!scriptId || isAttaching || productions.length === 0}
+              title="The production shooting this script"
+              className="bg-slate-800 border border-slate-700 text-gray-200 text-xs rounded-md px-2 py-1.5 disabled:opacity-50"
+            >
+              <option value="">
+                {productions.length === 0 ? 'No productions yet' : 'Attach to production...'}
+              </option>
+              {productions.map(p => (
+                <option key={p.production_id} value={p.production_id}>{p.name}</option>
+              ))}
+            </select>
+            {attachedProductionId && !isAttaching && !attachError && (
+              <Check className="w-3.5 h-3.5 text-spine-success" />
+            )}
+            {attachError && (
+              <span className="text-[10px] text-red-400 max-w-[10rem]">{attachError}</span>
+            )}
+          </div>
+
           {/* Upload Script File Button */}
           <button
             onClick={() => fileInputRef.current?.click()}
