@@ -177,3 +177,27 @@ class TestShootDayNormalization:
         assert normalize_shoot_day("#31") == "31"
         assert normalize_shoot_day("260728_SD31") == "31"
         assert normalize_shoot_day("31") == "31"
+
+
+class TestPartTakes:
+    """
+    A take covered in more than one pass is numbered in parts. The parts are
+    distinct takes, not a decimal quantity to be rounded into one.
+    """
+
+    def test_the_parts_are_kept_apart(self):
+        assert normalize_take("1.1").take_id == "1.1"
+        assert normalize_take("1.2").take_id == "1.2"
+        assert normalize_take("2.10").take_id == "2.10"
+
+    def test_padding_is_still_stripped(self):
+        assert normalize_take("01.2").take_id == "1.2"
+
+    def test_a_part_take_can_be_circled(self):
+        result = normalize_take("2.1*")
+        assert result.take_id == "2.1"
+        assert result.is_starred is True
+
+    def test_a_whole_take_is_unchanged(self):
+        assert normalize_take("2").take_id == "2"
+        assert normalize_take("2PK").take_id == "2PK"

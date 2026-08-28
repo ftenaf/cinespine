@@ -91,7 +91,13 @@ def normalize_take(raw_take: Optional[str]) -> TakeResult:
         return TakeResult(take_id=None, is_valid_take=False)
 
     # 7. Normalize take numbers (e.g., '01' -> '1', 'T02PK' -> '2PK')
-    if first_token.isdigit():
+    # A take covered in more than one pass is numbered in parts -- 1.1, 1.2 --
+    # and the parts are distinct takes, not a decimal quantity to be rounded
+    # into one.
+    part_m = re.match(r"^0*(\d+)\.0*(\d+)$", first_token)
+    if part_m:
+        take_id = f"{int(part_m.group(1))}.{int(part_m.group(2))}"
+    elif first_token.isdigit():
         take_id = str(int(first_token))
     elif re.match(r"^0*(\d+)(?:PK|P/U|PICKUP)?$", first_token, re.IGNORECASE):
         m = re.match(r"^0*(\d+)(?:PK|P/U|PICKUP)?$", first_token, re.IGNORECASE)
