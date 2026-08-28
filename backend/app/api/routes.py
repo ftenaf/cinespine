@@ -14,6 +14,7 @@ from backend.app.streaming.bus import EventBus
 from backend.app.streaming.dispatcher import IngestionDispatcher
 from backend.app.streaming.broker import event_broker, SpineLiveEvent
 from backend.app.spine.writer import SpineWriter
+from backend.app.spine import tag_store
 from backend.app.reconciliation.engine import ReconciliationEngine
 from backend.app.agents.mcp_server import ClickHouseMCPServer, GeminiDiscrepancyAssistant
 from backend.app.parsers.classifier import classify_document, infer_production_and_day
@@ -1553,6 +1554,113 @@ def delete_requirement(requirement_id: str):
         summary=f"Requirement deleted ({requirement_id})",
     ))
     return {"status": "DELETED", "requirement_id": requirement_id}
+
+
+
+# ==========================================
+# Editorial Tags
+#
+# What an assistant editor marks on a scene or a shot: how far along it is, what
+# work it still needs, and what kind of shot it is. Production-scoped, not
+# day-scoped -- a shot is covered across whatever days it took, and where it has
+# got to in the edit is a property of the shot, not of the day a page was filed.
+# ==========================================
+
+
+class SetEditorialTagRequest(BaseModel):
+    production_id: str
+    target_type: str = Field(description="scene or shot")
+    target_id: str = Field(description="a scene number ('117') or a slate ('27/7')")
+    status: Optional[str] = None
+    needs: List[str] = Field(default_factory=list)
+    descriptors: List[str] = Field(default_factory=list)
+    note: Optional[str] = None
+    updated_by: Optional[str] = None
+
+
+@router.get("/tags/vocabulary")
+def get_tag_vocabulary():
+    """
+    The controlled vocabulary, so the interface spells these in one place only.
+
+    It is closed on purpose: a board that answers "what is left to do" can only
+    count what everyone spells the same way.
+    """
+    return tag_store.vocabulary()
+
+
+@router.get("/tags/summary")
+def get_tag_summary(production_id: str):
+    """How many targets sit at each status, and how many await each kind of work."""
+    return spine_writer.summarize_editorial_tags(production_id)
+
+
+@router.get("/tags")
+def list_tags(
+    production_id: str,
+    target_type: Optional[str] = None,
+    status: Optional[str] = None,
+    need: Optional[str] = None,
+    descriptor: Optional[str] = None,
+):
+    try:
+        return spine_writer.list_editorial_tags(
+            production_id,
+            target_type=target_type,
+            status=status,
+            need=need,
+            descriptor=descriptor,
+        )
+    except tag_store.UnknownTagValue as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.put("/tags")
+def set_tag(request: SetEditorialTagRequest):
+    """
+    Writes the whole tag for one target, replacing what was there.
+
+    Replacing rather than merging is what makes "this no longer needs SFX"
+    expressible; with merge semantics a client could only ever add.
+    """
+    try:
+        tag = spine_writer.set_editorial_tag(
+            production_id=request.production_id,
+            target_type=request.target_type,
+            target_id=request.target_id,
+            status=request.status,
+            needs=request.needs,
+            descriptors=request.descriptors,
+            note=request.note,
+            updated_by=request.updated_by,
+        )
+    except tag_store.UnknownTagValue as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    event_broker.publish_sync(SpineLiveEvent(
+        event_type="EDITORIAL_TAG_SET",
+        production_id=request.production_id,
+        shoot_day="ALL",
+        actor_handle=tag.get("updated_by") or "@user",
+        target_type=tag["target_type"],
+        target_id=tag["target_id"],
+        target_label=f"{tag['target_type'].capitalize()} {tag['target_id']}",
+        summary=f"Tagged {tag['target_type']} {tag['target_id']}",
+        data={"status": tag["status"], "needs": tag["needs"],
+              "descriptors": tag["descriptors"]},
+    ))
+    return tag
+
+
+@router.delete("/tags")
+def clear_tag(production_id: str, target_type: str, target_id: str):
+    try:
+        cleared = spine_writer.clear_editorial_tag(production_id, target_type, target_id)
+    except tag_store.UnknownTagValue as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not cleared:
+        raise HTTPException(status_code=404, detail="No tag on that target")
+    return {"status": "CLEARED", "target_type": target_type, "target_id": target_id}
 
 
 

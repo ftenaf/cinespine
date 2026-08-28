@@ -12,7 +12,8 @@ import {
 import { 
   TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, SequenceRecord,
   UserProfile, Requirement, NotificationItem, RequirementPriority, RequirementCategory,
-  UploadFeedback, LinedPage, ConfirmPrompt
+  UploadFeedback, LinedPage, ConfirmPrompt,
+  EditorialTag, TagVocabulary, TagTargetType
 } from './types';
 import { 
   fetchTakes, fetchDiscrepancies, fetchProductions, fetchDocuments,
@@ -21,9 +22,11 @@ import {
   fetchTeamUsers, loginUser, createRequirement,
   resolveRequirement, fetchNotifications, fetchRequirements,
   updateRequirement, deleteRequirement,
-  markNotificationRead, markAllNotificationsRead
+  markNotificationRead, markAllNotificationsRead,
+  fetchTagVocabulary, fetchTags, setTag as saveTag, clearTag as removeTag
 } from './api';
 import { ScriptStudio } from './components/ScriptStudio';
+import { EditorialTagBar } from './components/EditorialTagBar';
 
 
 
@@ -60,6 +63,11 @@ export default function App() {
   const [discrepancies, setDiscrepancies] = useState<Discrepancy[]>([]);
   const [documents, setDocuments] = useState<SourceDocumentSummary[]>([]);
   const [sequences, setSequences] = useState<SequenceRecord[]>([]);
+  // Editorial tags are production-scoped, not day-scoped: a shot is covered
+  // across whatever days it took, and where it has got to in the edit is a
+  // property of the shot rather than of any one day's paperwork.
+  const [tagVocabulary, setTagVocabulary] = useState<TagVocabulary | null>(null);
+  const [tagsByTarget, setTagsByTarget] = useState<Record<string, EditorialTag>>({});
   const [loading, setLoading] = useState(false);
 
   // Collaborative User Identity & Passwordless State
@@ -175,18 +183,20 @@ export default function App() {
   const loadSpineData = async () => {
     setLoading(true);
     try {
-      const [t, d, docs, seqs, reqs] = await Promise.all([
+      const [t, d, docs, seqs, reqs, tags] = await Promise.all([
         fetchTakes(selectedProductionId, selectedDay),
         fetchDiscrepancies(selectedProductionId, selectedDay),
         fetchDocuments(selectedProductionId, selectedDay),
         fetchSequences(selectedProductionId, selectedDay),
         fetchRequirements({ production_id: selectedProductionId, shoot_day: selectedDay }),
+        fetchTags(selectedProductionId),
       ]);
       setTakes(t);
       setDiscrepancies(d);
       setDocuments(docs);
       setSequences(seqs);
       setAllRequirements(reqs);
+      setTagsByTarget(Object.fromEntries(tags.map(tg => [`${tg.target_type}:${tg.target_id}`, tg])));
     } catch (e) {
       console.error(e);
     } finally {
@@ -194,6 +204,30 @@ export default function App() {
     }
   };
 
+
+  // The vocabulary is fetched rather than spelled here, so the words on a chip
+  // and the words the backend will accept cannot drift apart.
+  useEffect(() => {
+    fetchTagVocabulary().then(setTagVocabulary).catch(e => console.error(e));
+  }, []);
+
+  const handleSaveTag = async (payload: Parameters<typeof saveTag>[0]) => {
+    const saved = await saveTag(payload);
+    setTagsByTarget(prev => ({ ...prev, [`${saved.target_type}:${saved.target_id}`]: saved }));
+  };
+
+  const handleClearTag = async (targetType: TagTargetType, targetId: string) => {
+    await removeTag(selectedProductionId, targetType, targetId);
+    setTagsByTarget(prev => {
+      const next = { ...prev };
+      // The server normalises the id, so drop by prefix rather than trusting
+      // the spelling that came off the card.
+      Object.keys(next).forEach(k => {
+        if (k === `${targetType}:${targetId}`) delete next[k];
+      });
+      return next;
+    });
+  };
 
   const loadUsersAndNotifications = async (userHandle: string = currentUser.handle) => {
     try {
@@ -1408,6 +1442,20 @@ export default function App() {
 
                         {/* Composed Multi-Department Data Body */}
                         <div className="p-4 flex-1 space-y-3">
+                          {/* Editorial status. It hangs on the shot, not on this
+                              take: every take of a slate is coverage of the same
+                              shot, so they all show the one tag. */}
+                          <EditorialTagBar
+                            productionId={selectedProductionId}
+                            targetType="shot"
+                            targetId={t.slate}
+                            tag={tagsByTarget[`shot:${t.slate}`]}
+                            vocabulary={tagVocabulary}
+                            currentUserHandle={currentUser.handle}
+                            onSave={handleSaveTag}
+                            onClear={handleClearTag}
+                          />
+
                           {/* Header Summary Badges */}
                           <div className="flex items-center justify-between text-[11px] pb-1 border-b border-slate-800/80">
                             <div className="flex items-center gap-2">
