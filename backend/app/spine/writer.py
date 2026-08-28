@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Optional
 
 from backend.app.spine import character_store
 from backend.app.spine import tag_store
+from backend.app.spine import clickhouse
 from backend.app.streaming.models import DEFAULT_TEAM_USERS
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,9 @@ DEFAULT_PRODUCTIONS = {
 
 class SpineWriter:
     def __init__(self, clickhouse_client=None):
-        self.client = clickhouse_client
+        # Connect when one was not handed in. Absent or unreachable yields None
+        # and the in-memory spine serves every read, exactly as before.
+        self.client = clickhouse_client if clickhouse_client is not None else clickhouse.connect()
         self._in_memory_spine: List[Dict[str, Any]] = []
         self._productions: Dict[str, Dict[str, Any]] = dict(DEFAULT_PRODUCTIONS)
         self._documents: Dict[str, Dict[str, Any]] = {}
@@ -100,7 +103,9 @@ class SpineWriter:
     # ------------------------------------------------------------------ #
 
     def set_editorial_tag(self, **kwargs) -> Dict[str, Any]:
-        return tag_store.set_tag(**kwargs)
+        record = tag_store.set_tag(**kwargs)
+        self._mirror_tag_event(record, action="set")
+        return record
 
     def get_editorial_tag(
         self, production_id: str, target_type: str, target_id: str
@@ -113,7 +118,47 @@ class SpineWriter:
     def clear_editorial_tag(
         self, production_id: str, target_type: str, target_id: str
     ) -> bool:
-        return tag_store.clear_tag(production_id, target_type, target_id)
+        cleared = tag_store.clear_tag(production_id, target_type, target_id)
+        if cleared:
+            trail = tag_store.history(production_id, target_type, target_id, limit=1)
+            if trail:
+                self._mirror_tag_event(trail[0], action="cleared")
+        return cleared
+
+    def _mirror_tag_event(self, record: Dict[str, Any], action: str) -> None:
+        """
+        Copies a tag change to the analytical spine when there is one.
+
+        SQLite has already recorded it by this point, so a ClickHouse that is
+        down costs the analytics copy and nothing else. Failing the editor's
+        save because a reporting database is unreachable would be the wrong
+        trade every time.
+        """
+        if not self.client:
+            return
+        try:
+            self.client.insert(
+                "cinespine.editorial_tag_events",
+                [[
+                    record.get("event_id") or f"tev_{uuid.uuid4().hex[:12]}",
+                    record.get("production_id", ""),
+                    record.get("target_type", ""),
+                    record.get("target_id", ""),
+                    action,
+                    record.get("status") or "",
+                    json.dumps(record.get("needs") or []),
+                    json.dumps(record.get("descriptors") or []),
+                    record.get("note") or "",
+                    record.get("actor") or record.get("updated_by") or "",
+                ]],
+                column_names=[
+                    "event_id", "production_id", "target_type", "target_id",
+                    "action", "status", "needs_json", "descriptors_json",
+                    "note", "actor",
+                ],
+            )
+        except Exception as exc:
+            logger.error("Failed to mirror the tag change to ClickHouse: %s", exc)
 
     def summarize_editorial_tags(self, production_id: str) -> Dict[str, Any]:
         return tag_store.summarize(production_id)

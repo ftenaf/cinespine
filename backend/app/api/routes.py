@@ -1595,6 +1595,26 @@ def get_tag_summary(production_id: str):
     return spine_writer.summarize_editorial_tags(production_id)
 
 
+@router.get("/tags/history")
+def get_tag_history(
+    production_id: str,
+    target_type: Optional[str] = None,
+    target_id: Optional[str] = None,
+    limit: int = 200,
+):
+    """
+    How a target got to where it is, newest first.
+
+    The tag itself says what is true now; this says who said so and when, which
+    is the question asked when a board claims a scene is finished and somebody
+    on the floor disagrees.
+    """
+    try:
+        return tag_store.history(production_id, target_type, target_id, limit)
+    except tag_store.UnknownTagValue as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @router.get("/tags")
 def list_tags(
     production_id: str,
@@ -1660,6 +1680,19 @@ def clear_tag(production_id: str, target_type: str, target_id: str):
         raise HTTPException(status_code=400, detail=str(exc))
     if not cleared:
         raise HTTPException(status_code=404, detail="No tag on that target")
+
+    # Clearing is as much a change as setting. Publishing only the set left the
+    # other editors' boards showing a tag that had been taken off.
+    event_broker.publish_sync(SpineLiveEvent(
+        event_type="EDITORIAL_TAG_CLEARED",
+        production_id=production_id,
+        shoot_day="ALL",
+        actor_handle="@user",
+        target_type=target_type,
+        target_id=target_id,
+        target_label=f"{target_type.capitalize()} {target_id}",
+        summary=f"Cleared the tag on {target_type} {target_id}",
+    ))
     return {"status": "CLEARED", "target_type": target_type, "target_id": target_id}
 
 

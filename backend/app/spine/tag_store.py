@@ -22,6 +22,7 @@ point it at a temporary file.
 import json
 import os
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterator, List, Optional, Tuple
@@ -81,6 +82,26 @@ CREATE TABLE IF NOT EXISTS editorial_tags (
     updated_at    TEXT NOT NULL,
     PRIMARY KEY (production_id, target_type, target_id)
 );
+
+-- Every change, kept. The table above is the current answer; this one is how it
+-- got there, which is the question asked when a board says a scene is finished
+-- and somebody disagrees.
+CREATE TABLE IF NOT EXISTS editorial_tag_events (
+    event_id      TEXT PRIMARY KEY,
+    production_id TEXT NOT NULL,
+    target_type   TEXT NOT NULL,
+    target_id     TEXT NOT NULL,
+    action        TEXT NOT NULL,
+    status        TEXT,
+    needs         TEXT NOT NULL DEFAULT '[]',
+    descriptors   TEXT NOT NULL DEFAULT '[]',
+    note          TEXT,
+    actor         TEXT,
+    created_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_tag_events_target
+    ON editorial_tag_events (production_id, target_type, target_id, created_at);
 """
 
 
@@ -197,6 +218,77 @@ def _row_to_tag(row: sqlite3.Row) -> Dict[str, Any]:
     }
 
 
+def _append_event(conn: sqlite3.Connection, record: Dict[str, Any], action: str) -> None:
+    """
+    Records a change in the same transaction as the change itself.
+
+    Writing the two separately would let a crash between them leave a tag whose
+    history does not explain it, which is worse than no history at all: a gap
+    that looks like a record.
+    """
+    conn.execute(
+        """
+        INSERT INTO editorial_tag_events
+            (event_id, production_id, target_type, target_id, action, status,
+             needs, descriptors, note, actor, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            f"tev_{uuid.uuid4().hex[:12]}",
+            record["production_id"], record["target_type"], record["target_id"],
+            action, record.get("status"),
+            json.dumps(record.get("needs") or []),
+            json.dumps(record.get("descriptors") or []),
+            record.get("note"), record.get("updated_by"),
+            record.get("updated_at") or _now(),
+        ),
+    )
+
+
+def history(
+    production_id: str,
+    target_type: Optional[str] = None,
+    target_id: Optional[str] = None,
+    limit: int = 200,
+) -> List[Dict[str, Any]]:
+    """
+    What happened to a target, newest first.
+
+    Narrowing to one target is the common read -- "who marked this finished, and
+    when" -- so the index is on the target, not on the clock.
+    """
+    sql = "SELECT * FROM editorial_tag_events WHERE production_id = ?"
+    params: List[Any] = [production_id]
+    if target_type or target_id:
+        if not (target_type and target_id):
+            raise UnknownTagValue("target_type and target_id go together")
+        kind, ident = normalize_target(target_type, target_id)
+        sql += " AND target_type = ? AND target_id = ?"
+        params.extend([kind, ident])
+    sql += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
+    params.append(max(1, min(limit, 1000)))
+
+    with _connect() as conn:
+        rows = conn.execute(sql, params).fetchall()
+
+    return [
+        {
+            "event_id": r["event_id"],
+            "production_id": r["production_id"],
+            "target_type": r["target_type"],
+            "target_id": r["target_id"],
+            "action": r["action"],
+            "status": r["status"],
+            "needs": json.loads(r["needs"]),
+            "descriptors": json.loads(r["descriptors"]),
+            "note": r["note"],
+            "actor": r["actor"],
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    ]
+
+
 def set_tag(
     production_id: str,
     target_type: str,
@@ -235,6 +327,7 @@ def set_tag(
     }
 
     with _connect() as conn:
+        _append_event(conn, record, action="set")
         conn.execute(
             """
             INSERT INTO editorial_tags
@@ -318,14 +411,30 @@ def clear_tag(production_id: str, target_type: str, target_id: str) -> bool:
     of what has been looked at."""
     kind, ident = normalize_target(target_type, target_id)
     with _connect() as conn:
-        cur = conn.execute(
+        row = conn.execute(
+            """
+            SELECT * FROM editorial_tags
+             WHERE production_id = ? AND target_type = ? AND target_id = ?
+            """,
+            (production_id, kind, ident),
+        ).fetchone()
+        if row is None:
+            return False
+
+        # The history keeps what was there when it went, so a tag that vanished
+        # can still be accounted for.
+        cleared = _row_to_tag(row)
+        cleared["updated_at"] = _now()
+        _append_event(conn, cleared, action="cleared")
+
+        conn.execute(
             """
             DELETE FROM editorial_tags
              WHERE production_id = ? AND target_type = ? AND target_id = ?
             """,
             (production_id, kind, ident),
         )
-        return cur.rowcount > 0
+        return True
 
 
 def summarize(production_id: str) -> Dict[str, Any]:
