@@ -507,3 +507,109 @@ def test_the_writer_works_with_no_analytical_spine_at_all(monkeypatch):
     tag = writer.set_editorial_tag(
         production_id=PROD, target_type="shot", target_id="27/7", status="mounted")
     assert tag["status"] == "mounted"
+
+
+# --------------------------------------------------------------------------- #
+# What running it against a real ClickHouse taught
+# --------------------------------------------------------------------------- #
+
+def test_events_are_sent_together_not_one_at_a_time():
+    """
+    One insert per event turned a 72-event ingestion from 0.8s into 7.4s and a
+    1991-event one into over two minutes: each insert is a round trip and a new
+    part on the server.
+    """
+    from backend.app.spine.writer import SpineWriter
+
+    fake = FakeClickHouse()
+    writer = SpineWriter(clickhouse_client=fake)
+    for i in range(72):
+        writer.append_event({"event_id": f"e{i}", "production_id": PROD,
+                             "shoot_day": "31", "entity_type": "take", "payload": {}})
+
+    assert fake.rows == [], "nothing should go until the ingestion is done"
+    assert writer.flush_events() == 72
+    assert len(fake.rows) == 1, "one insert, not seventy-two"
+    assert len(fake.rows[0][1]) == 72
+
+
+def test_a_runaway_ingestion_flushes_before_memory_grows():
+    from backend.app.spine.writer import SpineWriter, EVENT_BATCH_SIZE
+
+    fake = FakeClickHouse()
+    writer = SpineWriter(clickhouse_client=fake)
+    for i in range(EVENT_BATCH_SIZE + 10):
+        writer.append_event({"event_id": f"e{i}", "production_id": PROD,
+                             "shoot_day": "31", "entity_type": "take", "payload": {}})
+    assert len(fake.rows) == 1
+    assert len(writer._pending_rows) == 10
+
+
+def test_every_event_still_reaches_the_in_memory_spine_unbuffered():
+    """Buffering is for the analytical copy only; reads must not wait on it."""
+    from backend.app.spine.writer import SpineWriter
+
+    writer = SpineWriter(clickhouse_client=FakeClickHouse())
+    writer.append_event({"event_id": "e1", "production_id": PROD, "shoot_day": "31",
+                         "entity_type": "take", "payload": {}})
+    assert len(writer.get_events(production_id=PROD)) == 1
+
+
+def test_a_failed_flush_does_not_grow_the_buffer_forever():
+    """
+    The in-memory spine already has every event. A reporting copy is not worth
+    growing memory without bound to protect.
+    """
+    from backend.app.spine.writer import SpineWriter
+
+    writer = SpineWriter(clickhouse_client=FakeClickHouse(fail=True))
+    writer.append_event({"event_id": "e1", "production_id": PROD, "shoot_day": "31",
+                         "entity_type": "take", "payload": {}})
+    assert writer.flush_events() == 0
+    assert writer._pending_rows == []
+
+
+def test_flushing_with_no_analytical_spine_is_a_no_op(monkeypatch):
+    from backend.app.spine.writer import SpineWriter
+
+    monkeypatch.delenv("CLICKHOUSE_HOST", raising=False)
+    writer = SpineWriter()
+    writer.append_event({"event_id": "e1", "production_id": PROD, "shoot_day": "31",
+                         "entity_type": "take", "payload": {}})
+    assert writer.flush_events() == 0
+
+
+@pytest.mark.parametrize("iso, expected", [
+    ("2026-08-28T16:35:45.789378+00:00", "2026-08-28 16:35:45.789378+00:00"),
+    ("2026-08-28T16:35:45.789378",       "2026-08-28 16:35:45.789378+00:00"),
+])
+def test_a_mirrored_timestamp_stays_in_utc(iso, expected):
+    """
+    Sent naive, the driver read it as local time: on a machine an hour off UTC
+    every row landed an hour before it happened. The order was still right,
+    which is what makes that kind of mistake survive a review.
+    """
+    from backend.app.spine.writer import _clickhouse_datetime
+
+    converted = _clickhouse_datetime(iso)
+    assert converted.tzinfo is not None
+    assert str(converted) == expected
+
+
+def test_an_unreadable_timestamp_falls_back_to_now():
+    from backend.app.spine.writer import _clickhouse_datetime
+
+    assert _clickhouse_datetime("not a date").tzinfo is not None
+    assert _clickhouse_datetime(None).tzinfo is not None
+
+
+def test_the_mirrored_tag_event_carries_its_own_time():
+    from backend.app.spine.writer import SpineWriter
+
+    fake = FakeClickHouse()
+    writer = SpineWriter(clickhouse_client=fake)
+    writer.set_editorial_tag(production_id=PROD, target_type="shot",
+                             target_id="27/7", status="mounted")
+    _, rows, columns = fake.rows[0]
+    assert "created_at" in columns
+    assert dict(zip(columns, rows[0]))["created_at"].tzinfo is not None

@@ -320,6 +320,9 @@ def upload_document(req: UploadRequest):
 
     topic = f"production.raw.{department.value}"
     event_bus.publish(topic, envelope)
+    # The document is ingested; send its events on together rather than
+    # leaving them buffered until the next upload.
+    spine_writer.flush_events()
 
     event_broker.publish_sync(SpineLiveEvent(
         event_type="DOCUMENT_INGESTED",
@@ -451,6 +454,9 @@ async def upload_document_file(
 
     topic = f"production.raw.{classification.department.value}"
     event_bus.publish(topic, envelope)
+    # The document is ingested; send its events on together rather than
+    # leaving them buffered until the next upload.
+    spine_writer.flush_events()
 
     event_broker.publish_sync(SpineLiveEvent(
         event_type="DOCUMENT_INGESTED",
@@ -740,6 +746,9 @@ def seed_real_day_data(req: SeedRequest):
             )
             topic = f"production.raw.{classification.department.value}"
             event_bus.publish(topic, envelope)
+            # The document is ingested; send its events on together rather than
+            # leaving them buffered until the next upload.
+            spine_writer.flush_events()
             ingested_files.append(fn)
     else:
         # Graceful fallback: seed from built-in sample paperwork documents
@@ -791,6 +800,9 @@ def seed_real_day_data(req: SeedRequest):
             )
             topic = f"production.raw.{classification.department.value}"
             event_bus.publish(topic, envelope)
+            # The document is ingested; send its events on together rather than
+            # leaving them buffered until the next upload.
+            spine_writer.flush_events()
             ingested_files.append(fn)
 
     event_broker.publish_sync(SpineLiveEvent(

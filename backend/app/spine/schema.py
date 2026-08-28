@@ -56,7 +56,11 @@ CREATE TABLE IF NOT EXISTS cinespine.editorial_tag_events (
     descriptors_json String,
     note String,
     actor LowCardinality(String),
-    created_at DateTime DEFAULT now()
+    -- Millisecond resolution, and written by the caller rather than defaulted.
+    -- At second resolution two changes made in the same second came back
+    -- unorderable, so the trail's order -- the thing it exists for -- did not
+    -- survive the copy.
+    created_at DateTime64(3) DEFAULT now64(3)
 ) ENGINE = MergeTree()
 ORDER BY (production_id, target_type, target_id, created_at);
 
