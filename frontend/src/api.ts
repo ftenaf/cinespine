@@ -378,8 +378,16 @@ export async function fetchTagHistory(
   return res.json();
 }
 
-export async function fetchDashboard(productionId: string): Promise<import('./types').ProductionDashboard> {
-  const res = await fetch(`${API_BASE}/dashboard?production_id=${encodeURIComponent(productionId)}`);
+export async function fetchDashboard(
+  productionId: string,
+  recentLimit = 40,
+): Promise<import('./types').ProductionDashboard> {
+  // More than the feed shows: repeated saves collapse into one line, so asking
+  // for exactly what fits would leave a short feed once they fold.
+  const q = new URLSearchParams({
+    production_id: productionId, recent_limit: String(recentLimit),
+  });
+  const res = await fetch(`${API_BASE}/dashboard?${q.toString()}`);
   if (!res.ok) throw await apiError(res, 'Failed to fetch the dashboard');
   return res.json();
 }
