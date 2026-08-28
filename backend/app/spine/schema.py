@@ -39,7 +39,28 @@ CREATE TABLE IF NOT EXISTS cinespine.takes_meta (
 ) ENGINE = ReplacingMergeTree(last_updated)
 ORDER BY (production_id, shoot_day, slate, take_id, camera_roll);
 
--- 3. Audit Discrepancies Table
+-- 3. Editorial Tag History
+--
+-- The current tag lives in SQLite: it is a handful of mutable rows read one at
+-- a time, which ClickHouse is the wrong shape for. What is mirrored here is the
+-- trail, where the question is analytical -- what moved this week, who is
+-- clearing what -- and the table only ever grows.
+CREATE TABLE IF NOT EXISTS cinespine.editorial_tag_events (
+    event_id String,
+    production_id LowCardinality(String),
+    target_type LowCardinality(String),
+    target_id String,
+    action LowCardinality(String),
+    status LowCardinality(String),
+    needs_json String,
+    descriptors_json String,
+    note String,
+    actor LowCardinality(String),
+    created_at DateTime DEFAULT now()
+) ENGINE = MergeTree()
+ORDER BY (production_id, target_type, target_id, created_at);
+
+-- 4. Audit Discrepancies Table
 CREATE TABLE IF NOT EXISTS cinespine.audit_discrepancies (
     discrepancy_id UUID,
     production_id LowCardinality(String),

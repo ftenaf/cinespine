@@ -5,6 +5,8 @@ The three axes are kept apart on purpose. Folding them into one list of free
 text would make the only question a progress board exists to answer -- how much
 is left, and what is it waiting on -- unanswerable.
 """
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -213,14 +215,22 @@ def test_a_tag_outlives_the_process_that_wrote_it():
     in process memory would lose an editor's afternoon to a restart.
     """
     tag_store.set_tag(PROD, "shot", "27/7", status="mounted", needs=["sfx"])
-    import importlib
-    reloaded = importlib.reload(tag_store)
+
+    # Read straight off the file with a connection this module never opened:
+    # nothing in process memory can make this pass.
+    import sqlite3
+    conn = sqlite3.connect(tag_store.get_db_path())
     try:
-        survived = reloaded.get_tag(PROD, "shot", "27/7")
-        assert survived is not None
-        assert survived["status"] == "mounted" and survived["needs"] == ["sfx"]
+        row = conn.execute(
+            "SELECT status, needs FROM editorial_tags"
+            " WHERE production_id = ? AND target_type = ? AND target_id = ?",
+            (PROD, "shot", "27/7"),
+        ).fetchone()
     finally:
-        importlib.reload(tag_store)
+        conn.close()
+
+    assert row is not None
+    assert row[0] == "mounted" and json.loads(row[1]) == ["sfx"]
 
 
 # --------------------------------------------------------------------------- #
@@ -281,3 +291,219 @@ def test_clearing_a_target_that_was_never_tagged_is_a_404():
         params={"production_id": PROD, "target_type": "shot", "target_id": "99/9"},
     )
     assert response.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# How a target got to where it is
+# --------------------------------------------------------------------------- #
+
+def test_every_change_is_kept():
+    tag_store.set_tag(PROD, "shot", "27/7", status="ready_to_edit", updated_by="ana")
+    tag_store.set_tag(PROD, "shot", "27/7", status="mounted", updated_by="ben")
+    trail = tag_store.history(PROD, "shot", "27/7")
+    assert [e["status"] for e in trail] == ["mounted", "ready_to_edit"]
+    assert [e["actor"] for e in trail] == ["@ben", "@ana"]
+
+
+def test_the_newest_change_comes_first():
+    """A trail is read from the present backwards."""
+    for status in ("finished_shooting", "ready_to_edit", "mounted"):
+        tag_store.set_tag(PROD, "shot", "27/7", status=status)
+    assert tag_store.history(PROD, "shot", "27/7")[0]["status"] == "mounted"
+
+
+def test_clearing_is_recorded_with_what_was_cleared():
+    """
+    A tag that vanished still has to be accounted for, so the history keeps the
+    state it was in when it went.
+    """
+    tag_store.set_tag(PROD, "shot", "27/7", status="mounted", needs=["sfx"])
+    tag_store.clear_tag(PROD, "shot", "27/7")
+    latest = tag_store.history(PROD, "shot", "27/7")[0]
+    assert latest["action"] == "cleared"
+    assert latest["status"] == "mounted" and latest["needs"] == ["sfx"]
+
+
+def test_history_survives_the_tag_it_describes():
+    tag_store.set_tag(PROD, "shot", "27/7", status="mounted")
+    tag_store.clear_tag(PROD, "shot", "27/7")
+    assert tag_store.get_tag(PROD, "shot", "27/7") is None
+    assert len(tag_store.history(PROD, "shot", "27/7")) == 2
+
+
+def test_a_production_s_whole_trail_can_be_read():
+    tag_store.set_tag(PROD, "shot", "27/7", status="mounted")
+    tag_store.set_tag(PROD, "scene", "117", status="finished")
+    assert len(tag_store.history(PROD)) == 2
+
+
+def test_the_trail_of_one_target_excludes_the_others():
+    tag_store.set_tag(PROD, "shot", "27/7", status="mounted")
+    tag_store.set_tag(PROD, "shot", "49/1", status="mounted")
+    assert len(tag_store.history(PROD, "shot", "27/7")) == 1
+
+
+def test_a_target_is_matched_however_it_is_spelled():
+    tag_store.set_tag(PROD, "shot", "27/7", status="mounted")
+    assert len(tag_store.history(PROD, "shot", "27-7")) == 1
+
+
+def test_naming_a_target_id_without_a_type_is_refused():
+    with pytest.raises(UnknownTagValue):
+        tag_store.history(PROD, target_id="27/7")
+
+
+def test_the_api_serves_a_target_s_history():
+    client.put("/api/tags", json={
+        "production_id": PROD, "target_type": "shot", "target_id": "27/7",
+        "status": "mounted", "updated_by": "ana",
+    })
+    trail = client.get("/api/tags/history", params={
+        "production_id": PROD, "target_type": "shot", "target_id": "27/7",
+    }).json()
+    assert len(trail) == 1
+    assert trail[0]["actor"] == "@ana" and trail[0]["action"] == "set"
+
+
+# --------------------------------------------------------------------------- #
+# Other editors are told
+# --------------------------------------------------------------------------- #
+
+def _published(fn):
+    """Runs fn and returns the live events it published."""
+    from backend.app.streaming.broker import event_broker
+    seen = []
+    original = event_broker.publish_sync
+    event_broker.publish_sync = lambda e: seen.append(e)
+    try:
+        fn()
+    finally:
+        event_broker.publish_sync = original
+    return seen
+
+
+def test_setting_a_tag_tells_the_other_editors():
+    events = _published(lambda: client.put("/api/tags", json={
+        "production_id": PROD, "target_type": "shot", "target_id": "27/7",
+        "status": "mounted", "needs": ["sfx"],
+    }))
+    assert [e.event_type for e in events] == ["EDITORIAL_TAG_SET"]
+    assert events[0].data["status"] == "mounted"
+    assert events[0].production_id == PROD
+
+
+def test_clearing_a_tag_tells_them_too():
+    """
+    Publishing only the set left every other board showing a tag that had
+    already been taken off.
+    """
+    client.put("/api/tags", json={
+        "production_id": PROD, "target_type": "shot", "target_id": "27/7",
+        "status": "mounted",
+    })
+    events = _published(lambda: client.delete("/api/tags", params={
+        "production_id": PROD, "target_type": "shot", "target_id": "27/7",
+    }))
+    assert [e.event_type for e in events] == ["EDITORIAL_TAG_CLEARED"]
+
+
+def test_a_tag_event_reaches_a_subscriber_on_any_day():
+    """
+    A tag belongs to the production, not to a day, so it is published against
+    every day rather than against one -- otherwise an editor looking at day 31
+    never hears about it.
+    """
+    from backend.app.streaming.broker import SpineLiveEvent, SSESubscriber
+
+    subscriber = SSESubscriber("s1", production_id=PROD, shoot_day="31")
+    event = SpineLiveEvent(
+        event_type="EDITORIAL_TAG_SET", production_id=PROD, shoot_day="ALL",
+        summary="Tagged shot 27/7",
+    )
+    assert subscriber.matches(event) is True
+
+
+# --------------------------------------------------------------------------- #
+# The analytical spine, when there is one
+# --------------------------------------------------------------------------- #
+
+class FakeClickHouse:
+    """Records what would have been inserted."""
+
+    def __init__(self, fail=False):
+        self.rows = []
+        self.fail = fail
+
+    def insert(self, table, rows, column_names):
+        if self.fail:
+            raise ConnectionError("clickhouse is down")
+        self.rows.append((table, rows, column_names))
+
+
+def test_a_tag_change_is_mirrored_to_the_analytical_spine():
+    from backend.app.spine.writer import SpineWriter
+
+    fake = FakeClickHouse()
+    writer = SpineWriter(clickhouse_client=fake)
+    writer.set_editorial_tag(
+        production_id=PROD, target_type="shot", target_id="27/7",
+        status="mounted", needs=["sfx"], updated_by="ana",
+    )
+    assert len(fake.rows) == 1
+    table, rows, columns = fake.rows[0]
+    assert table == "cinespine.editorial_tag_events"
+    assert dict(zip(columns, rows[0]))["status"] == "mounted"
+    assert dict(zip(columns, rows[0]))["action"] == "set"
+
+
+def test_a_clearing_is_mirrored_too():
+    from backend.app.spine.writer import SpineWriter
+
+    fake = FakeClickHouse()
+    writer = SpineWriter(clickhouse_client=fake)
+    writer.set_editorial_tag(
+        production_id=PROD, target_type="shot", target_id="27/7", status="mounted")
+    writer.clear_editorial_tag(PROD, "shot", "27/7")
+    assert [dict(zip(c, r[0]))["action"] for _, r, c in fake.rows] == ["set", "cleared"]
+
+
+def test_a_clickhouse_that_is_down_does_not_lose_the_editor_s_change():
+    """
+    SQLite has already recorded it. Failing an editor's save because a reporting
+    database is unreachable would be the wrong trade every time.
+    """
+    from backend.app.spine.writer import SpineWriter
+
+    writer = SpineWriter(clickhouse_client=FakeClickHouse(fail=True))
+    tag = writer.set_editorial_tag(
+        production_id=PROD, target_type="shot", target_id="27/7", status="mounted")
+    assert tag["status"] == "mounted"
+    assert tag_store.get_tag(PROD, "shot", "27/7")["status"] == "mounted"
+
+
+def test_no_clickhouse_configured_is_not_an_error(monkeypatch):
+    from backend.app.spine import clickhouse
+
+    monkeypatch.delenv("CLICKHOUSE_HOST", raising=False)
+    assert clickhouse.is_configured() is False
+    assert clickhouse.connect() is None
+
+
+def test_an_unreachable_clickhouse_degrades_rather_than_raising(monkeypatch):
+    """A laptop with no Docker running must still serve the whole application."""
+    from backend.app.spine import clickhouse
+
+    monkeypatch.setenv("CLICKHOUSE_HOST", "203.0.113.1")  # reserved, never routes
+    monkeypatch.setenv("CLICKHOUSE_CONNECT_TIMEOUT", "1")
+    assert clickhouse.connect() is None
+
+
+def test_the_writer_works_with_no_analytical_spine_at_all(monkeypatch):
+    from backend.app.spine.writer import SpineWriter
+
+    monkeypatch.delenv("CLICKHOUSE_HOST", raising=False)
+    writer = SpineWriter()
+    assert writer.client is None
+    tag = writer.set_editorial_tag(
+        production_id=PROD, target_type="shot", target_id="27/7", status="mounted")
+    assert tag["status"] == "mounted"
