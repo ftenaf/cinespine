@@ -415,3 +415,100 @@ n/a2807260:29 pasos de Thomas
         by_slate = {r.slate: r for r in recs}
         assert by_slate["6/8"].shoot_day == "25"
         assert by_slate["6/WT"].shoot_day == "31"
+
+
+# --------------------------------------------------------------------------- #
+# The lined script itself is not a table
+# --------------------------------------------------------------------------- #
+
+# A facing page is followed by the lined script for the same scene. Its scene
+# headings print the number twice -- once in the margin, once in the heading --
+# and end with the schedule's day marker, which has the shape of a camera card.
+LINED_SCRIPT_PAGES = """
+SCRIPT FACING PAGE28/07/2026
+Scene:6
+Slate TakeDescription CR SR Time Camera Info Comments
+6/8 1*  Scene(s): 6
+Shot on Day: Day 25
+S/C - med. MS to WS following
+B0312007260:27
+LAC - V31
+6/3A-xwide
+7+8/1
+B-wide
+5 5INT/EXT. COCHE THOMAS - APARCAMIENTO AUDITORIO - DIA - D2
+El coche avanza y aparca. Thomas apaga el motor.
+6 6INT. AUDITORIO - PASILLOS - DIA - D2
+64A 64AINT. FISCALIA PROVINCIAL - ESCALERAS - DIA - D8
+119. INT. [FLASHBACK] CASA MARTHA Y JULIAN - PASILLO - DIA -
+"""
+
+
+class TestLinedScriptPages:
+    """
+    Read as table rows, a scene heading gives a take number and the day marker
+    gives a card: '5 5INT/EXT. ... - DIA - D2' becomes take 5 on card D002,
+    filed against whichever slate happened to be current. Fourteen takes were
+    invented this way on one document.
+    """
+
+    def _recs(self):
+        return parse_scripte_detailed_editor_log_text(LINED_SCRIPT_PAGES)
+
+    def test_a_scene_heading_does_not_become_a_take(self):
+        assert [r.take_id for r in self._recs()] == ["1"]
+
+    def test_a_day_marker_does_not_become_a_camera_card(self):
+        rolls = {r.camera_roll for r in self._recs()}
+        assert rolls == {"B031"}
+        assert not any(r.camera_roll and r.camera_roll.startswith("D") for r in self._recs())
+
+    def test_the_real_row_above_them_survives(self):
+        rec = self._recs()[0]
+        assert (rec.slate, rec.shoot_day, rec.recording_date) == ("6/8", "25", "20/07/2026")
+
+    @pytest.mark.parametrize("heading", [
+        "5 5INT/EXT. COCHE THOMAS - APARCAMIENTO - DIA - D2",
+        "6 6INT. AUDITORIO - PASILLOS - DIA - D2",
+        "64A 64AINT. FISCALIA PROVINCIAL - ESCALERAS - DIA - D8",
+        "119. INT. [FLASHBACK] CASA MARTHA Y JULIAN - PASILLO",
+        "122A. INT. [FLASHBACK] AUDITORIO - BAMBALINAS - DIA",
+        "INT. AUDITORIO - NOCHE",
+    ])
+    def test_every_heading_shape_on_the_page_is_recognised(self, heading):
+        text = "6/8 1*  Scene(s): 6\nB0312007260:27\n" + heading + "\n2 D0042807260:31\n"
+        assert len(parse_scripte_detailed_editor_log_text(text)) == 1
+
+    def test_a_comment_is_not_mistaken_for_a_heading(self):
+        """PRINT. ends in INT. and must not close the setup."""
+        text = """
+27/7 1 Scene(s): 27 A120 280726 2:46
+2 PRINT. B039 280726 2:53
+"""
+        recs = parse_scripte_detailed_editor_log_text(text)
+        assert {r.take_id for r in recs} == {"1", "2"}
+
+
+def test_a_report_date_glued_to_its_label_is_still_found():
+    """pypdf writes the facing page header as 'SCRIPT FACING PAGE28/07/2026'."""
+    assert extract_report_date("SCRIPT FACING PAGE28/07/2026") == "28/07/2026"
+
+
+def test_a_setup_takes_its_date_from_its_first_dated_row():
+    """
+    In this layout the header line carries no card, so the date arrives a line
+    or two below it. The rows after that one belong to the same setup and must
+    not fall back to the date the report was printed.
+    """
+    text = """
+SCRIPT FACING PAGE28/07/2026
+27/2 1 Scene(s): 27
+Shot on Day: Day 30
+Sticks - ecu. ECU Thomas LR
+B0372707260:28
+C0032707260:28
+2 0:31
+C003 0:31
+"""
+    recs = parse_scripte_detailed_editor_log_text(text)
+    assert recs and all(r.recording_date == "27/07/2026" for r in recs)
