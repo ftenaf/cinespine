@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 import { ProductionDashboard as Board, ProgressAxis, TagVocabulary } from '../types';
 import { fetchDashboard } from '../api';
+import { collapseFeed } from '../tagFeed';
 
 /**
  * Where a production has got to, and what it is waiting on.
@@ -214,7 +215,7 @@ export function ProductionDashboardPanel({ productionId, reloadKey }: {
             </p>
           ) : (
             <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-              {board.recent.map(entry => (
+              {collapseFeed(board.recent).slice(0, 15).map(({ entry, count }) => (
                 <div key={entry.event_id} className="flex gap-2 text-[11px] leading-snug">
                   <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${
                     entry.action === 'cleared' ? 'bg-gray-600' : 'bg-spine-accent'}`} />
@@ -228,6 +229,17 @@ export function ProductionDashboardPanel({ productionId, reloadKey }: {
                     </span>
                     {entry.status && entry.action !== 'cleared' && (
                       <span className="text-gray-500"> · {labelFor('statuses', entry.status)}</span>
+                    )}
+                    {/* A repeated save is folded rather than dropped: the record
+                        keeps every one, and the count says so without spending
+                        a line on each. */}
+                    {count > 1 && (
+                      <span
+                        className="ml-1 text-gray-500 font-mono"
+                        title={`Saved ${count} times with no change between them`}
+                      >
+                        ×{count}
+                      </span>
                     )}
                   </div>
                 </div>
