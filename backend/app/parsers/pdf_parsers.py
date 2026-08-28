@@ -597,6 +597,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
     current_notes: List[str] = []
     current_shoot_day: Optional[str] = None
     current_block_date: Optional[str] = None
+    current_block_roll: Optional[str] = None
     block_start = 0
 
     def next_content_line(idx: int) -> str:
@@ -640,6 +641,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             block_start = len(records)
             current_shoot_day = None
             current_block_date = None
+            current_block_roll = None
             continue
 
         # 0. The day this setup was shot: 'Shot on Day: Day 11'. It follows the
@@ -662,6 +664,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             block_start = len(records)
             current_shoot_day = None
             current_block_date = None
+            current_block_roll = None
 
         wt_m = re.search(r"(\d+WT)\s+(\d+[A-Z*]?)\s+.*?(?:Wild Track:)?\s*.*?(?:n/a)?\s*(\d{6})?\s*(\d+:\d+)?\s*(.*)", cleaned, re.IGNORECASE)
         if wt_m and "WT" in cleaned.upper():
@@ -696,7 +699,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             continue
 
         # 2. Main Slate + Take header (e.g. '27/7 1 Scene(s): 27' or '49/1 1 Scene(s): 49' or '117/1 4* Scene(s): 117')
-        new_slate_m = re.search(r"^(" + SLATE_TOKEN + r")\s+(\d+[A-Z]?\s*\*?|\d+\*|FALSE)\s*(.*)", cleaned)
+        new_slate_m = re.search(r"^(" + SLATE_TOKEN + r")\s+(\d+(?:\.\d+)?(?:[A-Z](?![A-Za-z]))?\s*\*?|\d+\*|FALSE)\s*(.*)", cleaned)
         if new_slate_m:
             current_slate = new_slate_m.group(1)
             current_take = new_slate_m.group(2).replace(" ", "")
@@ -706,6 +709,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             # so; inheriting the last one would spread a wrong day down the page.
             block_start = len(records)
             current_shoot_day = None
+            current_block_roll = None
 
             # Check if camera roll is on this same line: A1202807262:46 or B412807261:1125
             cr, raw_date = extract_script_camera_roll_and_date(rest)
@@ -720,6 +724,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
                 row_date = parse_shoot_date(raw_date) or current_block_date or report_date
                 if current_block_date is None:
                     current_block_date = parse_shoot_date(raw_date)
+                current_block_roll = cr
                 records.append(
                     ParsedScriptRecord(
                         scene=scene,
@@ -753,7 +758,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
         # is what separates it from the bare slates printed on the lined script
         # pages, where the same numbers appear over camera labels.
         if re.fullmatch(SLATE_TOKEN, cleaned) and re.match(
-            r"^(\d+[A-Z]?\s*\*?|\d+\*|FALSE)\s+Scene\(s\):", next_content_line(idx)
+            r"^(\d+(?:\.\d+)?(?:[A-Z](?![A-Za-z]))?\s*\*?|\d+\*|FALSE)\s+Scene\(s\):", next_content_line(idx)
         ):
             current_slate = cleaned
             current_take = None
@@ -761,10 +766,11 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             block_start = len(records)
             current_shoot_day = None
             current_block_date = None
+            current_block_roll = None
             continue
 
         # 3. Subsequent take or multi-camera setup angle: '1 Dolly - wide... B039 2:46' or '2 A120 2:53' or '3* A122 3:23'
-        sub_m = re.search(r"^(\d+[A-Z]?\s*\*?|\d+\*|FALSE)\s+(.*)", cleaned)
+        sub_m = re.search(r"^(\d+(?:\.\d+)?(?:[A-Z](?![A-Za-z]))?\s*\*?|\d+\*|FALSE)\s+(.*)", cleaned)
         if sub_m and current_slate:
             current_take = sub_m.group(1).replace(" ", "")
             rest = sub_m.group(2)
@@ -776,6 +782,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
                 row_date = parse_shoot_date(raw_date) or current_block_date or report_date
                 if current_block_date is None:
                     current_block_date = parse_shoot_date(raw_date)
+                current_block_roll = cr
                 records.append(
                     ParsedScriptRecord(
                         scene=scene,
@@ -796,6 +803,41 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
                         raw_payload={"camera_roll": cr, "is_vfx": "VFX" in cleaned.upper()},
                     )
                 )
+            elif current_block_roll and re.match(r"^\d+:\d{2}\b", rest):
+                # A take row whose CR column is blank: the setup's card is
+                # written once and the takes beneath it are on the same card.
+                # Read as "no card" the row produced nothing at all, and the
+                # take vanished -- 26 of them on one document, among them every
+                # part of a take covered in more than one pass (1.2, 2.1, 2.2).
+                # The duration is what marks this out as a take row rather than
+                # a stray number in the description.
+                norm_slate = normalize_slate(current_slate)
+                take_info = normalize_take(current_take)
+                scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
+                records.append(
+                    ParsedScriptRecord(
+                        scene=scene,
+                        slate=norm_slate,
+                        take_id=take_info.take_id,
+                        camera_roll=current_block_roll,
+                        timecode_in=None,
+                        timecode_out=None,
+                        recording_date=current_block_date or report_date,
+                        shoot_day=current_shoot_day,
+                        is_starred=take_info.is_starred,
+                        is_pickup=take_info.is_pickup,
+                        is_false_start=take_info.is_false_start,
+                        is_wild_track="WT" in current_slate.upper() or take_info.is_wild_track,
+                        is_vfx="VFX" in cleaned.upper() or take_info.is_vfx,
+                        is_mos="MOS" in cleaned.upper() or "MOS" in current_slate.upper() or take_info.is_mos,
+                        note=rest or take_info.note,
+                        # The card is the setup's, not this row's. A reader
+                        # weighing a roll conflict should be able to tell.
+                        raw_payload={"camera_roll": current_block_roll,
+                                     "camera_roll_inherited": True,
+                                     "is_vfx": "VFX" in cleaned.upper()},
+                    )
+                )
             continue
 
         # 4. A row that carries its own slate but matched no header pattern is a
@@ -812,6 +854,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             block_start = len(records)
             current_shoot_day = None
             current_block_date = None
+            current_block_roll = None
             continue
 
         # 5. Standalone roll line for current setup (e.g. 'A1202807262:46' or 'B412807261:1125')
@@ -824,6 +867,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             row_date = parse_shoot_date(raw_date) or current_block_date or report_date
             if current_block_date is None:
                 current_block_date = parse_shoot_date(raw_date)
+            current_block_roll = cr
             records.append(
                 ParsedScriptRecord(
                     scene=scene,

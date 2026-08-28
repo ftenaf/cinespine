@@ -512,3 +512,90 @@ C003 0:31
 """
     recs = parse_scripte_detailed_editor_log_text(text)
     assert recs and all(r.recording_date == "27/07/2026" for r in recs)
+
+
+# --------------------------------------------------------------------------- #
+# A take covered in more than one pass, and the CR column's ditto
+# --------------------------------------------------------------------------- #
+
+# The card is written once per setup; the takes beneath it leave the CR column
+# blank because they are on the same card. Two of those takes are numbered in
+# parts, the shot having been covered in two passes.
+SETUP_WITH_PARTS = """
+SCRIPT FACING PAGE28/07/2026
+41+122A/4
+1 Scene(s): 38, 117
+Shot on Day: Day 15
+Dolly - cu. MC2s Julian/Emily, slide in
+A0680607260:18
+2.1 0:18
+2.2 1:14
+3 0:20
+"""
+
+
+class TestPartTakesAndTheDittoCard:
+    """
+    Read as "no card", a take row with a blank CR column produced nothing and
+    the take vanished -- 26 of them on one document, every part-take among them.
+    """
+
+    def _takes(self):
+        recs = parse_scripte_detailed_editor_log_text(SETUP_WITH_PARTS)
+        return {r.take_id: r for r in recs}
+
+    def test_a_take_numbered_in_parts_is_kept(self):
+        assert set(self._takes()) == {"1", "2.1", "2.2", "3"}
+
+    def test_a_part_is_its_own_take_not_a_rounded_number(self):
+        """2.1 and 2.2 are two takes. Folding them to 2 merges two records."""
+        takes = self._takes()
+        assert takes["2.1"].take_id == "2.1"
+        assert takes["2.2"].take_id == "2.2"
+
+    def test_a_blank_cr_column_means_the_card_of_the_setup(self):
+        assert all(r.camera_roll == "A068" for r in self._takes().values())
+
+    def test_an_inherited_card_says_so(self):
+        """
+        The card is the setup's, not the row's. Anything weighing a roll
+        conflict should be able to tell the difference.
+        """
+        takes = self._takes()
+        assert takes["1"].raw_payload.get("camera_roll_inherited") is None
+        assert all(takes[t].raw_payload["camera_roll_inherited"] for t in ("2.1", "2.2", "3"))
+
+    def test_the_day_and_date_carry_across_the_setup(self):
+        assert all((r.shoot_day, r.recording_date) == ("15", "06/07/2026")
+                   for r in self._takes().values())
+
+    def test_a_take_glued_to_the_next_column_keeps_its_own_number(self):
+        """pypdf writes '6/5 1.1Scene(s): 6' with no space before the column."""
+        text = """
+6/5 1.1Scene(s): 6
+Shot on Day: Day 25
+S/C - mcu. Follow Thomas in MCU
+B0302007260:59 following
+1.2 1:02 leading - no picture
+"""
+        recs = parse_scripte_detailed_editor_log_text(text)
+        assert [r.take_id for r in recs] == ["1.1", "1.2"]
+        assert all(r.camera_roll == "B030" for r in recs)
+
+    def test_a_number_in_a_description_is_not_a_take(self):
+        """The duration column is what marks a row as a take row."""
+        text = """
+27/7 1 Scene(s): 27 A120 280726 2:46
+3 sizes covered, 2 lenses
+"""
+        assert [r.take_id for r in parse_scripte_detailed_editor_log_text(text)] == ["1"]
+
+    def test_a_setup_that_declared_no_card_lends_none_to_the_next(self):
+        """A card must not leak across a setup boundary into a blank column."""
+        text = """
+27/7 1 Scene(s): 27 A120 280726 2:46
+49/1 1 Scene(s): 49
+2 0:31
+"""
+        recs = parse_scripte_detailed_editor_log_text(text)
+        assert [(r.slate, r.take_id) for r in recs] == [("27/7", "1")]
