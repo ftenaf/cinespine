@@ -370,7 +370,7 @@ def extract_report_date(text: str) -> Optional[str]:
     carries none of its own -- and it is a property of the document, not a
     constant, which is what it used to be.
     """
-    m = re.search(r"\b(\d{2})/(\d{2})/(\d{4})\b", text or "")
+    m = re.search(r"(?<!\d)(\d{2})/(\d{2})/(\d{4})(?!\d)", text or "")
     if not m:
         return None
 
@@ -619,6 +619,29 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
         ):
             continue
 
+        # A scene heading means the facing page has ended and the lined script
+        # itself has begun. Its lines are screenplay, not table rows: a heading
+        # like '5 5INT/EXT. COCHE THOMAS - APARCAMIENTO AUDITORIO - DIA - D2'
+        # reads as take 5 on card D002, because the schedule's day marker D2
+        # has the shape of a camera card. That invented fourteen takes on this
+        # document, filed against whichever slate happened to be current.
+        #
+        # Matched on the heading's shape -- a scene number, then INT/EXT -- and
+        # not on the words alone, so that a comment saying PRINT. is not
+        # mistaken for one. The number is printed twice on these pages, in the
+        # margin and again in the heading ('64A 64AINT. FISCALIA ...').
+        if re.match(
+            r"^(?:\d+[A-Z]{0,2}\.?\s+(?:\d+[A-Z]{0,2})?\s*)?(?:INT|EXT)[./]",
+            cleaned, re.IGNORECASE,
+        ):
+            current_slate = None
+            current_take = None
+            current_notes = []
+            block_start = len(records)
+            current_shoot_day = None
+            current_block_date = None
+            continue
+
         # 0. The day this setup was shot: 'Shot on Day: Day 11'. It follows the
         # header row, so it also settles the rows already emitted for this
         # block. Without it every take on the page is filed under the day the
@@ -695,6 +718,8 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
                 take_info = normalize_take(current_take)
                 scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
                 row_date = parse_shoot_date(raw_date) or current_block_date or report_date
+                if current_block_date is None:
+                    current_block_date = parse_shoot_date(raw_date)
                 records.append(
                     ParsedScriptRecord(
                         scene=scene,
@@ -749,6 +774,8 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
                 take_info = normalize_take(current_take)
                 scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
                 row_date = parse_shoot_date(raw_date) or current_block_date or report_date
+                if current_block_date is None:
+                    current_block_date = parse_shoot_date(raw_date)
                 records.append(
                     ParsedScriptRecord(
                         scene=scene,
@@ -795,6 +822,8 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
             notes_str = " ".join(current_notes).strip() or cleaned
             row_date = parse_shoot_date(raw_date) or current_block_date or report_date
+            if current_block_date is None:
+                current_block_date = parse_shoot_date(raw_date)
             records.append(
                 ParsedScriptRecord(
                     scene=scene,
