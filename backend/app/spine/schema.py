@@ -32,7 +32,11 @@ CREATE TABLE IF NOT EXISTS cinespine.takes_meta (
     fps Float32,
     timecode_in String,
     timecode_out String,
-    is_starred UInt8,
+    -- Nullable because a lined page may assert that a take was circled and may
+    -- not assert that it was not: the circle is ink on paper and its absence
+    -- from the export is silence, not denial. Writing that silence as 0 would
+    -- make the analytical copy state something no witness said.
+    is_starred Nullable(UInt8),
     is_pickup UInt8,
     is_vfx UInt8,
     last_updated DateTime DEFAULT now()

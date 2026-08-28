@@ -749,3 +749,169 @@ def test_a_production_with_no_paperwork_yet_is_an_empty_board_not_an_error():
     assert board["shots"]["known"] == 0
     assert board["outstanding"]["sfx"] == []
     assert board["recent"] == []
+
+
+# --------------------------------------------------------------------------- #
+# The analytical indexes
+# --------------------------------------------------------------------------- #
+
+def _writer_with(fake):
+    from backend.app.spine.writer import SpineWriter
+    return SpineWriter(clickhouse_client=fake)
+
+
+def _take_event(slate, take_id, roll, **payload):
+    return {
+        "event_id": f"e_{slate}_{take_id}_{roll}", "production_id": "IDX",
+        "shoot_day": "31", "entity_type": "take",
+        "payload": {"slate": slate, "take_id": take_id, "camera_roll": roll,
+                    "scene": slate.split("/")[0], **payload},
+    }
+
+
+def test_a_take_is_indexed_once_per_camera_roll():
+    """
+    One row per roll, not per take: that is what the table's key says, and a
+    take shot on three cameras is three witnesses.
+    """
+    fake = FakeClickHouse()
+    writer = _writer_with(fake)
+    for roll in ("A120", "B039", "C005"):
+        writer.append_event(_take_event("27/7", "1", roll))
+    assert writer.project_takes("IDX", "31") == 3
+
+
+def test_the_latest_event_for_a_row_wins():
+    fake = FakeClickHouse()
+    writer = _writer_with(fake)
+    writer.append_event(_take_event("27/7", "1", "A120", timecode_in="09:00:00:00"))
+    writer.append_event(_take_event("27/7", "1", "A120", timecode_in="10:00:00:00"))
+    assert writer.project_takes("IDX", "31") == 1
+    table, rows, columns = fake.rows[-1]
+    assert table == "cinespine.takes_meta"
+    assert dict(zip(columns, rows[0]))["timecode_in"] == "10:00:00:00"
+
+
+def test_no_claim_about_a_circle_is_indexed_as_no_claim():
+    """
+    A lined page may assert that a take was circled and may not assert that it
+    was not. Writing that silence as 0 would make the index state something no
+    witness said.
+    """
+    fake = FakeClickHouse()
+    writer = _writer_with(fake)
+    writer.append_event(_take_event("27/7", "1", "A120", is_starred=None))
+    writer.append_event(_take_event("27/8", "1", "A120", is_starred=True))
+    writer.append_event(_take_event("49/1", "1", "A120", is_starred=False))
+    writer.project_takes("IDX", "31")
+    _, rows, columns = fake.rows[-1]
+    starred = {dict(zip(columns, r))["slate"]: dict(zip(columns, r))["is_starred"] for r in rows}
+    assert starred == {"27/7": None, "27/8": 1, "49/1": 0}
+
+
+def test_an_event_without_a_slate_or_take_is_not_indexed():
+    fake = FakeClickHouse()
+    writer = _writer_with(fake)
+    writer.append_event(_take_event("27/7", "1", "A120"))
+    writer.append_event({"event_id": "x", "production_id": "IDX", "shoot_day": "31",
+                         "entity_type": "take", "payload": {"camera_roll": "A120"}})
+    assert writer.project_takes("IDX", "31") == 1
+
+
+def test_media_events_are_not_takes():
+    fake = FakeClickHouse()
+    writer = _writer_with(fake)
+    writer.append_event({"event_id": "m", "production_id": "IDX", "shoot_day": "31",
+                         "entity_type": "media_file", "payload": {"file_name": "A_001.mxf"}})
+    assert writer.project_takes("IDX", "31") == 0
+
+
+def test_discrepancies_are_indexed_as_they_stand():
+    fake = FakeClickHouse()
+    writer = _writer_with(fake)
+    written = writer.project_discrepancies([{
+        "discrepancy_id": "d1", "production_id": "IDX", "shoot_day": "31",
+        "entity_type": "take", "entity_id": "49/1 Take 1",
+        "discrepancy_type": "CIRCLED_TAKE_MISMATCH", "severity": "CRITICAL",
+        "description": "conflicting", "witnesses": [{"a": 1}], "is_resolved": False,
+    }])
+    assert written == 1
+    table, rows, columns = fake.rows[-1]
+    assert table == "cinespine.audit_discrepancies"
+    row = dict(zip(columns, rows[0]))
+    assert row["entity_id"] == "49/1 Take 1" and row["is_resolved"] == 0
+    assert json.loads(row["witnesses_json"]) == [{"a": 1}]
+
+
+def test_a_resolved_discrepancy_is_written_as_resolved():
+    fake = FakeClickHouse()
+    written = _writer_with(fake).project_discrepancies([{
+        "discrepancy_id": "d1", "production_id": "IDX", "shoot_day": "31",
+        "is_resolved": True, "witnesses": [],
+    }])
+    assert written == 1
+    _, rows, columns = fake.rows[-1]
+    assert dict(zip(columns, rows[0]))["is_resolved"] == 1
+
+
+def test_projecting_without_an_analytical_spine_is_a_no_op(monkeypatch):
+    monkeypatch.delenv("CLICKHOUSE_HOST", raising=False)
+    from backend.app.spine.writer import SpineWriter
+
+    writer = SpineWriter()
+    writer.append_event(_take_event("27/7", "1", "A120"))
+    assert writer.project_takes("IDX", "31") == 0
+    assert writer.project_discrepancies([{"discrepancy_id": "d"}]) == 0
+
+
+def test_a_failed_projection_does_not_raise():
+    """An ingestion must not fail because a reporting database is unhappy."""
+    fake = FakeClickHouse(fail=True)
+    writer = _writer_with(fake)
+    writer.append_event(_take_event("27/7", "1", "A120"))
+    assert writer.project_takes("IDX", "31") == 0
+    assert writer.project_discrepancies([{"discrepancy_id": "d", "witnesses": []}]) == 0
+
+
+def test_takes_from_every_day_are_indexed_not_just_the_upload_s():
+    """
+    A facing page is filed under the day it is handed over but carries takes
+    from every day the scene was covered. Projecting only the envelope's day
+    left sixty takes in the spine and out of the index.
+    """
+    fake = FakeClickHouse()
+    writer = _writer_with(fake)
+    writer.append_event({**_take_event("119/5", "1", "A046"), "shoot_day": "11"})
+    writer.append_event({**_take_event("41+122A/4", "1", "A068"), "shoot_day": "15"})
+    writer.append_event(_take_event("27/7", "1", "A120"))  # day 31
+
+    assert writer.project_takes("IDX") == 3
+    _, rows, columns = fake.rows[-1]
+    days = {dict(zip(columns, r))["shoot_day"] for r in rows}
+    assert days == {"11", "15", "31"}
+
+
+def test_a_row_keeps_the_day_its_take_was_shot_on():
+    fake = FakeClickHouse()
+    writer = _writer_with(fake)
+    writer.append_event({**_take_event("119/5", "1", "A046"), "shoot_day": "11"})
+    writer.project_takes("IDX")
+    _, rows, columns = fake.rows[-1]
+    assert dict(zip(columns, rows[0]))["shoot_day"] == "11"
+
+
+def test_the_same_slate_on_two_days_is_two_rows():
+    """Collapsing them by slate and roll alone would lose one of the days."""
+    fake = FakeClickHouse()
+    writer = _writer_with(fake)
+    writer.append_event({**_take_event("27/7", "1", "A120"), "event_id": "a", "shoot_day": "30"})
+    writer.append_event({**_take_event("27/7", "1", "A120"), "event_id": "b", "shoot_day": "31"})
+    assert writer.project_takes("IDX") == 2
+
+
+def test_narrowing_to_one_day_still_works():
+    fake = FakeClickHouse()
+    writer = _writer_with(fake)
+    writer.append_event({**_take_event("119/5", "1", "A046"), "shoot_day": "11"})
+    writer.append_event(_take_event("27/7", "1", "A120"))
+    assert writer.project_takes("IDX", "11") == 1

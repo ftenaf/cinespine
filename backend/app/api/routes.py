@@ -37,6 +37,36 @@ reconciler = ReconciliationEngine()
 mcp_server = ClickHouseMCPServer(spine_writer=spine_writer, reconciler=reconciler)
 assistant = GeminiDiscrepancyAssistant(mcp_server=mcp_server)
 
+def _project_analytics(production_id: str, shoot_day: str) -> None:
+    """
+    Refreshes the analytical indexes after an ingestion.
+
+    Only when a ClickHouse is connected, and never fatal: these are indexes for
+    querying, and an ingestion must not fail because a reporting database is
+    unhappy. Done once per document rather than per event, for the same reason
+    the event insert is batched.
+    """
+    if not spine_writer.client:
+        return
+    try:
+        # Every day, not the one the document arrived under. A facing page is
+        # filed on the day it is handed over and carries takes from every day
+        # the scene was covered; projecting only the envelope's day left sixty
+        # takes in the spine and out of the index.
+        spine_writer.project_takes(production_id)
+        days = {
+            e.get("shoot_day") for e in spine_writer.get_events(production_id=production_id)
+            if e.get("shoot_day")
+        }
+        for day in sorted(days or {shoot_day}):
+            spine_writer.project_discrepancies(
+                mcp_server.query_production_discrepancies(
+                    production_id=production_id, shoot_day=day)
+            )
+    except Exception as exc:
+        logger.warning("Could not refresh the analytical indexes: %s", exc)
+
+
 # Forward spine events to writer & telemetry
 event_bus.subscribe("production.events.spine", lambda e: (
     spine_writer.append_event(e),
@@ -323,6 +353,7 @@ def upload_document(req: UploadRequest):
     # The document is ingested; send its events on together rather than
     # leaving them buffered until the next upload.
     spine_writer.flush_events()
+    _project_analytics(envelope.production_id, envelope.shoot_day)
 
     event_broker.publish_sync(SpineLiveEvent(
         event_type="DOCUMENT_INGESTED",
@@ -457,6 +488,7 @@ async def upload_document_file(
     # The document is ingested; send its events on together rather than
     # leaving them buffered until the next upload.
     spine_writer.flush_events()
+    _project_analytics(envelope.production_id, envelope.shoot_day)
 
     event_broker.publish_sync(SpineLiveEvent(
         event_type="DOCUMENT_INGESTED",
@@ -749,6 +781,7 @@ def seed_real_day_data(req: SeedRequest):
             # The document is ingested; send its events on together rather than
             # leaving them buffered until the next upload.
             spine_writer.flush_events()
+            _project_analytics(envelope.production_id, envelope.shoot_day)
             ingested_files.append(fn)
     else:
         # Graceful fallback: seed from built-in sample paperwork documents
@@ -803,6 +836,7 @@ def seed_real_day_data(req: SeedRequest):
             # The document is ingested; send its events on together rather than
             # leaving them buffered until the next upload.
             spine_writer.flush_events()
+            _project_analytics(envelope.production_id, envelope.shoot_day)
             ingested_files.append(fn)
 
     event_broker.publish_sync(SpineLiveEvent(
