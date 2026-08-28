@@ -1822,6 +1822,26 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* Editorial status, the same shot-level tag the grid shows.
+                      The navigator is where an assistant editor works through a
+                      day take by take, so leaving it out meant switching layout
+                      to mark anything. */}
+                  <div className="flex items-center gap-2 -mt-1">
+                    <span className="text-xs text-gray-300 font-semibold shrink-0">
+                      Shot {currentFocusTake.slate}:
+                    </span>
+                    <EditorialTagBar
+                      productionId={selectedProductionId}
+                      targetType="shot"
+                      targetId={currentFocusTake.slate}
+                      tag={tagsByTarget[`shot:${currentFocusTake.slate}`]}
+                      vocabulary={tagVocabulary}
+                      currentUserHandle={currentUser.handle}
+                      onSave={handleSaveTag}
+                      onClear={handleClearTag}
+                    />
+                  </div>
+
                   {/* Composed Multi-Angle Slate Body */}
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-2">
                     {/* Left Column: Visual Frame with Angle Switcher Tabs & Storage Notary */}

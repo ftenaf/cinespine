@@ -357,6 +357,111 @@ class SpineWriter:
             logger.error("Failed to append %d events to ClickHouse: %s", len(rows), e)
             return 0
 
+    # ------------------------------------------------------------------ #
+    # Analytical projections
+    #
+    # The spine is the record; these two tables are indexes over it, kept for
+    # querying rather than for reading back into the application. Both are
+    # ReplacingMergeTree, so writing the current answer again is how they are
+    # kept current -- the older row is dropped on merge.
+    # ------------------------------------------------------------------ #
+
+    def project_takes(self, production_id: str, shoot_day: Optional[str] = None) -> int:
+        """
+        Writes one row per take per camera roll, from the spine's take events.
+
+        One row per roll, not per take, because that is what the table's key
+        says: a take shot on three cameras is three rows. Reconciling them into
+        one take is a question with an opinion in it, and an index should not
+        hold opinions.
+
+        shoot_day defaults to every day, and callers should leave it that way.
+        A facing page is filed under the day it was handed over but carries
+        takes from every day the scene was covered, so projecting only the
+        day a document arrived under left sixty takes in the spine and out of
+        the index.
+        """
+        if not self.client:
+            return 0
+
+        rows: Dict[tuple, List[Any]] = {}
+        for event in self.get_events(production_id=production_id, shoot_day=shoot_day):
+            if event.get("entity_type") != "take":
+                continue
+            p = event.get("payload", {})
+            slate, take_id = p.get("slate"), p.get("take_id")
+            if not slate or not take_id:
+                continue
+            roll = p.get("camera_roll") or ""
+            day = str(event.get("shoot_day") or shoot_day or "")
+            # Keyed by the day too: the same slate and roll can be shot on more
+            # than one day, and collapsing them would lose one.
+            rows[(day, slate, str(take_id), roll)] = [
+                production_id, day, str(p.get("scene") or ""), slate, str(take_id),
+                roll, p.get("sound_roll") or "",
+                float(p.get("fps") or 24.0),
+                p.get("timecode_in") or "", p.get("timecode_out") or "",
+                # None survives as None: "no claim" is not "not circled".
+                None if p.get("is_starred") is None else int(bool(p.get("is_starred"))),
+                int(bool(p.get("is_pickup"))), int(bool(p.get("is_vfx"))),
+            ]
+
+        if not rows:
+            return 0
+
+        try:
+            self.client.insert(
+                "cinespine.takes_meta",
+                list(rows.values()),
+                column_names=[
+                    "production_id", "shoot_day", "scene_id", "slate", "take_id",
+                    "camera_roll", "sound_roll", "fps", "timecode_in", "timecode_out",
+                    "is_starred", "is_pickup", "is_vfx",
+                ],
+            )
+            return len(rows)
+        except Exception as exc:
+            logger.error("Failed to project %d takes to ClickHouse: %s", len(rows), exc)
+            return 0
+
+    def project_discrepancies(self, discrepancies: List[Dict[str, Any]]) -> int:
+        """
+        Writes the discrepancies as they currently stand.
+
+        They are computed from the spine on demand rather than stored, so this
+        is a snapshot: a discrepancy that a later document settles is written
+        again with is_resolved set, and the older row is dropped on merge.
+        """
+        if not self.client or not discrepancies:
+            return 0
+
+        rows = []
+        for d in discrepancies:
+            rows.append([
+                d.get("discrepancy_id") or str(uuid.uuid4()),
+                d.get("production_id", ""), str(d.get("shoot_day", "")),
+                d.get("entity_type", ""), d.get("entity_id", ""),
+                d.get("discrepancy_type", ""), d.get("severity", ""),
+                d.get("description", ""),
+                json.dumps(d.get("witnesses", [])),
+                int(bool(d.get("is_resolved"))),
+            ])
+
+        try:
+            self.client.insert(
+                "cinespine.audit_discrepancies",
+                rows,
+                column_names=[
+                    "discrepancy_id", "production_id", "shoot_day", "entity_type",
+                    "entity_id", "discrepancy_type", "severity", "description",
+                    "witnesses_json", "is_resolved",
+                ],
+            )
+            return len(rows)
+        except Exception as exc:
+            logger.error("Failed to project %d discrepancies to ClickHouse: %s", len(rows), exc)
+            return 0
+
     def get_events(self, production_id: Optional[str] = None, shoot_day: Optional[str] = None) -> List[Dict[str, Any]]:
         events = self._in_memory_spine
         if production_id:
