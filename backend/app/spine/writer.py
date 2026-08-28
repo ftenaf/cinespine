@@ -3,6 +3,7 @@ ClickHouse Append-Only Event Writer, Multi-Production & Document Store.
 """
 import json
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
@@ -18,6 +19,17 @@ logger = logging.getLogger(__name__)
 # goes in one insert, small enough that a runaway ingestion cannot grow memory
 # without bound before a flush.
 EVENT_BATCH_SIZE = 500
+
+# How long the mirror stays shut after a failed insert.
+#
+# A ClickHouse that is absent at startup costs nothing: connect returns None and
+# nothing is attempted. One that dies after connecting is the expensive case --
+# the driver retries with backoff on every call, so an ingestion went from 0.9s
+# to 16.7s and a single tag save from instant to 8.2s, precisely when the
+# infrastructure is already having a bad day. Long enough that a sustained
+# outage costs one attempt every half minute, short enough that a restart is
+# picked up without anybody intervening.
+MIRROR_COOLDOWN_SECONDS = 30
 
 
 def _clickhouse_datetime(iso: Optional[str]) -> datetime:
@@ -84,6 +96,8 @@ class SpineWriter:
         # 72-event ingestion from 0.8s into 7.4s and a 1991-event one into
         # minutes: each insert is a round trip and a new part on the server.
         self._pending_rows: List[List[Any]] = []
+        # Monotonic deadline before which the mirror is not attempted at all.
+        self._mirror_blocked_until: float = 0.0
 
     # ------------------------------------------------------------------ #
     # Screenplay & character profiles
@@ -158,6 +172,45 @@ class SpineWriter:
                 self._mirror_tag_event(trail[0], action="cleared")
         return cleared
 
+    def mirror_available(self) -> bool:
+        """
+        Whether to attempt the analytical copy at all right now.
+
+        Callers check this before building rows, not only before inserting: the
+        take projection walks every event in a production, and doing that work
+        to throw it away is most of the cost.
+        """
+        if not self.client:
+            return False
+        if self._mirror_blocked_until and time.monotonic() < self._mirror_blocked_until:
+            return False
+        return True
+
+    def _try_insert(self, table: str, rows: List[List[Any]], column_names: List[str]) -> bool:
+        """
+        One insert, and the whole of the failure policy.
+
+        A failure shuts the mirror for a cooldown rather than being retried: the
+        spine and SQLite already hold everything written here, so the cost of
+        skipping is a stale reporting table, while the cost of trying is paid by
+        whoever is waiting for their save.
+        """
+        if not self.mirror_available():
+            return False
+        try:
+            self.client.insert(table, rows, column_names=column_names)
+            if self._mirror_blocked_until:
+                logger.info("ClickHouse is answering again; the mirror is open")
+                self._mirror_blocked_until = 0.0
+            return True
+        except Exception as exc:
+            self._mirror_blocked_until = time.monotonic() + MIRROR_COOLDOWN_SECONDS
+            logger.error(
+                "ClickHouse insert into %s failed (%s); pausing the mirror for %ds",
+                table, exc, MIRROR_COOLDOWN_SECONDS,
+            )
+            return False
+
     def _mirror_tag_event(self, record: Dict[str, Any], action: str) -> None:
         """
         Copies a tag change to the analytical spine when there is one.
@@ -167,12 +220,11 @@ class SpineWriter:
         save because a reporting database is unreachable would be the wrong
         trade every time.
         """
-        if not self.client:
+        if not self.mirror_available():
             return
-        try:
-            self.client.insert(
-                "cinespine.editorial_tag_events",
-                [[
+        self._try_insert(
+            "cinespine.editorial_tag_events",
+            [[
                     record.get("event_id") or f"tev_{uuid.uuid4().hex[:12]}",
                     record.get("production_id", ""),
                     record.get("target_type", ""),
@@ -186,15 +238,13 @@ class SpineWriter:
                     # SQLite's own timestamp, not the server's clock: the two
                     # copies of the trail have to agree on the order.
                     _clickhouse_datetime(record.get("created_at") or record.get("updated_at")),
-                ]],
-                column_names=[
-                    "event_id", "production_id", "target_type", "target_id",
-                    "action", "status", "needs_json", "descriptors_json",
-                    "note", "actor", "created_at",
-                ],
-            )
-        except Exception as exc:
-            logger.error("Failed to mirror the tag change to ClickHouse: %s", exc)
+            ]],
+            column_names=[
+                "event_id", "production_id", "target_type", "target_id",
+                "action", "status", "needs_json", "descriptors_json",
+                "note", "actor", "created_at",
+            ],
+        )
 
     def summarize_editorial_tags(self, production_id: str) -> Dict[str, Any]:
         return tag_store.summarize(production_id)
@@ -308,7 +358,7 @@ class SpineWriter:
                 "description": "Auto-registered production",
             }
 
-        if self.client:
+        if self.mirror_available():
             self._pending_rows.append([
                 event.get("event_id"),
                 event.get("production_id"),
@@ -335,27 +385,25 @@ class SpineWriter:
         if not self.client or not self._pending_rows:
             return 0
 
+        # Taken from the buffer either way. Holding them while the mirror is
+        # shut would grow memory across an outage to protect a reporting copy.
         rows, self._pending_rows = self._pending_rows, []
-        try:
-            self.client.insert(
-                "cinespine.production_events",
-                rows,
-                column_names=[
-                    "event_id",
-                    "production_id",
-                    "shoot_day",
-                    "axis",
-                    "department",
-                    "doc_type",
-                    "entity_type",
-                    "payload_json",
-                    "metadata_json",
-                ],
-            )
-            return len(rows)
-        except Exception as e:
-            logger.error("Failed to append %d events to ClickHouse: %s", len(rows), e)
-            return 0
+        sent = self._try_insert(
+            "cinespine.production_events",
+            rows,
+            column_names=[
+                "event_id",
+                "production_id",
+                "shoot_day",
+                "axis",
+                "department",
+                "doc_type",
+                "entity_type",
+                "payload_json",
+                "metadata_json",
+            ],
+        )
+        return len(rows) if sent else 0
 
     # ------------------------------------------------------------------ #
     # Analytical projections
@@ -381,7 +429,10 @@ class SpineWriter:
         day a document arrived under left sixty takes in the spine and out of
         the index.
         """
-        if not self.client:
+        # Checked before walking the events, not only before inserting: the
+        # walk is most of the cost, and doing it to throw the result away is
+        # exactly what the breaker exists to avoid.
+        if not self.mirror_available():
             return 0
 
         rows: Dict[tuple, List[Any]] = {}
@@ -409,20 +460,16 @@ class SpineWriter:
         if not rows:
             return 0
 
-        try:
-            self.client.insert(
-                "cinespine.takes_meta",
-                list(rows.values()),
-                column_names=[
-                    "production_id", "shoot_day", "scene_id", "slate", "take_id",
-                    "camera_roll", "sound_roll", "fps", "timecode_in", "timecode_out",
-                    "is_starred", "is_pickup", "is_vfx",
-                ],
-            )
-            return len(rows)
-        except Exception as exc:
-            logger.error("Failed to project %d takes to ClickHouse: %s", len(rows), exc)
-            return 0
+        sent = self._try_insert(
+            "cinespine.takes_meta",
+            list(rows.values()),
+            column_names=[
+                "production_id", "shoot_day", "scene_id", "slate", "take_id",
+                "camera_roll", "sound_roll", "fps", "timecode_in", "timecode_out",
+                "is_starred", "is_pickup", "is_vfx",
+            ],
+        )
+        return len(rows) if sent else 0
 
     def project_discrepancies(self, discrepancies: List[Dict[str, Any]]) -> int:
         """
@@ -432,7 +479,7 @@ class SpineWriter:
         is a snapshot: a discrepancy that a later document settles is written
         again with is_resolved set, and the older row is dropped on merge.
         """
-        if not self.client or not discrepancies:
+        if not self.mirror_available() or not discrepancies:
             return 0
 
         rows = []
@@ -447,20 +494,16 @@ class SpineWriter:
                 int(bool(d.get("is_resolved"))),
             ])
 
-        try:
-            self.client.insert(
-                "cinespine.audit_discrepancies",
-                rows,
-                column_names=[
-                    "discrepancy_id", "production_id", "shoot_day", "entity_type",
-                    "entity_id", "discrepancy_type", "severity", "description",
-                    "witnesses_json", "is_resolved",
-                ],
-            )
-            return len(rows)
-        except Exception as exc:
-            logger.error("Failed to project %d discrepancies to ClickHouse: %s", len(rows), exc)
-            return 0
+        sent = self._try_insert(
+            "cinespine.audit_discrepancies",
+            rows,
+            column_names=[
+                "discrepancy_id", "production_id", "shoot_day", "entity_type",
+                "entity_id", "discrepancy_type", "severity", "description",
+                "witnesses_json", "is_resolved",
+            ],
+        )
+        return len(rows) if sent else 0
 
     def get_events(self, production_id: Optional[str] = None, shoot_day: Optional[str] = None) -> List[Dict[str, Any]]:
         events = self._in_memory_spine
