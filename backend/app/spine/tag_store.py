@@ -405,7 +405,12 @@ def list_tags(
     return sorted(rows, key=lambda r: (r["target_type"], r["target_id"]))
 
 
-def clear_tag(production_id: str, target_type: str, target_id: str) -> bool:
+def clear_tag(
+    production_id: str,
+    target_type: str,
+    target_id: str,
+    cleared_by: Optional[str] = None,
+) -> bool:
     """Removes a target's tag entirely. Untagged and 'tagged with nothing' read
     the same on a board, and keeping an empty row would only confuse the count
     of what has been looked at."""
@@ -425,6 +430,13 @@ def clear_tag(production_id: str, target_type: str, target_id: str) -> bool:
         # can still be accounted for.
         cleared = _row_to_tag(row)
         cleared["updated_at"] = _now()
+        # Whoever is removing it, not whoever last set it. Copying the old
+        # actor made the trail name the wrong person for the one question it
+        # exists to answer.
+        handle = (cleared_by or "").strip()
+        if handle and not handle.startswith("@"):
+            handle = f"@{handle}"
+        cleared["updated_by"] = handle or None
         _append_event(conn, cleared, action="cleared")
 
         conn.execute(

@@ -216,8 +216,11 @@ export default function App() {
     setTagsByTarget(prev => ({ ...prev, [`${saved.target_type}:${saved.target_id}`]: saved }));
   };
 
-  const handleClearTag = async (targetType: TagTargetType, targetId: string) => {
-    await removeTag(selectedProductionId, targetType, targetId);
+  const handleClearTag = async (
+    targetType: TagTargetType, targetId: string, clearedBy?: string | null,
+  ) => {
+    await removeTag(selectedProductionId, targetType, targetId,
+                    clearedBy ?? currentUser.handle);
     setTagsByTarget(prev => {
       const next = { ...prev };
       // The server normalises the id, so drop by prefix rather than trusting

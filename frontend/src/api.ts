@@ -349,10 +349,12 @@ export async function clearTag(
   productionId: string,
   targetType: import('./types').TagTargetType,
   targetId: string,
+  clearedBy?: string | null,
 ): Promise<void> {
   const q = new URLSearchParams({
     production_id: productionId, target_type: targetType, target_id: targetId,
   });
+  if (clearedBy) q.set('cleared_by', clearedBy);
   const res = await fetch(`${API_BASE}/tags?${q.toString()}`, { method: 'DELETE' });
   if (!res.ok) throw await apiError(res, 'Failed to clear the tag');
 }
@@ -360,5 +362,18 @@ export async function clearTag(
 export async function fetchTagSummary(productionId: string): Promise<import('./types').TagSummary> {
   const res = await fetch(`${API_BASE}/tags/summary?production_id=${encodeURIComponent(productionId)}`);
   if (!res.ok) throw await apiError(res, 'Failed to fetch the tag summary');
+  return res.json();
+}
+
+export async function fetchTagHistory(
+  productionId: string,
+  targetType: import('./types').TagTargetType,
+  targetId: string,
+): Promise<import('./types').TagHistoryEntry[]> {
+  const q = new URLSearchParams({
+    production_id: productionId, target_type: targetType, target_id: targetId,
+  });
+  const res = await fetch(`${API_BASE}/tags/history?${q.toString()}`);
+  if (!res.ok) throw await apiError(res, 'Failed to fetch the tag history');
   return res.json();
 }
