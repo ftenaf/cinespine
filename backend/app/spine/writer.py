@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 from backend.app.spine import character_store
+from backend.app.spine import tag_store
 from backend.app.streaming.models import DEFAULT_TEAM_USERS
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,33 @@ class SpineWriter:
         updates: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
         return character_store.update_character_profile(script_id, character_id, updates)
+
+    # ------------------------------------------------------------------ #
+    # Editorial tags
+    #
+    # Hand-authored like the character profiles, and kept in SQLite for the same
+    # reason: an editor's read on what is finished must survive a restart.
+    # See spine/tag_store.py.
+    # ------------------------------------------------------------------ #
+
+    def set_editorial_tag(self, **kwargs) -> Dict[str, Any]:
+        return tag_store.set_tag(**kwargs)
+
+    def get_editorial_tag(
+        self, production_id: str, target_type: str, target_id: str
+    ) -> Optional[Dict[str, Any]]:
+        return tag_store.get_tag(production_id, target_type, target_id)
+
+    def list_editorial_tags(self, production_id: str, **filters) -> List[Dict[str, Any]]:
+        return tag_store.list_tags(production_id, **filters)
+
+    def clear_editorial_tag(
+        self, production_id: str, target_type: str, target_id: str
+    ) -> bool:
+        return tag_store.clear_tag(production_id, target_type, target_id)
+
+    def summarize_editorial_tags(self, production_id: str) -> Dict[str, Any]:
+        return tag_store.summarize(production_id)
 
     def store_document(
         self,

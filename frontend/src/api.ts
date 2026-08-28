@@ -308,3 +308,57 @@ export async function deleteDocument(docId: string): Promise<{ status: string; d
   if (!res.ok) throw await apiError(res, 'Failed to delete document');
   return res.json();
 }
+
+
+// ==========================================
+// Editorial Tags
+// ==========================================
+
+export async function fetchTagVocabulary(): Promise<import('./types').TagVocabulary> {
+  const res = await fetch(`${API_BASE}/tags/vocabulary`);
+  if (!res.ok) throw await apiError(res, 'Failed to fetch the tag vocabulary');
+  return res.json();
+}
+
+export async function fetchTags(productionId: string): Promise<import('./types').EditorialTag[]> {
+  const res = await fetch(`${API_BASE}/tags?production_id=${encodeURIComponent(productionId)}`);
+  if (!res.ok) throw await apiError(res, 'Failed to fetch tags');
+  return res.json();
+}
+
+export async function setTag(payload: {
+  production_id: string;
+  target_type: import('./types').TagTargetType;
+  target_id: string;
+  status?: string | null;
+  needs?: string[];
+  descriptors?: string[];
+  note?: string | null;
+  updated_by?: string | null;
+}): Promise<import('./types').EditorialTag> {
+  const res = await fetch(`${API_BASE}/tags`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw await apiError(res, 'Failed to save the tag');
+  return res.json();
+}
+
+export async function clearTag(
+  productionId: string,
+  targetType: import('./types').TagTargetType,
+  targetId: string,
+): Promise<void> {
+  const q = new URLSearchParams({
+    production_id: productionId, target_type: targetType, target_id: targetId,
+  });
+  const res = await fetch(`${API_BASE}/tags?${q.toString()}`, { method: 'DELETE' });
+  if (!res.ok) throw await apiError(res, 'Failed to clear the tag');
+}
+
+export async function fetchTagSummary(productionId: string): Promise<import('./types').TagSummary> {
+  const res = await fetch(`${API_BASE}/tags/summary?production_id=${encodeURIComponent(productionId)}`);
+  if (!res.ok) throw await apiError(res, 'Failed to fetch the tag summary');
+  return res.json();
+}

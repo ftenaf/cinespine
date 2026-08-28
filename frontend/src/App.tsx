@@ -12,7 +12,8 @@ import {
 import { 
   TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, SequenceRecord,
   UserProfile, Requirement, NotificationItem, RequirementPriority, RequirementCategory,
-  UploadFeedback, LinedPage, ConfirmPrompt
+  UploadFeedback, LinedPage, ConfirmPrompt,
+  EditorialTag, TagVocabulary, TagTargetType
 } from './types';
 import { 
   fetchTakes, fetchDiscrepancies, fetchProductions, fetchDocuments,
@@ -21,9 +22,11 @@ import {
   fetchTeamUsers, loginUser, createRequirement,
   resolveRequirement, fetchNotifications, fetchRequirements,
   updateRequirement, deleteRequirement,
-  markNotificationRead, markAllNotificationsRead
+  markNotificationRead, markAllNotificationsRead,
+  fetchTagVocabulary, fetchTags, setTag as saveTag, clearTag as removeTag
 } from './api';
 import { ScriptStudio } from './components/ScriptStudio';
+import { EditorialTagBar } from './components/EditorialTagBar';
 
 
 
@@ -60,6 +63,11 @@ export default function App() {
   const [discrepancies, setDiscrepancies] = useState<Discrepancy[]>([]);
   const [documents, setDocuments] = useState<SourceDocumentSummary[]>([]);
   const [sequences, setSequences] = useState<SequenceRecord[]>([]);
+  // Editorial tags are production-scoped, not day-scoped: a shot is covered
+  // across whatever days it took, and where it has got to in the edit is a
+  // property of the shot rather than of any one day's paperwork.
+  const [tagVocabulary, setTagVocabulary] = useState<TagVocabulary | null>(null);
+  const [tagsByTarget, setTagsByTarget] = useState<Record<string, EditorialTag>>({});
   const [loading, setLoading] = useState(false);
 
   // Collaborative User Identity & Passwordless State
@@ -175,18 +183,20 @@ export default function App() {
   const loadSpineData = async () => {
     setLoading(true);
     try {
-      const [t, d, docs, seqs, reqs] = await Promise.all([
+      const [t, d, docs, seqs, reqs, tags] = await Promise.all([
         fetchTakes(selectedProductionId, selectedDay),
         fetchDiscrepancies(selectedProductionId, selectedDay),
         fetchDocuments(selectedProductionId, selectedDay),
         fetchSequences(selectedProductionId, selectedDay),
         fetchRequirements({ production_id: selectedProductionId, shoot_day: selectedDay }),
+        fetchTags(selectedProductionId),
       ]);
       setTakes(t);
       setDiscrepancies(d);
       setDocuments(docs);
       setSequences(seqs);
       setAllRequirements(reqs);
+      setTagsByTarget(Object.fromEntries(tags.map(tg => [`${tg.target_type}:${tg.target_id}`, tg])));
     } catch (e) {
       console.error(e);
     } finally {
@@ -194,6 +204,30 @@ export default function App() {
     }
   };
 
+
+  // The vocabulary is fetched rather than spelled here, so the words on a chip
+  // and the words the backend will accept cannot drift apart.
+  useEffect(() => {
+    fetchTagVocabulary().then(setTagVocabulary).catch(e => console.error(e));
+  }, []);
+
+  const handleSaveTag = async (payload: Parameters<typeof saveTag>[0]) => {
+    const saved = await saveTag(payload);
+    setTagsByTarget(prev => ({ ...prev, [`${saved.target_type}:${saved.target_id}`]: saved }));
+  };
+
+  const handleClearTag = async (targetType: TagTargetType, targetId: string) => {
+    await removeTag(selectedProductionId, targetType, targetId);
+    setTagsByTarget(prev => {
+      const next = { ...prev };
+      // The server normalises the id, so drop by prefix rather than trusting
+      // the spelling that came off the card.
+      Object.keys(next).forEach(k => {
+        if (k === `${targetType}:${targetId}`) delete next[k];
+      });
+      return next;
+    });
+  };
 
   const loadUsersAndNotifications = async (userHandle: string = currentUser.handle) => {
     try {
@@ -1231,20 +1265,55 @@ export default function App() {
                 >
                   All ({takes.length})
                 </button>
-                {uniqueScenes.map(sc => (
-                  <button
-                    key={sc}
-                    onClick={() => setSelectedSceneFilter(sc)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-medium transition ${
-                      selectedSceneFilter === sc
-                        ? 'bg-spine-accent text-white'
-                        : 'bg-slate-950 text-gray-300 hover:text-white border border-slate-800'
-                    }`}
-                  >
-                    Sc {sc}
-                  </button>
-                ))}
+                {uniqueScenes.map(sc => {
+                  const sceneTag = tagsByTarget[`scene:${sc}`];
+                  return (
+                    <button
+                      key={sc}
+                      onClick={() => setSelectedSceneFilter(sc)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-mono font-medium transition flex items-center gap-1.5 ${
+                        selectedSceneFilter === sc
+                          ? 'bg-spine-accent text-white'
+                          : 'bg-slate-950 text-gray-300 hover:text-white border border-slate-800'
+                      }`}
+                      title={sceneTag ? 'This scene is tagged — select it to see or change the tag' : undefined}
+                    >
+                      Sc {sc}
+                      {/* A dot rather than the labels themselves: the row is for
+                          choosing a scene, and spelling every tag out here would
+                          bury that. Selecting the scene shows the tag in full. */}
+                      {sceneTag && (
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            sceneTag.needs.length ? 'bg-rose-400' : 'bg-emerald-400'
+                          }`}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
+
+              {/* The tag on the scene itself, not on any shot within it. Shown
+                  only once a scene is chosen, since there is no one scene to
+                  tag while the filter is on All. */}
+              {selectedSceneFilter !== 'ALL' && (
+                <div className="w-full flex items-center gap-2 pt-2 border-t border-slate-800">
+                  <span className="text-xs text-gray-300 font-semibold shrink-0">
+                    Scene {selectedSceneFilter}:
+                  </span>
+                  <EditorialTagBar
+                    productionId={selectedProductionId}
+                    targetType="scene"
+                    targetId={selectedSceneFilter}
+                    tag={tagsByTarget[`scene:${selectedSceneFilter}`]}
+                    vocabulary={tagVocabulary}
+                    currentUserHandle={currentUser.handle}
+                    onSave={handleSaveTag}
+                    onClear={handleClearTag}
+                  />
+                </div>
+              )}
 
               <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
                 <button
@@ -1408,6 +1477,20 @@ export default function App() {
 
                         {/* Composed Multi-Department Data Body */}
                         <div className="p-4 flex-1 space-y-3">
+                          {/* Editorial status. It hangs on the shot, not on this
+                              take: every take of a slate is coverage of the same
+                              shot, so they all show the one tag. */}
+                          <EditorialTagBar
+                            productionId={selectedProductionId}
+                            targetType="shot"
+                            targetId={t.slate}
+                            tag={tagsByTarget[`shot:${t.slate}`]}
+                            vocabulary={tagVocabulary}
+                            currentUserHandle={currentUser.handle}
+                            onSave={handleSaveTag}
+                            onClear={handleClearTag}
+                          />
+
                           {/* Header Summary Badges */}
                           <div className="flex items-center justify-between text-[11px] pb-1 border-b border-slate-800/80">
                             <div className="flex items-center gap-2">

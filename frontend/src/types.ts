@@ -364,3 +364,51 @@ export interface ConfirmPrompt {
   destructive?: boolean;
   onConfirm: () => void | Promise<void>;
 }
+
+
+// ==========================================
+// Editorial Tags
+//
+// Three separate questions about a piece of coverage: how far along it is, what
+// work it still needs, and what kind of shot it is. Kept apart because folding
+// them together makes "how much is left" unanswerable.
+// ==========================================
+
+export type TagTargetType = 'scene' | 'shot';
+
+/** Served by the backend so these labels are spelled in one place only. */
+export interface TagVocabularyEntry {
+  key: string;
+  label: string;
+  description: string;
+  ordinal?: number;
+}
+
+export interface TagVocabulary {
+  target_types: TagTargetType[];
+  statuses: TagVocabularyEntry[];
+  needs: TagVocabularyEntry[];
+  descriptors: TagVocabularyEntry[];
+}
+
+export interface EditorialTag {
+  production_id: string;
+  target_type: TagTargetType;
+  /** A scene number ('117') or a slate ('27/7'). */
+  target_id: string;
+  status: string | null;
+  needs: string[];
+  descriptors: string[];
+  note: string | null;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export interface TagSummary {
+  production_id: string;
+  tagged_targets: number;
+  by_status: Record<string, number>;
+  no_status: number;
+  by_need: Record<string, number>;
+  by_descriptor: Record<string, number>;
+}
