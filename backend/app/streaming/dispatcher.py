@@ -3,6 +3,7 @@ Ingestion Dispatcher Worker.
 
 Consumes raw document events from Kafka, runs auto-classification, parsers, and emits verified events onto the spine topic.
 """
+import logging
 from typing import Dict, Any
 from backend.app.streaming.models import EventEnvelope, DocumentType
 from backend.app.streaming.bus import EventBus
@@ -21,6 +22,8 @@ from backend.app.parsers.pdf_parsers import (
 from backend.app.parsers.base import ParsedCameraRecord, ParserFailureError
 from backend.app.normalizers.slates import normalize_slate
 from backend.app.normalizers.takes import normalize_take
+
+logger = logging.getLogger(__name__)
 
 
 class IngestionDispatcher:
@@ -157,11 +160,23 @@ class IngestionDispatcher:
             # timecode log on every take the export did not mark.
             can_deny_circle = envelope.doc_type != DocumentType.SCRIPT_LINED
 
+            # A facing page files a shot under every scene it plays in, so one
+            # page carries takes from several shoot days. Filing them all under
+            # the day the page was uploaded puts a Day 11 take among Day 31
+            # witnesses, where it can only ever disagree with them.
+            elsewhere = [r for r in records if r.shoot_day and r.shoot_day != envelope.shoot_day]
+            if elsewhere:
+                logger.info(
+                    "%s: %d of %d rows belong to shoot day(s) %s, not %s",
+                    envelope.filename, len(elsewhere), len(records),
+                    ", ".join(sorted({r.shoot_day for r in elsewhere})), envelope.shoot_day,
+                )
+
             for rec in records:
                 spine_event: Dict[str, Any] = {
                     "event_id": envelope.event_id,
                     "production_id": envelope.production_id,
-                    "shoot_day": envelope.shoot_day,
+                    "shoot_day": rec.shoot_day or envelope.shoot_day,
                     "axis": envelope.axis.value,
                     "department": envelope.department.value,
                     "doc_type": envelope.doc_type.value,

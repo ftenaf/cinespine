@@ -23,6 +23,7 @@ from backend.app.parsers.base import (
 )
 from backend.app.normalizers.rolls import normalize_camera_roll, normalize_sound_roll
 from backend.app.normalizers.slates import normalize_slate
+from backend.app.normalizers.shoot_days import normalize_shoot_day
 from backend.app.normalizers.takes import normalize_take
 
 logger = logging.getLogger(__name__)
@@ -344,6 +345,42 @@ def parse_zoelog_camera_text(text: str) -> List[ParsedCameraRecord]:
     return records
 
 
+def parse_shoot_date(raw_date: Optional[str]) -> Optional[str]:
+    """
+    Turns the DDMMYY stamp written beside a camera card into DD/MM/YYYY.
+
+    Returns None when the stamp is not a date rather than guessing at one: a
+    row with no date is a row that makes no claim about when it was shot.
+    """
+    if not raw_date or not re.fullmatch(r"\d{6}", raw_date):
+        return None
+
+    day, month, year = int(raw_date[:2]), int(raw_date[2:4]), int(raw_date[4:])
+    if not (1 <= day <= 31 and 1 <= month <= 12):
+        return None
+
+    return f"{day:02d}/{month:02d}/{2000 + year:04d}"
+
+
+def extract_report_date(text: str) -> Optional[str]:
+    """
+    Reads the date printed in a script supervisor report's header.
+
+    It is the day the report covers, which is the right date for a row that
+    carries none of its own -- and it is a property of the document, not a
+    constant, which is what it used to be.
+    """
+    m = re.search(r"\b(\d{2})/(\d{2})/(\d{4})\b", text or "")
+    if not m:
+        return None
+
+    day, month = int(m.group(1)), int(m.group(2))
+    if not (1 <= day <= 31 and 1 <= month <= 12):
+        return None
+
+    return f"{m.group(1)}/{m.group(2)}/{m.group(3)}"
+
+
 def extract_script_camera_roll_and_date(text: str) -> tuple[Optional[str], Optional[str]]:
     """
     Extracts camera roll and date from script supervisor logs, properly handling
@@ -353,10 +390,13 @@ def extract_script_camera_roll_and_date(text: str) -> tuple[Optional[str], Optio
     if not text:
         return None, None
 
-    # 1. Match card when immediately followed by a 6-digit shoot date (DDMMYY or YYMMDD)
-    # e.g., 'B41280726' -> roll 'B41' (normalized to 'B041'), date '280726'
+    # 1. Match card followed by a 6-digit shoot date (DDMMYY), whether the two
+    # run together as they do in the timecode log ('B41280726') or sit in
+    # separate columns as they do on a facing page ('A046 300626'). A facing
+    # page files a shot under every scene it plays in, so its rows carry dates
+    # from across the schedule and a row's own date is the only true one.
     date_pat = r'(280726|260728|\d{2}0[1-9]\d{2}|\d{2}1[0-2]\d{2})'
-    m = re.search(r'\b([A-Z]0*\d{1,3})' + date_pat, text)
+    m = re.search(r'\b([A-Z]0*\d{1,3})\s{0,3}' + date_pat, text)
     if m:
         raw_roll = m.group(1)
         raw_date = m.group(2)
@@ -422,6 +462,8 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
     if not text or not text.strip():
         raise ParserFailureError("Empty Scripte TCLog text")
 
+    report_date = extract_report_date(text)
+
     records: List[ParsedScriptRecord] = []
     lines = text.strip().splitlines()
 
@@ -454,6 +496,7 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
                 take_info = normalize_take(raw_take)
                 scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
 
+                row_date = parse_shoot_date(raw_date) or report_date
                 records.append(
                     ParsedScriptRecord(
                         scene=scene,
@@ -462,7 +505,7 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
                         camera_roll=cr,
                         timecode_in=tc_in,
                         timecode_out=tc_out,
-                        recording_date="28/07/2026",
+                        recording_date=row_date,
                         is_starred=take_info.is_starred,
                         is_pickup=take_info.is_pickup,
                         is_false_start=take_info.is_false_start,
@@ -499,6 +542,7 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
             scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
             notes_str = " ".join(current_notes).strip() or None
 
+            row_date = parse_shoot_date(raw_date) or report_date
             records.append(
                 ParsedScriptRecord(
                     scene=scene,
@@ -507,7 +551,7 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
                     camera_roll=cr,
                     timecode_in=current_tc_in,
                     timecode_out=current_tc_out,
-                    recording_date="28/07/2026",
+                    recording_date=row_date,
                     is_starred=take_info.is_starred,
                     is_pickup=take_info.is_pickup,
                     is_false_start=take_info.is_false_start,
@@ -543,14 +587,25 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
     if not text or not text.strip():
         raise ParserFailureError("Empty Scripte Detailed Editor's Log text")
 
+    report_date = extract_report_date(text)
+
     records: List[ParsedScriptRecord] = []
     lines = text.strip().splitlines()
 
     current_slate = None
     current_take = None
     current_notes: List[str] = []
+    current_shoot_day: Optional[str] = None
+    current_block_date: Optional[str] = None
+    block_start = 0
 
-    for line in lines:
+    def next_content_line(idx: int) -> str:
+        for peek in lines[idx + 1:idx + 4]:
+            if peek.strip():
+                return peek.strip()
+        return ""
+
+    for idx, line in enumerate(lines):
         cleaned = line.strip()
         if (
             not cleaned
@@ -564,7 +619,27 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
         ):
             continue
 
+        # 0. The day this setup was shot: 'Shot on Day: Day 11'. It follows the
+        # header row, so it also settles the rows already emitted for this
+        # block. Without it every take on the page is filed under the day the
+        # page was printed, and a take from Day 11 is reconciled against
+        # witnesses from a day it was not shot on.
+        day_m = re.search(r"Shot on Day:\s*Day\s*([0-9A-Za-z]+)", cleaned)
+        if day_m:
+            current_shoot_day = normalize_shoot_day(day_m.group(1))
+            for rec in records[block_start:]:
+                rec.shoot_day = current_shoot_day
+            continue
+
         # 1. Wild Track entries: 6WT 1 Scene(s): 6, 49 Wild Track: 6WT n/a2807260:29 pasos de LEAD
+        # A wild track is its own setup, so it opens a block of its own. Left
+        # inside the block above it, the day line that follows reaches back and
+        # reassigns that setup's rows to the wild track's day.
+        if "WT" in cleaned.upper() and re.match(r"^\d+WT\s", cleaned):
+            block_start = len(records)
+            current_shoot_day = None
+            current_block_date = None
+
         wt_m = re.search(r"(\d+WT)\s+(\d+[A-Z*]?)\s+.*?(?:Wild Track:)?\s*.*?(?:n/a)?\s*(\d{6})?\s*(\d+:\d+)?\s*(.*)", cleaned, re.IGNORECASE)
         if wt_m and "WT" in cleaned.upper():
             raw_slate = wt_m.group(1)
@@ -574,6 +649,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             norm_slate = normalize_slate(raw_slate)
             scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
 
+            row_date = report_date
             records.append(
                 ParsedScriptRecord(
                     scene=scene,
@@ -582,7 +658,8 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
                     camera_roll=None,
                     timecode_in=None,
                     timecode_out=None,
-                    recording_date="28/07/2026",
+                    recording_date=row_date,
+                    shoot_day=current_shoot_day,
                     is_starred=take_info.is_starred,
                     is_pickup=False,
                     is_wild_track=True,
@@ -602,13 +679,22 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             current_take = new_slate_m.group(2).replace(" ", "")
             rest = new_slate_m.group(3)
             current_notes = [rest] if rest else []
+            # A new setup makes no claim about its day until its own line says
+            # so; inheriting the last one would spread a wrong day down the page.
+            block_start = len(records)
+            current_shoot_day = None
 
             # Check if camera roll is on this same line: A1202807262:46 or B412807261:1125
             cr, raw_date = extract_script_camera_roll_and_date(rest)
+            # Only the header row carries a date column. The takes and the
+            # per-camera rows beneath it are the same setup on the same day, so
+            # they inherit it rather than falling back to the report's date.
+            current_block_date = parse_shoot_date(raw_date)
             if cr:
                 norm_slate = normalize_slate(current_slate)
                 take_info = normalize_take(current_take)
                 scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
+                row_date = parse_shoot_date(raw_date) or current_block_date or report_date
                 records.append(
                     ParsedScriptRecord(
                         scene=scene,
@@ -617,7 +703,8 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
                         camera_roll=cr,
                         timecode_in=None,
                         timecode_out=None,
-                        recording_date="28/07/2026",
+                        recording_date=row_date,
+                        shoot_day=current_shoot_day,
                         is_starred=take_info.is_starred,
                         is_pickup=take_info.is_pickup,
                         is_false_start=take_info.is_false_start,
@@ -630,6 +717,27 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
                 )
             continue
 
+        # 2b. The same header, split over two lines. The PDF text layer puts a
+        # long slate on a line of its own and its take number on the next,
+        # which matches nothing above: the setup is missed, the previous slate
+        # stays current, and the card further down is filed against it. That is
+        # how 119/5 Take 1 came back holding A046, A068 and A080 -- the cards of
+        # three different shots.
+        #
+        # The take line must name a scene for this to be a setup header, which
+        # is what separates it from the bare slates printed on the lined script
+        # pages, where the same numbers appear over camera labels.
+        if re.fullmatch(SLATE_TOKEN, cleaned) and re.match(
+            r"^(\d+[A-Z]?\s*\*?|\d+\*|FALSE)\s+Scene\(s\):", next_content_line(idx)
+        ):
+            current_slate = cleaned
+            current_take = None
+            current_notes = []
+            block_start = len(records)
+            current_shoot_day = None
+            current_block_date = None
+            continue
+
         # 3. Subsequent take or multi-camera setup angle: '1 Dolly - wide... B039 2:46' or '2 A120 2:53' or '3* A122 3:23'
         sub_m = re.search(r"^(\d+[A-Z]?\s*\*?|\d+\*|FALSE)\s+(.*)", cleaned)
         if sub_m and current_slate:
@@ -640,6 +748,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
                 norm_slate = normalize_slate(current_slate)
                 take_info = normalize_take(current_take)
                 scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
+                row_date = parse_shoot_date(raw_date) or current_block_date or report_date
                 records.append(
                     ParsedScriptRecord(
                         scene=scene,
@@ -648,7 +757,8 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
                         camera_roll=cr,
                         timecode_in=None,
                         timecode_out=None,
-                        recording_date="28/07/2026",
+                        recording_date=row_date,
+                        shoot_day=current_shoot_day,
                         is_starred=take_info.is_starred,
                         is_pickup=take_info.is_pickup,
                         is_false_start=take_info.is_false_start,
@@ -672,6 +782,9 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             current_slate = None
             current_take = None
             current_notes = []
+            block_start = len(records)
+            current_shoot_day = None
+            current_block_date = None
             continue
 
         # 5. Standalone roll line for current setup (e.g. 'A1202807262:46' or 'B412807261:1125')
@@ -681,6 +794,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             take_info = normalize_take(current_take)
             scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
             notes_str = " ".join(current_notes).strip() or cleaned
+            row_date = parse_shoot_date(raw_date) or current_block_date or report_date
             records.append(
                 ParsedScriptRecord(
                     scene=scene,
@@ -689,7 +803,8 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
                     camera_roll=cr,
                     timecode_in=None,
                     timecode_out=None,
-                    recording_date="28/07/2026",
+                    recording_date=row_date,
+                    shoot_day=current_shoot_day,
                     is_starred=take_info.is_starred,
                     is_pickup=take_info.is_pickup,
                     is_false_start=take_info.is_false_start,
@@ -718,6 +833,8 @@ def parse_editors_log_text(text: str) -> List[ParsedScriptRecord]:
     if not text or not text.strip():
         raise ParserFailureError("Empty Editor's Log text")
 
+    report_date = extract_report_date(text)
+
     records: List[ParsedScriptRecord] = []
     lines = text.strip().splitlines()
 
@@ -737,6 +854,7 @@ def parse_editors_log_text(text: str) -> List[ParsedScriptRecord]:
                 take_info = normalize_take(raw_take)
                 scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
 
+                row_date = parse_shoot_date(raw_date) or report_date
                 records.append(
                     ParsedScriptRecord(
                         scene=scene,
@@ -745,7 +863,7 @@ def parse_editors_log_text(text: str) -> List[ParsedScriptRecord]:
                         camera_roll=cr,
                         timecode_in=None,
                         timecode_out=None,
-                        recording_date="28/07/2026",
+                        recording_date=row_date,
                         is_starred=take_info.is_starred,
                         is_pickup=take_info.is_pickup,
                         is_false_start=take_info.is_false_start,

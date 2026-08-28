@@ -22,6 +22,11 @@ class ParsedScriptRecord:
     timecode_in: Optional[str] = None
     timecode_out: Optional[str] = None
     recording_date: Optional[str] = None
+    # The day this take was shot, when the document says so. A facing page files
+    # a shot under every scene it plays in, so one page carries takes from
+    # several days and the day the document was filed is not the day they were
+    # shot. None means the document made no claim and the upload's day stands.
+    shoot_day: Optional[str] = None
     is_starred: bool = False
     is_pickup: bool = False
     is_false_start: bool = False
