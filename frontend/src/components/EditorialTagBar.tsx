@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Tag as TagIcon, Check, X, Loader2, History } from 'lucide-react';
+import { Tag as TagIcon, Check, X, Loader2, History, ChevronDown } from 'lucide-react';
 import { EditorialTag, TagHistoryEntry, TagTargetType, TagVocabulary } from '../types';
 import { fetchTagHistory } from '../api';
 
@@ -233,7 +233,7 @@ export function EditorialTagBar({
       <button
         ref={triggerRef}
         onClick={() => setIsOpen(o => !o)}
-        className="flex items-center gap-1.5 flex-wrap text-left w-full group"
+        className="flex items-center gap-1.5 flex-wrap text-left w-full group rounded-md px-1 -mx-1 py-0.5 hover:bg-white/5 transition"
         title={`Editorial status for ${targetType} ${targetId}`}
       >
         {tag?.status && (
@@ -264,6 +264,18 @@ export function EditorialTagBar({
           <span className="text-[10px] text-gray-500 group-hover:text-gray-300 flex items-center gap-1 transition">
             <TagIcon className="w-3 h-3" /> Tag {targetType}
           </span>
+        )}
+
+        {/* An affordance that survives being tagged. Untagged, "Tag shot" reads
+            as a control on its own; tagged, the chips alone are indistinguishable
+            from the read-only badges beside them -- ⭐ Circled Take and the rest
+            -- so wherever somebody meets this already tagged, it reads as a
+            display and nobody tries to click it. */}
+        {hasAnything && (
+          <ChevronDown
+            className="w-3 h-3 text-gray-600 group-hover:text-gray-300 transition shrink-0"
+            aria-hidden
+          />
         )}
       </button>
 

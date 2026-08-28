@@ -2425,6 +2425,21 @@ export default function App() {
                               </span>
                             )}
 
+                            {/* Editorial status for the sequence. A row here is
+                                a scene -- clicking the sequence filters the
+                                master sheet by it -- so this is the scene tag,
+                                the same one the scene filter row edits. */}
+                            <EditorialTagBar
+                              productionId={selectedProductionId}
+                              targetType="scene"
+                              targetId={seq.sequence}
+                              tag={tagsByTarget[`scene:${seq.sequence}`]}
+                              vocabulary={tagVocabulary}
+                              currentUserHandle={currentUser.handle}
+                              onSave={handleSaveTag}
+                              onClear={handleClearTag}
+                            />
+
                             {/* Requirements Badges for Sequence */}
                             <div className="flex flex-wrap items-center gap-1">
                               {seq.open_requirements_count ? (
