@@ -915,3 +915,132 @@ def test_narrowing_to_one_day_still_works():
     writer.append_event({**_take_event("119/5", "1", "A046"), "shoot_day": "11"})
     writer.append_event(_take_event("27/7", "1", "A120"))
     assert writer.project_takes("IDX", "11") == 1
+
+
+# --------------------------------------------------------------------------- #
+# When ClickHouse dies after connecting
+# --------------------------------------------------------------------------- #
+
+class CountingClickHouse(FakeClickHouse):
+    """Counts attempts as well as recording them, so a skip is visible."""
+
+    def __init__(self, fail=False):
+        super().__init__(fail=fail)
+        self.attempts = 0
+
+    def insert(self, table, rows, column_names):
+        self.attempts += 1
+        super().insert(table, rows, column_names)
+
+
+def test_a_failed_insert_shuts_the_mirror():
+    """
+    A server absent at startup costs nothing -- connect returns None. One that
+    dies after connecting is the expensive case: the driver retries with backoff
+    on every call, which took an ingestion from 0.9s to 16.7s and a single tag
+    save from instant to 8.2s.
+    """
+    from backend.app.spine.writer import SpineWriter
+
+    fake = CountingClickHouse(fail=True)
+    writer = SpineWriter(clickhouse_client=fake)
+    writer.set_editorial_tag(production_id=PROD, target_type="shot",
+                             target_id="27/7", status="mounted")
+    assert fake.attempts == 1
+    assert writer.mirror_available() is False
+
+    # Everything after this is skipped outright rather than attempted again.
+    writer.set_editorial_tag(production_id=PROD, target_type="shot",
+                             target_id="49/1", status="mounted")
+    writer.set_editorial_tag(production_id=PROD, target_type="shot",
+                             target_id="49/2", status="mounted")
+    assert fake.attempts == 1
+
+
+def test_the_editor_s_change_still_lands_while_the_mirror_is_shut():
+    from backend.app.spine.writer import SpineWriter
+
+    writer = SpineWriter(clickhouse_client=CountingClickHouse(fail=True))
+    writer.set_editorial_tag(production_id=PROD, target_type="shot",
+                             target_id="27/7", status="mounted")
+    writer.set_editorial_tag(production_id=PROD, target_type="shot",
+                             target_id="49/1", status="finished")
+    assert tag_store.get_tag(PROD, "shot", "49/1")["status"] == "finished"
+    assert len(tag_store.history(PROD, "shot", "49/1")) == 1
+
+
+def test_the_mirror_opens_again_after_the_cooldown(monkeypatch):
+    from backend.app.spine import writer as writer_module
+    from backend.app.spine.writer import SpineWriter
+
+    clock = [1000.0]
+    monkeypatch.setattr(writer_module.time, "monotonic", lambda: clock[0])
+
+    fake = CountingClickHouse(fail=True)
+    w = SpineWriter(clickhouse_client=fake)
+    w.set_editorial_tag(production_id=PROD, target_type="shot",
+                        target_id="27/7", status="mounted")
+    assert w.mirror_available() is False
+
+    clock[0] += writer_module.MIRROR_COOLDOWN_SECONDS - 1
+    assert w.mirror_available() is False, "still inside the cooldown"
+
+    clock[0] += 2
+    assert w.mirror_available() is True, "one probe is allowed through"
+
+
+def test_a_probe_that_succeeds_reopens_the_mirror(monkeypatch):
+    from backend.app.spine import writer as writer_module
+    from backend.app.spine.writer import SpineWriter
+
+    clock = [1000.0]
+    monkeypatch.setattr(writer_module.time, "monotonic", lambda: clock[0])
+
+    fake = CountingClickHouse(fail=True)
+    w = SpineWriter(clickhouse_client=fake)
+    w.set_editorial_tag(production_id=PROD, target_type="shot",
+                        target_id="27/7", status="mounted")
+
+    clock[0] += writer_module.MIRROR_COOLDOWN_SECONDS + 1
+    fake.fail = False   # the server came back
+    w.set_editorial_tag(production_id=PROD, target_type="shot",
+                        target_id="49/1", status="mounted")
+    assert w._mirror_blocked_until == 0.0
+    assert w.mirror_available() is True
+
+
+def test_the_take_projection_is_not_computed_while_the_mirror_is_shut():
+    """The walk over every event is most of the cost, not the insert."""
+    from backend.app.spine.writer import SpineWriter
+
+    fake = CountingClickHouse(fail=True)
+    w = SpineWriter(clickhouse_client=fake)
+    for i in range(5):
+        w.append_event(_take_event("27/7", str(i), "A120"))
+    w.flush_events()              # fails, shutting the mirror
+    assert w.mirror_available() is False
+    before = fake.attempts
+    assert w.project_takes("IDX") == 0
+    assert fake.attempts == before, "no attempt should have been made"
+
+
+def test_events_are_not_buffered_while_the_mirror_is_shut():
+    """Holding them across an outage would grow memory to protect a copy."""
+    from backend.app.spine.writer import SpineWriter
+
+    w = SpineWriter(clickhouse_client=CountingClickHouse(fail=True))
+    w.append_event(_take_event("27/7", "1", "A120"))
+    w.flush_events()
+    for i in range(20):
+        w.append_event(_take_event("49/1", str(i), "A120"))
+    assert w._pending_rows == []
+
+
+def test_the_spine_still_answers_with_the_mirror_shut():
+    from backend.app.spine.writer import SpineWriter
+
+    w = SpineWriter(clickhouse_client=CountingClickHouse(fail=True))
+    for i in range(3):
+        w.append_event(_take_event("27/7", str(i), "A120"))
+    w.flush_events()
+    assert len(w.get_events(production_id="IDX")) == 3
