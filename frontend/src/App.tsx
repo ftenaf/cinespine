@@ -28,6 +28,7 @@ import {
 } from './api';
 import { ScriptStudio } from './components/ScriptStudio';
 import { EditorialTagBar } from './components/EditorialTagBar';
+import { ScriptSceneButton } from './components/ScriptContextPanel';
 import { ProductionDashboardPanel } from './components/ProductionDashboard';
 
 
@@ -1341,6 +1342,14 @@ export default function App() {
                     onSave={handleSaveTag}
                     onClear={handleClearTag}
                   />
+                  {/* What the scene is about, read from the screenplay. The
+                      paperwork on this page says how it was shot and never
+                      what it is. */}
+                  <ScriptSceneButton
+                    productionId={selectedProductionId}
+                    targetType="scene"
+                    targetId={selectedSceneFilter}
+                  />
                 </div>
               )}
 
@@ -1509,16 +1518,23 @@ export default function App() {
                           {/* Editorial status. It hangs on the shot, not on this
                               take: every take of a slate is coverage of the same
                               shot, so they all show the one tag. */}
-                          <EditorialTagBar
-                            productionId={selectedProductionId}
-                            targetType="shot"
-                            targetId={t.slate}
-                            tag={tagsByTarget[`shot:${t.slate}`]}
-                            vocabulary={tagVocabulary}
-                            currentUserHandle={currentUser.handle}
-                            onSave={handleSaveTag}
-                            onClear={handleClearTag}
-                          />
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <EditorialTagBar
+                              productionId={selectedProductionId}
+                              targetType="shot"
+                              targetId={t.slate}
+                              tag={tagsByTarget[`shot:${t.slate}`]}
+                              vocabulary={tagVocabulary}
+                              currentUserHandle={currentUser.handle}
+                              onSave={handleSaveTag}
+                              onClear={handleClearTag}
+                            />
+                            <ScriptSceneButton
+                              productionId={selectedProductionId}
+                              targetType="shot"
+                              targetId={t.slate}
+                            />
+                          </div>
 
                           {/* Header Summary Badges */}
                           <div className="flex items-center justify-between text-[11px] pb-1 border-b border-slate-800/80">
@@ -1839,6 +1855,11 @@ export default function App() {
                       currentUserHandle={currentUser.handle}
                       onSave={handleSaveTag}
                       onClear={handleClearTag}
+                    />
+                    <ScriptSceneButton
+                      productionId={selectedProductionId}
+                      targetType="shot"
+                      targetId={currentFocusTake.slate}
                     />
                   </div>
 
@@ -2438,6 +2459,11 @@ export default function App() {
                               currentUserHandle={currentUser.handle}
                               onSave={handleSaveTag}
                               onClear={handleClearTag}
+                            />
+                            <ScriptSceneButton
+                              productionId={selectedProductionId}
+                              targetType="scene"
+                              targetId={seq.sequence}
                             />
 
                             {/* Requirements Badges for Sequence */}

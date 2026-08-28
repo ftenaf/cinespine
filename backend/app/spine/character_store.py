@@ -49,6 +49,32 @@ CREATE TABLE IF NOT EXISTS character_profiles (
     updated_at   TEXT NOT NULL,
     PRIMARY KEY (script_id, character_id)
 );
+
+-- The scene text itself. An editor cutting a shot needs to read what the
+-- scene was written to be, and until now the parsed screenplay lived only in
+-- the Script Studio tab's memory: it was gone on reload and invisible to
+-- everyone working the reconciliation side.
+CREATE TABLE IF NOT EXISTS screenplay_scenes (
+    script_id    TEXT NOT NULL,
+    ordinal      INTEGER NOT NULL,
+    scene_number TEXT NOT NULL,
+    heading      TEXT NOT NULL DEFAULT '',
+    body         TEXT NOT NULL DEFAULT '',
+    updated_at   TEXT NOT NULL,
+    PRIMARY KEY (script_id, ordinal)
+);
+
+CREATE INDEX IF NOT EXISTS screenplay_scenes_by_number
+    ON screenplay_scenes (script_id, scene_number);
+
+-- Which screenplay a production is shooting. One script per production: a
+-- production with two scripts has no answer to "what is scene 119", and
+-- guessing between them would be worse than saying nothing.
+CREATE TABLE IF NOT EXISTS production_scripts (
+    production_id TEXT PRIMARY KEY,
+    script_id     TEXT NOT NULL,
+    linked_at     TEXT NOT NULL
+);
 """
 
 
@@ -240,3 +266,134 @@ def update_character_profile(
         )
 
     return get_character_profile(script_id, character_id)
+
+
+# --------------------------------------------------------------------------- #
+# Scene text
+# --------------------------------------------------------------------------- #
+
+def store_screenplay_scenes(script_id: str, scenes: List[Dict[str, Any]]) -> int:
+    """
+    Replaces the stored scenes for a script with a fresh parse.
+
+    Replacement, not merge: unlike character profiles, nobody hand-edits scene
+    text here, so the newest parse of the screenplay is always the truth. A
+    scene that has disappeared from the script must disappear from the store
+    too, or an editor would read a passage that is no longer in the film.
+    """
+    timestamp = _now()
+
+    with _connect() as conn:
+        conn.execute("DELETE FROM screenplay_scenes WHERE script_id = ?", (script_id,))
+        rows = []
+        for ordinal, scene in enumerate(scenes):
+            # Upper-cased on the way in so '122a' and '122A' are one scene, the
+            # same way a slate is normalized before it becomes a tag target.
+            scene_number = str(scene.get("scene_number") or "").strip().upper()
+            if not scene_number:
+                continue
+            rows.append(
+                (
+                    script_id,
+                    ordinal,
+                    scene_number,
+                    str(scene.get("heading") or ""),
+                    str(scene.get("raw_content") or scene.get("body") or ""),
+                    timestamp,
+                )
+            )
+        conn.executemany(
+            "INSERT INTO screenplay_scenes "
+            "(script_id, ordinal, scene_number, heading, body, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+
+    return len(rows)
+
+
+def get_screenplay_scenes(script_id: str) -> List[Dict[str, Any]]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM screenplay_scenes WHERE script_id = ? ORDER BY ordinal",
+            (script_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def find_screenplay_scenes(script_id: str, scene_number: str) -> List[Dict[str, Any]]:
+    """
+    Every scene filed under this number, in script order.
+
+    A list rather than one row because a screenplay can carry the same number
+    twice -- omitted-and-reinstated scenes, A/B revisions typed by hand. Showing
+    both and letting the reader choose is honest; picking one silently is not.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM screenplay_scenes WHERE script_id = ? AND scene_number = ? "
+            "ORDER BY ordinal",
+            (script_id, str(scene_number).strip().upper()),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --------------------------------------------------------------------------- #
+# Which script a production is shooting
+# --------------------------------------------------------------------------- #
+
+def link_production_script(production_id: str, script_id: str) -> Dict[str, Any]:
+    timestamp = _now()
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO production_scripts (production_id, script_id, linked_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(production_id) DO UPDATE SET
+                script_id=excluded.script_id,
+                linked_at=excluded.linked_at
+            """,
+            (production_id, script_id, timestamp),
+        )
+    return {"production_id": production_id, "script_id": script_id, "linked_at": timestamp}
+
+
+def get_production_script(production_id: str) -> Optional[Dict[str, Any]]:
+    """The screenplay linked to a production, with its title, or None."""
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT ps.production_id, ps.script_id, ps.linked_at,
+                   s.title, s.author, s.filename
+            FROM production_scripts ps
+            LEFT JOIN screenplays s ON s.script_id = ps.script_id
+            WHERE ps.production_id = ?
+            """,
+            (production_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def unlink_production_script(production_id: str) -> bool:
+    with _connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM production_scripts WHERE production_id = ?", (production_id,)
+        )
+    return cur.rowcount > 0
+
+
+def find_productions_for_script(script_id: str) -> List[str]:
+    """
+    Which productions are shooting this script.
+
+    The link is stored per production, so the Script Studio -- which knows only
+    the script it has loaded -- needs it read the other way round to show that
+    the script is already attached rather than offering to attach it again.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT production_id FROM production_scripts WHERE script_id = ? "
+            "ORDER BY production_id",
+            (script_id,),
+        ).fetchall()
+    return [r["production_id"] for r in rows]

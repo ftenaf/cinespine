@@ -454,3 +454,55 @@ export interface ProductionDashboard {
   recent: TagHistoryEntry[];
   shoot_days: string[];
 }
+
+
+// ==========================================
+// Script context: the scene behind a slate
+// ==========================================
+
+export interface ScriptHighlight {
+  start: number;
+  end: number;
+  /** The words the match rests on. Empty for a whole-scene highlight. */
+  terms: string[];
+  score: number;
+}
+
+/** How a highlight was arrived at. 'description' is inferred, not recorded. */
+export type ScriptHighlightBasis = 'scene' | 'description' | 'none';
+
+export interface ScriptSceneContext {
+  scene_number: string;
+  heading: string;
+  body: string;
+  highlight: ScriptHighlight | null;
+  highlight_basis: ScriptHighlightBasis;
+  /** Why there is no highlight, when there is none. */
+  note: string | null;
+}
+
+export type ScriptContextStatus =
+  | 'ok'
+  | 'no_script_linked'
+  | 'scene_not_in_script'
+  | 'unreadable_target';
+
+export interface ScriptContext {
+  production_id: string;
+  target_type: TagTargetType;
+  target_id: string;
+  script_id: string | null;
+  script_title: string | null;
+  scenes: ScriptSceneContext[];
+  status: ScriptContextStatus;
+  message: string | null;
+}
+
+export interface LinkedScript {
+  production_id: string;
+  script_id: string;
+  linked_at: string;
+  title?: string | null;
+  author?: string | null;
+  filename?: string | null;
+}

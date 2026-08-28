@@ -391,3 +391,43 @@ export async function fetchDashboard(
   if (!res.ok) throw await apiError(res, 'Failed to fetch the dashboard');
   return res.json();
 }
+
+
+// ==========================================
+// Script context: the scene behind a slate
+// ==========================================
+
+export async function fetchScriptContext(
+  productionId: string,
+  targetType: import('./types').TagTargetType,
+  targetId: string,
+): Promise<import('./types').ScriptContext> {
+  const q = new URLSearchParams({
+    production_id: productionId, target_type: targetType, target_id: targetId,
+  });
+  const res = await fetch(`${API_BASE}/script/context?${q.toString()}`);
+  if (!res.ok) throw await apiError(res, 'Failed to open the script');
+  return res.json();
+}
+
+export async function fetchLinkedScript(
+  productionId: string,
+): Promise<import('./types').LinkedScript | null> {
+  const q = new URLSearchParams({ production_id: productionId });
+  const res = await fetch(`${API_BASE}/script/link?${q.toString()}`);
+  if (!res.ok) throw await apiError(res, 'Failed to read the linked script');
+  return res.json();
+}
+
+export async function linkScriptToProduction(
+  productionId: string,
+  scriptId: string,
+): Promise<import('./types').LinkedScript> {
+  const res = await fetch(`${API_BASE}/script/link`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ production_id: productionId, script_id: scriptId }),
+  });
+  if (!res.ok) throw await apiError(res, 'Failed to attach the script to this production');
+  return res.json();
+}
