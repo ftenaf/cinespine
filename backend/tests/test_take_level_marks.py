@@ -197,3 +197,65 @@ def test_two_documents_that_both_deny_still_conflict_with_one_that_asserts():
         production_id="P", shoot_day="31", slate="27/7", take_id="1", witnesses=witnesses,
     )
     assert [d for d in discs if "circled" in d.description.lower()]
+
+
+# --------------------------------------------------------------------------- #
+# The day a take is filed under
+# --------------------------------------------------------------------------- #
+
+FACING_PAGE_OTHER_DAY = """
+DETAILED EDITOR'S LOG 28/07/2026
+119/5 1 Scene(s): 117 A046 300626 0:34
+Shot on Day: Day 11
+Sticks - cu. H/A CU Emily
+117/1 1 Scene(s): 117 A122 280726 3:39
+Shot on Day: Day 31
+Dolly - med. Thomas enters LR
+"""
+
+
+def test_a_take_is_filed_under_the_day_the_document_says_it_was_shot():
+    """
+    Uploaded against day 31, but the page says 119/5 was shot on Day 11. Filed
+    under 31 it would be reconciled against witnesses from a day it was never
+    shot on, and could only disagree with them.
+    """
+    from backend.app.streaming.bus import EventBus
+    from backend.app.streaming.dispatcher import IngestionDispatcher
+    from backend.app.streaming.models import AxisType, DepartmentType, DocumentType, EventEnvelope
+
+    bus = EventBus(in_memory=True)
+    captured = []
+    bus.subscribe("production.events.spine", lambda e: captured.append(e))
+    IngestionDispatcher(bus=bus).handle_script_drop(
+        EventEnvelope(
+            production_id="P", shoot_day="31",
+            axis=AxisType.BELIEF, department=DepartmentType.SCRIPT,
+            doc_type=DocumentType.SCRIPT_LINED,
+            raw_content=FACING_PAGE_OTHER_DAY,
+            filename="LAC_Facing&Lined_D031.pdf",
+        )
+    )
+    filed = {(e["payload"]["slate"], e["shoot_day"]) for e in captured}
+    assert ("119/5", "11") in filed
+    assert ("119/5", "31") not in filed
+    assert ("117/1", "31") in filed
+
+
+def test_a_take_whose_day_is_unstated_keeps_the_day_it_was_uploaded_against():
+    from backend.app.streaming.bus import EventBus
+    from backend.app.streaming.dispatcher import IngestionDispatcher
+    from backend.app.streaming.models import AxisType, DepartmentType, DocumentType, EventEnvelope
+
+    bus = EventBus(in_memory=True)
+    captured = []
+    bus.subscribe("production.events.spine", lambda e: captured.append(e))
+    IngestionDispatcher(bus=bus).handle_script_drop(
+        EventEnvelope(
+            production_id="P", shoot_day="31",
+            axis=AxisType.BELIEF, department=DepartmentType.SCRIPT,
+            doc_type=DocumentType.SCRIPT_TIMECODE,
+            raw_content=THREE_CAMERA_TAKE, filename="LAC_TCLog_D031.pdf",
+        )
+    )
+    assert captured and all(e["shoot_day"] == "31" for e in captured)
