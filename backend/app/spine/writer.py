@@ -14,6 +14,34 @@ from backend.app.streaming.models import DEFAULT_TEAM_USERS
 
 logger = logging.getLogger(__name__)
 
+# Events are buffered and sent together. Large enough that an ordinary document
+# goes in one insert, small enough that a runaway ingestion cannot grow memory
+# without bound before a flush.
+EVENT_BATCH_SIZE = 500
+
+
+def _clickhouse_datetime(iso: Optional[str]) -> datetime:
+    """
+    Parses an ISO timestamp into an aware UTC datetime for the driver.
+
+    Aware, not naive: a naive datetime is read as local time and converted, so
+    on a machine an hour off UTC every mirrored row landed an hour earlier than
+    it happened. The order was still right, which is exactly what makes that
+    kind of mistake survive a review.
+
+    Falls back to now rather than raising -- a mirrored row with an approximate
+    time is worth more than a lost one.
+    """
+    if iso:
+        try:
+            parsed = datetime.fromisoformat(iso)
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc)
+
 # Registered productions registry
 DEFAULT_PRODUCTIONS = {
     "DEMO_PRODUCTION": {
@@ -52,6 +80,10 @@ class SpineWriter:
         self._team_users: Dict[str, Dict[str, Any]] = {k: dict(v) for k, v in DEFAULT_TEAM_USERS.items()}
         self._requirements: Dict[str, Dict[str, Any]] = {}
         self._notifications: Dict[str, Dict[str, Any]] = {}
+        # Rows waiting to go to ClickHouse. One insert per event turned a
+        # 72-event ingestion from 0.8s into 7.4s and a 1991-event one into
+        # minutes: each insert is a round trip and a new part on the server.
+        self._pending_rows: List[List[Any]] = []
 
     # ------------------------------------------------------------------ #
     # Screenplay & character profiles
@@ -150,11 +182,14 @@ class SpineWriter:
                     json.dumps(record.get("descriptors") or []),
                     record.get("note") or "",
                     record.get("actor") or record.get("updated_by") or "",
+                    # SQLite's own timestamp, not the server's clock: the two
+                    # copies of the trail have to agree on the order.
+                    _clickhouse_datetime(record.get("created_at") or record.get("updated_at")),
                 ]],
                 column_names=[
                     "event_id", "production_id", "target_type", "target_id",
                     "action", "status", "needs_json", "descriptors_json",
-                    "note", "actor",
+                    "note", "actor", "created_at",
                 ],
             )
         except Exception as exc:
@@ -273,35 +308,53 @@ class SpineWriter:
             }
 
         if self.client:
-            try:
-                row = [
-                    event.get("event_id"),
-                    event.get("production_id"),
-                    event.get("shoot_day"),
-                    event.get("axis"),
-                    event.get("department"),
-                    event.get("doc_type"),
-                    event.get("entity_type"),
-                    json.dumps(event.get("payload", {})),
-                    json.dumps(event.get("metadata", {})),
-                ]
-                self.client.insert(
-                    "cinespine.production_events",
-                    [row],
-                    column_names=[
-                        "event_id",
-                        "production_id",
-                        "shoot_day",
-                        "axis",
-                        "department",
-                        "doc_type",
-                        "entity_type",
-                        "payload_json",
-                        "metadata_json",
-                    ],
-                )
-            except Exception as e:
-                logger.error(f"Failed to append event to ClickHouse: {e}")
+            self._pending_rows.append([
+                event.get("event_id"),
+                event.get("production_id"),
+                event.get("shoot_day"),
+                event.get("axis"),
+                event.get("department"),
+                event.get("doc_type"),
+                event.get("entity_type"),
+                json.dumps(event.get("payload", {})),
+                json.dumps(event.get("metadata", {})),
+            ])
+            if len(self._pending_rows) >= EVENT_BATCH_SIZE:
+                self.flush_events()
+
+    def flush_events(self) -> int:
+        """
+        Sends the buffered rows in one insert and returns how many went.
+
+        Callers flush at the end of an ingestion so a document's events do not
+        sit waiting for the next one. The buffer is dropped on failure rather
+        than retried: the in-memory spine already has every event, and a
+        reporting copy is not worth growing memory without bound to protect.
+        """
+        if not self.client or not self._pending_rows:
+            return 0
+
+        rows, self._pending_rows = self._pending_rows, []
+        try:
+            self.client.insert(
+                "cinespine.production_events",
+                rows,
+                column_names=[
+                    "event_id",
+                    "production_id",
+                    "shoot_day",
+                    "axis",
+                    "department",
+                    "doc_type",
+                    "entity_type",
+                    "payload_json",
+                    "metadata_json",
+                ],
+            )
+            return len(rows)
+        except Exception as e:
+            logger.error("Failed to append %d events to ClickHouse: %s", len(rows), e)
+            return 0
 
     def get_events(self, production_id: Optional[str] = None, shoot_day: Optional[str] = None) -> List[Dict[str, Any]]:
         events = self._in_memory_spine
