@@ -1685,9 +1685,13 @@ def set_tag(request: SetEditorialTagRequest):
 
 
 @router.delete("/tags")
-def clear_tag(production_id: str, target_type: str, target_id: str):
+def clear_tag(
+    production_id: str, target_type: str, target_id: str,
+    cleared_by: Optional[str] = None,
+):
     try:
-        cleared = spine_writer.clear_editorial_tag(production_id, target_type, target_id)
+        cleared = spine_writer.clear_editorial_tag(
+            production_id, target_type, target_id, cleared_by)
     except tag_store.UnknownTagValue as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     if not cleared:
@@ -1699,7 +1703,7 @@ def clear_tag(production_id: str, target_type: str, target_id: str):
         event_type="EDITORIAL_TAG_CLEARED",
         production_id=production_id,
         shoot_day="ALL",
-        actor_handle="@user",
+        actor_handle=cleared_by or "@user",
         target_type=target_type,
         target_id=target_id,
         target_label=f"{target_type.capitalize()} {target_id}",

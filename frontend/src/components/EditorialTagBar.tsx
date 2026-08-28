@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Tag as TagIcon, Check, X, Loader2 } from 'lucide-react';
-import { EditorialTag, TagTargetType, TagVocabulary } from '../types';
+import { Tag as TagIcon, Check, X, Loader2, History } from 'lucide-react';
+import { EditorialTag, TagHistoryEntry, TagTargetType, TagVocabulary } from '../types';
+import { fetchTagHistory } from '../api';
 
 /**
  * The editorial tag on one scene or shot: how far along it is, what work it
@@ -26,6 +27,52 @@ const NEED_ICONS: Record<string, string> = {
   translation: '🌐',
 };
 
+/** "4m", "3h", "2d" — enough to place a change without spelling out a date. */
+function howLongAgo(iso: string): string {
+  const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 2592000) return `${Math.floor(seconds / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+/**
+ * What this entry changed, against the one before it.
+ *
+ * The trail stores whole states, so showing them raw would leave the reader to
+ * work out what actually moved. An entry that repeats the state before it says
+ * nothing and is described as such rather than being dropped, because a save
+ * that changed nothing is still someone having looked.
+ */
+function describeChange(
+  entry: TagHistoryEntry,
+  previous: TagHistoryEntry | undefined,
+  labelFor: (kind: 'statuses' | 'needs' | 'descriptors', key: string) => string,
+): string[] {
+  if (entry.action === 'cleared') return ['removed the tag'];
+
+  const parts: string[] = [];
+  if (entry.status !== (previous?.status ?? null)) {
+    parts.push(entry.status ? `set ${labelFor('statuses', entry.status)}` : 'cleared the status');
+  }
+
+  const moved = (kind: 'needs' | 'descriptors') => {
+    const before = new Set(previous?.[kind] ?? []);
+    const after = new Set(entry[kind]);
+    for (const key of after) if (!before.has(key)) parts.push(`added ${labelFor(kind, key)}`);
+    for (const key of before) if (!after.has(key)) parts.push(`cleared ${labelFor(kind, key)}`);
+  };
+  moved('needs');
+  moved('descriptors');
+
+  if ((entry.note ?? null) !== (previous?.note ?? null)) {
+    parts.push(entry.note ? 'changed the note' : 'removed the note');
+  }
+
+  return parts.length ? parts : ['saved without changing anything'];
+}
+
 interface Props {
   productionId: string;
   targetType: TagTargetType;
@@ -44,7 +91,7 @@ interface Props {
     note: string | null;
     updated_by?: string | null;
   }) => Promise<void>;
-  onClear: (targetType: TagTargetType, targetId: string) => Promise<void>;
+  onClear: (targetType: TagTargetType, targetId: string, clearedBy?: string | null) => Promise<void>;
 }
 
 export function EditorialTagBar({
@@ -57,6 +104,8 @@ export function EditorialTagBar({
   const [note, setNote] = useState(tag?.note ?? '');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [trail, setTrail] = useState<TagHistoryEntry[] | null>(null);
+  const [isTrailOpen, setIsTrailOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   // Reopening shows what is on the server, not what was typed and abandoned the
@@ -68,7 +117,21 @@ export function EditorialTagBar({
     setDescriptors(tag?.descriptors ?? []);
     setNote(tag?.note ?? '');
     setError(null);
+    setIsTrailOpen(false);
+    setTrail(null);
   }, [isOpen, tag]);
+
+  // Fetched when the trail is asked for, not when the panel opens: most opens
+  // are to change something, and a request per card would be a request per take
+  // on the page.
+  useEffect(() => {
+    if (!isTrailOpen || trail) return;
+    let cancelled = false;
+    fetchTagHistory(productionId, targetType, targetId)
+      .then(entries => { if (!cancelled) setTrail(entries); })
+      .catch(() => { if (!cancelled) setTrail([]); });
+    return () => { cancelled = true; };
+  }, [isTrailOpen, trail, productionId, targetType, targetId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -98,7 +161,7 @@ export function EditorialTagBar({
       // Tagged with nothing and never tagged read the same on a board, so an
       // emptied tag is removed rather than stored as a blank row.
       if (isEmpty) {
-        if (tag) await onClear(targetType, targetId);
+        if (tag) await onClear(targetType, targetId, currentUserHandle ?? null);
       } else {
         await onSave({
           production_id: productionId,
@@ -243,11 +306,59 @@ export function EditorialTagBar({
 
           {error && <p className="text-[10px] text-spine-critical">{error}</p>}
 
-          {tag?.updated_by && (
-            <p className="text-[10px] text-gray-500">
-              Last set by {tag.updated_by}
-            </p>
-          )}
+          {/* The trail. A tag says what is true now; this says who said so and
+              when, which is the question asked when a board and the floor
+              disagree. Offered on every target, not only tagged ones: a tag
+              that was removed still has a history worth reading. */}
+          <div className="border-t border-slate-800 pt-2">
+            <button
+              onClick={() => setIsTrailOpen(o => !o)}
+              className="flex items-center gap-1.5 text-[10px] text-gray-400 hover:text-white transition"
+            >
+              <History className="w-3 h-3" />
+              {isTrailOpen ? 'Hide history' : 'History'}
+              {tag?.updated_by && !isTrailOpen && (
+                <span className="text-gray-500">· last by {tag.updated_by}</span>
+              )}
+            </button>
+
+            {isTrailOpen && (
+              <div className="mt-2 max-h-40 overflow-y-auto pr-1 space-y-1.5">
+                {trail === null && (
+                  <p className="text-[10px] text-gray-500 flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Reading the trail…
+                  </p>
+                )}
+                {trail?.length === 0 && (
+                  // Recording started when the feature did, so a tag set before
+                  // that has no trail. Saying nothing here would read as a bug.
+                  <p className="text-[10px] text-gray-500">
+                    Nothing recorded yet for this {targetType}.
+                  </p>
+                )}
+                {trail?.map((entry, i) => (
+                  <div key={entry.event_id} className="flex gap-2 text-[10px] leading-snug">
+                    <span
+                      className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${
+                        entry.action === 'cleared' ? 'bg-gray-600' : 'bg-spine-accent'
+                      }`}
+                    />
+                    <div className="min-w-0">
+                      <span className="text-gray-200">
+                        {entry.actor ?? 'someone'}
+                      </span>{' '}
+                      <span className="text-gray-400">
+                        {describeChange(entry, trail[i + 1], labelFor).join(', ')}
+                      </span>
+                      <span className="text-gray-600" title={entry.created_at}>
+                        {' · '}{howLongAgo(entry.created_at)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <button
             onClick={save}

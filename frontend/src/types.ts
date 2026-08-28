@@ -412,3 +412,19 @@ export interface TagSummary {
   by_need: Record<string, number>;
   by_descriptor: Record<string, number>;
 }
+
+
+/** One recorded change to a tag. The trail is served newest first. */
+export interface TagHistoryEntry {
+  event_id: string;
+  production_id: string;
+  target_type: TagTargetType;
+  target_id: string;
+  action: 'set' | 'cleared';
+  status: string | null;
+  needs: string[];
+  descriptors: string[];
+  note: string | null;
+  actor: string | null;
+  created_at: string;
+}

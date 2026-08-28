@@ -148,9 +148,10 @@ class SpineWriter:
         return tag_store.list_tags(production_id, **filters)
 
     def clear_editorial_tag(
-        self, production_id: str, target_type: str, target_id: str
+        self, production_id: str, target_type: str, target_id: str,
+        cleared_by: Optional[str] = None,
     ) -> bool:
-        cleared = tag_store.clear_tag(production_id, target_type, target_id)
+        cleared = tag_store.clear_tag(production_id, target_type, target_id, cleared_by)
         if cleared:
             trail = tag_store.history(production_id, target_type, target_id, limit=1)
             if trail:

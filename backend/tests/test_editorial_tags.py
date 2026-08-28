@@ -613,3 +613,37 @@ def test_the_mirrored_tag_event_carries_its_own_time():
     _, rows, columns = fake.rows[0]
     assert "created_at" in columns
     assert dict(zip(columns, rows[0]))["created_at"].tzinfo is not None
+
+
+def test_the_trail_names_whoever_removed_the_tag():
+    """
+    The clear used to copy the previous tag's actor, so the trail credited the
+    removal to whoever last set it -- the wrong person for the one question the
+    trail exists to answer.
+    """
+    tag_store.set_tag(PROD, "shot", "27/7", status="mounted", updated_by="ana")
+    tag_store.clear_tag(PROD, "shot", "27/7", cleared_by="ben")
+    latest = tag_store.history(PROD, "shot", "27/7")[0]
+    assert latest["action"] == "cleared"
+    assert latest["actor"] == "@ben"
+
+
+def test_a_removal_by_nobody_in_particular_names_nobody():
+    tag_store.set_tag(PROD, "shot", "27/7", status="mounted", updated_by="ana")
+    tag_store.clear_tag(PROD, "shot", "27/7")
+    assert tag_store.history(PROD, "shot", "27/7")[0]["actor"] is None
+
+
+def test_the_api_carries_the_clearing_actor_through():
+    client.put("/api/tags", json={
+        "production_id": PROD, "target_type": "shot", "target_id": "27/7",
+        "status": "mounted", "updated_by": "ana",
+    })
+    client.delete("/api/tags", params={
+        "production_id": PROD, "target_type": "shot", "target_id": "27/7",
+        "cleared_by": "ben",
+    })
+    trail = client.get("/api/tags/history", params={
+        "production_id": PROD, "target_type": "shot", "target_id": "27/7",
+    }).json()
+    assert trail[0]["actor"] == "@ben" and trail[1]["actor"] == "@ana"
