@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 from backend.app.spine import character_store
+from backend.app.spine import production_store
 from backend.app.spine import tag_store
 from backend.app.spine import clickhouse
 from backend.app.streaming.models import DEFAULT_TEAM_USERS
@@ -86,7 +87,6 @@ class SpineWriter:
         # and the in-memory spine serves every read, exactly as before.
         self.client = clickhouse_client if clickhouse_client is not None else clickhouse.connect()
         self._in_memory_spine: List[Dict[str, Any]] = []
-        self._productions: Dict[str, Dict[str, Any]] = dict(DEFAULT_PRODUCTIONS)
         self._documents: Dict[str, Dict[str, Any]] = {}
         self._discrepancy_resolutions: Dict[str, Dict[str, Any]] = {}
         self._team_users: Dict[str, Dict[str, Any]] = {k: dict(v) for k, v in DEFAULT_TEAM_USERS.items()}
@@ -98,6 +98,12 @@ class SpineWriter:
         self._pending_rows: List[List[Any]] = []
         # Monotonic deadline before which the mirror is not attempted at all.
         self._mirror_blocked_until: float = 0.0
+        # Production ids already known to exist in the registry, per database
+        # file. append_event runs once per event -- a single Silverstack volume
+        # is ~2000 of them -- so it must not open a SQLite connection each time
+        # to ask a question whose answer stops changing after the first event.
+        # Keyed by path because the tests point each test at its own database.
+        self._ensured_productions: Dict[str, set] = {}
 
     # ------------------------------------------------------------------ #
     # Screenplay & character profiles
@@ -370,14 +376,8 @@ class SpineWriter:
         self._in_memory_spine.append(event)
 
         prod_id = event.get("production_id")
-        if prod_id and prod_id not in self._productions:
-            self._productions[prod_id] = {
-                "production_id": prod_id,
-                "name": prod_id.replace("_", " ").title(),
-                "director": "Unknown",
-                "status": "Active",
-                "description": "Auto-registered production",
-            }
+        if prod_id:
+            self._ensure_production(prod_id)
 
         if self.mirror_available():
             self._pending_rows.append([
@@ -539,7 +539,8 @@ class SpineWriter:
         Summarizes all registered productions with active days, event counts, and take counts.
         """
         results = []
-        for prod_id, info in self._productions.items():
+        for info in self._registered_productions():
+            prod_id = info["production_id"]
             prod_events = [e for e in self._in_memory_spine if e.get("production_id") == prod_id]
             
             # Find unique shoot days
@@ -566,16 +567,75 @@ class SpineWriter:
             })
         return results
 
-    def register_production(self, production_id: str, name: str, director: Optional[str] = None, description: Optional[str] = None) -> Dict[str, Any]:
-        info = {
-            "production_id": production_id,
-            "name": name,
-            "director": director or "Main Unit",
-            "status": "Active",
-            "description": description or "",
-        }
-        self._productions[production_id] = info
-        return info
+    def _ensure_production(self, production_id: str) -> None:
+        """
+        Makes sure a production named on an event exists in the registry.
+
+        A built-in demo gets its own name and description rather than being
+        marked auto: those ids are known, and an ingest naming one is not a
+        guess about what the production is. Anything else is a guess read off a
+        filename, and is recorded as one.
+        """
+        try:
+            key = production_store.normalize_production_id(production_id)
+        except production_store.UnknownProductionField:
+            return
+
+        seen = self._ensured_productions.setdefault(production_store.get_db_path(), set())
+        if key in seen:
+            return
+
+        if not production_store.get(key):
+            known = DEFAULT_PRODUCTIONS.get(key)
+            if known:
+                production_store.upsert(**known)
+            else:
+                production_store.register_if_absent(key, origin="auto")
+        seen.add(key)
+
+    def _registered_productions(self) -> List[Dict[str, Any]]:
+        """
+        Every production the registry knows, with the built-in demos filling in
+        underneath.
+
+        The demos are seeded rather than merged over: once somebody renames
+        DEMO_PRODUCTION or wraps it, the stored row is what they meant and the
+        constant in this file is not.
+        """
+        stored = {p["production_id"]: p for p in production_store.list_all()}
+        for prod_id, info in DEFAULT_PRODUCTIONS.items():
+            if prod_id not in stored:
+                stored[prod_id] = production_store.upsert(**info)
+        return list(stored.values())
+
+    def register_production(
+        self,
+        production_id: str,
+        name: str,
+        director: Optional[str] = None,
+        description: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return production_store.upsert(
+            production_id=production_id,
+            name=name,
+            director=director or "Main Unit",
+            description=description,
+            status=status,
+            origin="registered",
+        )
+
+    def get_production(self, production_id: str) -> Optional[Dict[str, Any]]:
+        return production_store.get(production_id)
+
+    def update_production(self, production_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        return production_store.update(production_id, updates)
+
+    def delete_production(self, production_id: str) -> bool:
+        return production_store.delete(production_id)
+
+    def count_production_events(self, production_id: str) -> int:
+        return sum(1 for e in self._in_memory_spine if e.get("production_id") == production_id)
 
     def store_discrepancy_resolution(
         self,

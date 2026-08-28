@@ -6,10 +6,20 @@ export interface Production {
   director?: string;
   status?: string;
   description?: string;
+  /** 'registered' when a person filled a form in, 'auto' when an ingest
+   *  guessed the id from a filename. Worth showing: a typo in a filename
+   *  should be recognisable rather than looking deliberate. */
+  origin?: 'registered' | 'auto';
+  created_at?: string;
+  updated_at?: string;
   shoot_days: string[];
   total_events: number;
   total_takes: number;
   last_activity?: string | null;
+}
+
+export interface ProductionVocabulary {
+  statuses: string[];
 }
 
 export interface SourceDocumentSummary {

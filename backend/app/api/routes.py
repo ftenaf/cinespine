@@ -14,6 +14,7 @@ from backend.app.streaming.bus import EventBus
 from backend.app.streaming.dispatcher import IngestionDispatcher
 from backend.app.streaming.broker import event_broker, SpineLiveEvent
 from backend.app.spine.writer import SpineWriter
+from backend.app.spine import production_store
 from backend.app.spine import tag_store
 from backend.app.reconciliation.engine import ReconciliationEngine
 from backend.app.agents.mcp_server import ClickHouseMCPServer, GeminiDiscrepancyAssistant
@@ -82,6 +83,20 @@ class CreateProductionRequest(BaseModel):
     production_id: str
     name: str
     director: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+
+
+class UpdateProductionRequest(BaseModel):
+    """
+    Every field optional: a rename must not require restating the description.
+
+    production_id is absent on purpose. It is the key every event, tag and
+    script link is filed under, so changing it would orphan all of them.
+    """
+    name: Optional[str] = None
+    director: Optional[str] = None
+    status: Optional[str] = None
     description: Optional[str] = None
 
 
@@ -183,14 +198,82 @@ def get_productions():
     return spine_writer.list_productions()
 
 
+@router.get("/productions/vocabulary")
+def get_production_vocabulary():
+    """The statuses a production may be in, so the UI offers exactly these."""
+    return {"statuses": list(production_store.STATUSES)}
+
+
 @router.post("/productions")
 def create_production(req: CreateProductionRequest):
-    return spine_writer.register_production(
-        production_id=req.production_id,
-        name=req.name,
-        director=req.director,
-        description=req.description,
-    )
+    try:
+        return spine_writer.register_production(
+            production_id=req.production_id,
+            name=req.name,
+            director=req.director,
+            description=req.description,
+            status=req.status,
+        )
+    except production_store.UnknownProductionField as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get("/productions/{production_id}")
+def get_production(production_id: str):
+    production = spine_writer.get_production(production_id)
+    if not production:
+        raise HTTPException(status_code=404, detail=f"No production {production_id}")
+    return production
+
+
+@router.patch("/productions/{production_id}")
+def update_production(production_id: str, req: UpdateProductionRequest):
+    """Edits a production's metadata. Its id, and so its data, are untouched."""
+    try:
+        updated = spine_writer.update_production(
+            production_id, req.model_dump(exclude_unset=True)
+        )
+    except production_store.UnknownProductionField as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"No production {production_id}")
+    return updated
+
+
+@router.delete("/productions/{production_id}")
+def delete_production(production_id: str):
+    """
+    Removes an empty production from the registry.
+
+    Refused while anything is filed under it. Deleting a production here would
+    not delete its events, tags or script link -- it would only hide them,
+    leaving work nobody can reach and a day's paperwork that belongs to no
+    production. A mistyped registration is the case this exists for.
+    """
+    key = production_store.normalize_production_id(production_id)
+    if not spine_writer.get_production(key):
+        raise HTTPException(status_code=404, detail=f"No production {key}")
+
+    holding = []
+    event_count = spine_writer.count_production_events(key)
+    if event_count:
+        holding.append(f"{event_count} event{'s' if event_count != 1 else ''}")
+    tag_count = len(spine_writer.list_editorial_tags(key))
+    if tag_count:
+        holding.append(f"{tag_count} editorial tag{'s' if tag_count != 1 else ''}")
+    if spine_writer.get_production_script(key):
+        holding.append("a linked screenplay")
+
+    if holding:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{key} still holds {', '.join(holding)}. Deleting the production "
+                "would hide that work rather than remove it."
+            ),
+        )
+
+    return {"deleted": spine_writer.delete_production(key), "production_id": key}
 
 
 @router.get("/documents")
