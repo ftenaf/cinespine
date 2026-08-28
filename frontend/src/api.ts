@@ -377,3 +377,9 @@ export async function fetchTagHistory(
   if (!res.ok) throw await apiError(res, 'Failed to fetch the tag history');
   return res.json();
 }
+
+export async function fetchDashboard(productionId: string): Promise<import('./types').ProductionDashboard> {
+  const res = await fetch(`${API_BASE}/dashboard?production_id=${encodeURIComponent(productionId)}`);
+  if (!res.ok) throw await apiError(res, 'Failed to fetch the dashboard');
+  return res.json();
+}

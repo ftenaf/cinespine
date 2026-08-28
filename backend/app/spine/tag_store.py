@@ -449,6 +449,64 @@ def clear_tag(
         return True
 
 
+def progress(production_id: str, known_shots: List[str], known_scenes: List[str]) -> Dict[str, Any]:
+    """
+    Progress against what the production actually contains.
+
+    summarize() counts only what has been tagged, which cannot express progress:
+    three mounted shots reads the same whether the production has three shots or
+    two hundred. The denominator has to come from the spine -- the shots and
+    scenes the paperwork says exist -- and what nobody has tagged is the largest
+    and most useful number on the board.
+
+    Scenes and shots are counted separately and never merged. A scene marked
+    finished says nothing about the state of the shots inside it, and averaging
+    the two would invent a number that no one asserted.
+    """
+    tags = {(t["target_type"], t["target_id"]): t for t in list_tags(production_id)}
+
+    def axis(kind: str, known: List[str]) -> Dict[str, Any]:
+        universe = sorted(set(known))
+        counts = {st["key"]: 0 for st in STATUSES}
+        untagged = 0
+        for ident in universe:
+            tag = tags.get((kind, ident))
+            if tag and tag["status"]:
+                counts[tag["status"]] += 1
+            else:
+                untagged += 1
+        # Tags on targets the spine has never seen: a shot tagged before its
+        # paperwork arrived, or a slate spelled differently somewhere. Counted
+        # apart rather than folded in, so the denominator stays honest.
+        orphans = sorted(
+            ident for (k, ident) in tags if k == kind and ident not in set(universe)
+        )
+        return {
+            "known": len(universe),
+            "by_status": counts,
+            "no_status": untagged,
+            "tagged_but_unknown": orphans,
+        }
+
+    outstanding: Dict[str, List[Dict[str, str]]] = {n["key"]: [] for n in NEEDS}
+    for (kind, ident), tag in sorted(tags.items()):
+        for need in tag["needs"]:
+            if need in outstanding:
+                outstanding[need].append({
+                    "target_type": kind, "target_id": ident,
+                    "status": tag["status"] or "",
+                })
+
+    return {
+        "production_id": production_id,
+        "shots": axis("shot", known_shots),
+        "scenes": axis("scene", known_scenes),
+        # Not a count but the list itself: "what is outstanding" is a job to be
+        # picked up, and a number alone cannot be worked from.
+        "outstanding": outstanding,
+    }
+
+
 def summarize(production_id: str) -> Dict[str, Any]:
     """
     Counts for a progress board: how many targets sit at each status, and how

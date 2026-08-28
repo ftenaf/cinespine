@@ -1601,6 +1601,43 @@ def get_tag_vocabulary():
     return tag_store.vocabulary()
 
 
+@router.get("/dashboard")
+def get_production_dashboard(production_id: str, recent_limit: int = 12):
+    """
+    Where a production has got to, and what it is waiting on.
+
+    The denominator comes from the spine rather than from the tags: what nobody
+    has tagged is the largest and most useful number on a board, and counting
+    only tagged things would make three mounted shots read the same in a
+    production of three as in a production of two hundred.
+
+    Every shoot day is included. A shot is covered across whatever days it took,
+    so a per-day view of progress would split one shot's story in two.
+    """
+    events = spine_writer.get_events(production_id=production_id)
+    known_shots, known_scenes = set(), set()
+    for event in events:
+        if event.get("entity_type") != "take":
+            continue
+        payload = event.get("payload", {})
+        slate = payload.get("slate")
+        if slate:
+            known_shots.add(slate)
+            known_scenes.add(str(slate).split("/")[0])
+        scene = payload.get("scene")
+        if scene:
+            known_scenes.add(str(scene))
+
+    progress = tag_store.progress(production_id, sorted(known_shots), sorted(known_scenes))
+    progress["vocabulary"] = tag_store.vocabulary()
+    progress["recent"] = tag_store.history(production_id, limit=max(1, min(recent_limit, 50)))
+    progress["shoot_days"] = sorted(
+        {e.get("shoot_day") for e in events if e.get("shoot_day")},
+        key=lambda d: int(d) if str(d).isdigit() else 9999,
+    )
+    return progress
+
+
 @router.get("/tags/summary")
 def get_tag_summary(production_id: str):
     """How many targets sit at each status, and how many await each kind of work."""

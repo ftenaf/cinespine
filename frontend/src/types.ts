@@ -428,3 +428,29 @@ export interface TagHistoryEntry {
   actor: string | null;
   created_at: string;
 }
+
+
+/** One axis of the board: shots, or scenes, counted against what exists. */
+export interface ProgressAxis {
+  known: number;
+  by_status: Record<string, number>;
+  no_status: number;
+  /** Tagged, but the spine has never seen it — kept apart from the count. */
+  tagged_but_unknown: string[];
+}
+
+export interface OutstandingTarget {
+  target_type: TagTargetType;
+  target_id: string;
+  status: string;
+}
+
+export interface ProductionDashboard {
+  production_id: string;
+  shots: ProgressAxis;
+  scenes: ProgressAxis;
+  outstanding: Record<string, OutstandingTarget[]>;
+  vocabulary: TagVocabulary;
+  recent: TagHistoryEntry[];
+  shoot_days: string[];
+}
