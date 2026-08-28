@@ -13,7 +13,6 @@ from backend.app.parsers.silverstack_xml import parse_silverstack_xml
 from backend.app.parsers.pdf_parsers import (
     extract_text_from_pdf,
     parse_zoelog_camera_text,
-    parse_editors_log_text,
     parse_scripte_tclog_text,
     parse_scripte_detailed_editor_log_text,
     parse_silverstack_volume_text,
@@ -136,19 +135,15 @@ class IngestionDispatcher:
             fn = (envelope.filename or "").upper()
             content = envelope.raw_content
 
-            # Route to Scripte TCLog vs Detailed Editor Log vs standard Editor Log
+            # A timecode log is laid out around its timecode columns. Every
+            # other script report -- the editor's log, the detailed editor's
+            # log, the facing pages -- is read by the same state machine, which
+            # handles both the flat one-row-per-line layout and the multi-line
+            # one the PDF text layer actually produces.
             if "TCLOG" in fn or "TIMECODE LOG" in content.upper():
                 records = parse_scripte_tclog_text(content)
-            elif "DETAILED" in fn or "DETAILED EDITOR'S LOG" in content.upper() or "EDITOR" in fn or "EDITOR'S LOG" in content.upper() or "DAILY EDITOR'S LOG" in content.upper():
-                try:
-                    records = parse_scripte_detailed_editor_log_text(content)
-                except Exception:
-                    records = parse_editors_log_text(content)
             else:
-                try:
-                    records = parse_scripte_detailed_editor_log_text(content)
-                except Exception:
-                    records = parse_editors_log_text(content)
+                records = parse_scripte_detailed_editor_log_text(content)
 
             # A lined page's circles are ink drawn on the printed script. The
             # asterisk in its text layer is the export's typed marker, and the

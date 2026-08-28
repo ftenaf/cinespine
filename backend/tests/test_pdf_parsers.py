@@ -7,7 +7,7 @@ Evidence:
 import pytest
 from backend.app.parsers.pdf_parsers import (
     parse_zoelog_camera_text,
-    parse_editors_log_text,
+    parse_scripte_detailed_editor_log_text,
     parse_silverstack_volume_text,
 )
 
@@ -69,8 +69,13 @@ class TestPDFParsers:
         assert r3.take_id == "1"
         assert r3.clip_name == "A120_C003"
 
-    def test_parse_editors_log_text(self):
-        records = parse_editors_log_text(SAMPLE_EDITORS_LOG_TEXT)
+    def test_parse_flat_editors_log_layout(self):
+        """
+        Some editor's logs put a whole row on one line. The state machine reads
+        that layout as well as the multi-line one, which is why the separate
+        flat-layout parser it used to need is gone.
+        """
+        records = parse_scripte_detailed_editor_log_text(SAMPLE_EDITORS_LOG_TEXT)
         assert len(records) == 3
         
         r1 = records[0]
