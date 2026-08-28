@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Tag as TagIcon, Check, X, Loader2, History } from 'lucide-react';
 import { EditorialTag, TagHistoryEntry, TagTargetType, TagVocabulary } from '../types';
 import { fetchTagHistory } from '../api';
@@ -107,6 +108,8 @@ export function EditorialTagBar({
   const [trail, setTrail] = useState<TagHistoryEntry[] | null>(null);
   const [isTrailOpen, setIsTrailOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
 
   // Reopening shows what is on the server, not what was typed and abandoned the
   // last time the panel was closed.
@@ -133,11 +136,52 @@ export function EditorialTagBar({
     return () => { cancelled = true; };
   }, [isTrailOpen, trail, productionId, targetType, targetId]);
 
+  // The panel is rendered into the body rather than inside the card, because
+  // the card and the main column are both overflow-hidden and a clip cannot be
+  // escaped with z-index. Living outside the card means positioning it by hand
+  // against the button that opened it.
+  useLayoutEffect(() => {
+    if (!isOpen) { setAnchor(null); return; }
+
+    const place = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const width = 288;        // w-72
+      const estimated = 420;    // tall enough for the panel with its trail open
+      const margin = 8;
+
+      // Pulled back from the right edge, and flipped above the button when it
+      // would otherwise run off the bottom, so a card at the edge of the grid
+      // still opens a whole panel rather than a clipped one.
+      const left = Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin));
+      const below = rect.bottom + margin;
+      const top = below + estimated > window.innerHeight
+        ? Math.max(margin, rect.top - estimated - margin)
+        : below;
+      setAnchor({ top, left });
+    };
+
+    place();
+    // Capture phase, so the panel follows a scroll in any container rather than
+    // only the window.
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [isOpen]);
+
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsOpen(false); };
     const onClickAway = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setIsOpen(false);
+      const target = e.target as Node;
+      // The trigger is outside the panel now, so a click on it must not be
+      // read as a click away -- that would close and reopen in one gesture.
+      if (panelRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
+      setIsOpen(false);
     };
     document.addEventListener('keydown', onKey);
     document.addEventListener('mousedown', onClickAway);
@@ -187,6 +231,7 @@ export function EditorialTagBar({
   return (
     <div className="relative">
       <button
+        ref={triggerRef}
         onClick={() => setIsOpen(o => !o)}
         className="flex items-center gap-1.5 flex-wrap text-left w-full group"
         title={`Editorial status for ${targetType} ${targetId}`}
@@ -222,10 +267,11 @@ export function EditorialTagBar({
         )}
       </button>
 
-      {isOpen && vocabulary && (
+      {isOpen && vocabulary && anchor && createPortal(
         <div
           ref={panelRef}
-          className="absolute z-40 mt-2 left-0 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 space-y-3"
+          style={{ top: anchor.top, left: anchor.left }}
+          className="fixed z-[100] w-72 max-h-[80vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 space-y-3"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-white">
@@ -368,7 +414,8 @@ export function EditorialTagBar({
             {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
             Save
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
