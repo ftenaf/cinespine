@@ -647,3 +647,105 @@ def test_the_api_carries_the_clearing_actor_through():
         "production_id": PROD, "target_type": "shot", "target_id": "27/7",
     }).json()
     assert trail[0]["actor"] == "@ben" and trail[1]["actor"] == "@ana"
+
+
+# --------------------------------------------------------------------------- #
+# The board
+# --------------------------------------------------------------------------- #
+
+SHOTS = ["27/7", "27/8", "49/1", "49/2", "117/1"]
+SCENES = ["27", "49", "117"]
+
+
+def test_progress_is_measured_against_what_the_production_contains():
+    """
+    Counting only tagged things cannot express progress: three mounted shots
+    reads the same in a production of three as in one of two hundred.
+    """
+    tag_store.set_tag(PROD, "shot", "27/7", status="mounted")
+    board = tag_store.progress(PROD, SHOTS, SCENES)
+    assert board["shots"]["known"] == 5
+    assert board["shots"]["by_status"]["mounted"] == 1
+    assert board["shots"]["no_status"] == 4
+
+
+def test_what_nobody_has_tagged_is_counted():
+    board = tag_store.progress(PROD, SHOTS, SCENES)
+    assert board["shots"]["no_status"] == 5
+    assert board["scenes"]["no_status"] == 3
+
+
+def test_scenes_and_shots_are_counted_apart():
+    """
+    A scene marked finished says nothing about the shots inside it. Merging the
+    two would invent a number nobody asserted.
+    """
+    tag_store.set_tag(PROD, "scene", "117", status="finished")
+    board = tag_store.progress(PROD, SHOTS, SCENES)
+    assert board["scenes"]["by_status"]["finished"] == 1
+    assert board["shots"]["by_status"]["finished"] == 0
+
+
+def test_a_tag_on_something_the_spine_has_never_seen_is_kept_apart():
+    """
+    A shot tagged before its paperwork arrived would otherwise inflate the
+    denominator, or vanish. Neither is honest, so it is listed.
+    """
+    tag_store.set_tag(PROD, "shot", "999/1", status="mounted")
+    board = tag_store.progress(PROD, SHOTS, SCENES)
+    assert board["shots"]["known"] == 5
+    assert board["shots"]["tagged_but_unknown"] == ["999/1"]
+    assert board["shots"]["by_status"]["mounted"] == 0
+
+
+def test_outstanding_work_lists_the_targets_not_just_a_count():
+    """A number cannot be worked from; a list is a job to pick up."""
+    tag_store.set_tag(PROD, "shot", "27/7", status="mounted", needs=["sfx", "subtitles"])
+    tag_store.set_tag(PROD, "shot", "49/1", needs=["sfx"])
+    board = tag_store.progress(PROD, SHOTS, SCENES)
+    assert [t["target_id"] for t in board["outstanding"]["sfx"]] == ["27/7", "49/1"]
+    assert [t["target_id"] for t in board["outstanding"]["subtitles"]] == ["27/7"]
+    assert board["outstanding"]["translation"] == []
+
+
+def test_a_finished_shot_can_still_be_outstanding():
+    tag_store.set_tag(PROD, "shot", "27/7", status="finished", needs=["translation"])
+    board = tag_store.progress(PROD, SHOTS, SCENES)
+    assert board["shots"]["by_status"]["finished"] == 1
+    assert len(board["outstanding"]["translation"]) == 1
+
+
+def test_the_board_reads_every_shoot_day():
+    """
+    A shot is covered across whatever days it took, so a per-day board would
+    split one shot's story in two.
+    """
+    from backend.app.streaming.bus import EventBus
+    from backend.app.spine.writer import SpineWriter
+
+    writer = SpineWriter(clickhouse_client=None)
+    for day, slate in (("11", "119/5"), ("31", "27/7")):
+        writer.append_event({
+            "event_id": f"e{day}", "production_id": "BOARD", "shoot_day": day,
+            "entity_type": "take", "payload": {"slate": slate, "scene": slate.split("/")[0]},
+        })
+    days = {e["shoot_day"] for e in writer.get_events(production_id="BOARD")}
+    assert days == {"11", "31"}
+
+
+def test_the_api_serves_a_board():
+    client.put("/api/tags", json={
+        "production_id": PROD, "target_type": "shot", "target_id": "27/7",
+        "status": "mounted", "needs": ["sfx"],
+    })
+    board = client.get("/api/dashboard", params={"production_id": PROD}).json()
+    assert "shots" in board and "scenes" in board and "outstanding" in board
+    assert board["vocabulary"]["statuses"][0]["key"] == "finished_shooting"
+    assert board["recent"] and board["recent"][0]["target_id"] == "27/7"
+
+
+def test_a_production_with_no_paperwork_yet_is_an_empty_board_not_an_error():
+    board = client.get("/api/dashboard", params={"production_id": "NOTHING_HERE"}).json()
+    assert board["shots"]["known"] == 0
+    assert board["outstanding"]["sfx"] == []
+    assert board["recent"] == []

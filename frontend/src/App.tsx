@@ -8,6 +8,7 @@ import {
   Maximize2, ExternalLink, Video, Mic, MapPin,
   Bell, CheckCheck, PlusCircle, ChevronDown, Send, ShieldAlert,
   Radio, ListTodo, ArrowRight
+, BarChart3
 } from 'lucide-react';
 import { 
   TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, SequenceRecord,
@@ -27,6 +28,7 @@ import {
 } from './api';
 import { ScriptStudio } from './components/ScriptStudio';
 import { EditorialTagBar } from './components/EditorialTagBar';
+import { ProductionDashboardPanel } from './components/ProductionDashboard';
 
 
 
@@ -127,7 +129,10 @@ export default function App() {
   const [currentPillar, setCurrentPillar] = useState<'studio' | 'spine'>('studio');
 
   // Active View & Filters for Set & Editorial Spine
-  const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents' | 'requirements'>('master');
+  const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents' | 'requirements' | 'progress'>('master');
+  // Bumped whenever a tag changes so the board reloads without a full refetch
+  // of the spine behind it.
+  const [tagRevision, setTagRevision] = useState(0);
   const [masterLayout, setMasterLayout] = useState<'grid' | 'slate'>('grid');
   const [focusTakeIndex, setFocusTakeIndex] = useState<number>(0);
   const [selectedSceneFilter, setSelectedSceneFilter] = useState<string>('ALL');
@@ -214,6 +219,7 @@ export default function App() {
   const handleSaveTag = async (payload: Parameters<typeof saveTag>[0]) => {
     const saved = await saveTag(payload);
     setTagsByTarget(prev => ({ ...prev, [`${saved.target_type}:${saved.target_id}`]: saved }));
+    setTagRevision(r => r + 1);
   };
 
   const handleClearTag = async (
@@ -230,6 +236,7 @@ export default function App() {
       });
       return next;
     });
+    setTagRevision(r => r + 1);
   };
 
   const loadUsersAndNotifications = async (userHandle: string = currentUser.handle) => {
@@ -474,6 +481,13 @@ export default function App() {
           // 2. Automatically refresh spine & notifications without page reload
           loadSpineData();
           loadUsersAndNotifications(currentUser.handle);
+
+          // The board is not part of the spine reload, so a tag changed by
+          // another editor would leave an open board showing yesterday's
+          // numbers until it was reopened.
+          if (String(liveEvent.event_type).startsWith('EDITORIAL_TAG_')) {
+            setTagRevision(r => r + 1);
+          }
         }
       } catch (err) {
         console.error('Error handling SSE live event:', err);
@@ -1171,6 +1185,18 @@ export default function App() {
               >
                 <FileCode className="w-4 h-4" />
                 Source Documents ({documents.length})
+              </button>
+
+              <button
+                onClick={() => setActiveTab('progress')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  activeTab === 'progress'
+                    ? 'bg-spine-accent text-white shadow-lg shadow-purple-600/30'
+                    : 'text-gray-300 hover:text-white hover:bg-slate-900 border border-transparent'
+                }`}
+              >
+                <BarChart3 className="w-4 h-4 text-spine-accent" />
+                Progress Board
               </button>
 
               <button
@@ -2820,6 +2846,13 @@ export default function App() {
         )}
 
         {/* TAB 4: REQUIREMENTS & ACTION ITEMS HUB */}
+        {activeTab === 'progress' && (
+          <ProductionDashboardPanel
+            productionId={selectedProductionId}
+            reloadKey={tagRevision}
+          />
+        )}
+
         {activeTab === 'requirements' && (
           <section className="space-y-4">
             {/* Header & KPI Summary */}
