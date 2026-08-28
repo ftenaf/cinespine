@@ -59,6 +59,39 @@ export async function createProduction(payload: {
   return res.json();
 }
 
+export async function updateProduction(
+  productionId: string,
+  updates: {
+    name?: string;
+    director?: string;
+    status?: string;
+    description?: string;
+  },
+): Promise<Production> {
+  const res = await fetch(`${API_BASE}/productions/${encodeURIComponent(productionId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw await apiError(res, 'Failed to save the production');
+  return res.json();
+}
+
+export async function deleteProduction(productionId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/productions/${encodeURIComponent(productionId)}`, {
+    method: 'DELETE',
+  });
+  // A 409 carries the server's account of what is still filed under this
+  // production, which is the whole answer the user needs.
+  if (!res.ok) throw await apiError(res, 'Failed to delete the production');
+}
+
+export async function fetchProductionVocabulary(): Promise<import('./types').ProductionVocabulary> {
+  const res = await fetch(`${API_BASE}/productions/vocabulary`);
+  if (!res.ok) throw await apiError(res, 'Failed to fetch the production vocabulary');
+  return res.json();
+}
+
 export async function fetchDocuments(productionId: string, shootDay: string): Promise<SourceDocumentSummary[]> {
   const res = await fetch(`${API_BASE}/documents?production_id=${productionId}&shoot_day=${shootDay}`);
   if (!res.ok) throw new Error('Failed to fetch documents');

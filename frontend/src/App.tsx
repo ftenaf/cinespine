@@ -29,7 +29,7 @@ import {
 import { ScriptStudio } from './components/ScriptStudio';
 import { EditorialTagBar } from './components/EditorialTagBar';
 import { ScriptSceneButton } from './components/ScriptContextPanel';
-import { ProductionDashboardPanel } from './components/ProductionDashboard';
+import { ProductionsHub } from './components/ProductionsHub';
 
 
 
@@ -127,10 +127,10 @@ export default function App() {
   const [reqSearchQuery, setReqSearchQuery] = useState<string>('');
 
   // Top-Level Pillar Navigation: Pre-Production Studio vs Set & Editorial Spine
-  const [currentPillar, setCurrentPillar] = useState<'studio' | 'spine'>('studio');
+  const [currentPillar, setCurrentPillar] = useState<'studio' | 'spine' | 'productions'>('studio');
 
   // Active View & Filters for Set & Editorial Spine
-  const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents' | 'requirements' | 'progress'>('master');
+  const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents' | 'requirements'>('master');
   // Bumped whenever a tag changes so the board reloads without a full refetch
   // of the spine behind it.
   const [tagRevision, setTagRevision] = useState(0);
@@ -827,7 +827,9 @@ export default function App() {
               <p className="text-[10px] text-gray-300">
                 {currentPillar === 'studio'
                   ? 'AI Screenplay Breakdown, Cast Profiler & Tri-Modal DoP Previz'
-                  : `${activeProduction.name} — Assistant Editor Card & Discrepancy Hub`}
+                  : currentPillar === 'productions'
+                    ? 'Production Registry & Progress'
+                    : `${activeProduction.name} — Assistant Editor Card & Discrepancy Hub`}
               </p>
             </div>
           </div>
@@ -857,6 +859,18 @@ export default function App() {
           >
             <Clapperboard className="w-4 h-4 text-white" />
             🎞️ Set &amp; Editorial Spine
+          </button>
+
+          <button
+            onClick={() => setCurrentPillar('productions')}
+            className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold transition shadow-sm ${
+              currentPillar === 'productions'
+                ? 'bg-spine-accent text-white shadow-lg shadow-blue-600/30'
+                : 'text-gray-300 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4 text-white" />
+            🗂️ Productions
           </button>
         </div>
 
@@ -1048,6 +1062,25 @@ export default function App() {
       )}
 
       {/* ===================================================================== */}
+      {/* PILLAR 3: PRODUCTIONS (REGISTRY & PROGRESS)                            */}
+      {/* ===================================================================== */}
+      {currentPillar === 'productions' && (
+        <main className="flex-1 max-w-7xl w-full mx-auto p-6">
+          <ProductionsHub
+            productions={productions}
+            selectedProductionId={selectedProductionId}
+            onSelect={setSelectedProductionId}
+            onOpen={productionId => {
+              setSelectedProductionId(productionId);
+              setCurrentPillar('spine');
+            }}
+            onChanged={loadProductions}
+            tagRevision={tagRevision}
+          />
+        </main>
+      )}
+
+      {/* ===================================================================== */}
       {/* PILLAR 2: SET & EDITORIAL SPINE (DIT / POST ASSISTANT EDITOR HUB)      */}
       {/* ===================================================================== */}
       {currentPillar === 'spine' && (
@@ -1186,18 +1219,6 @@ export default function App() {
               >
                 <FileCode className="w-4 h-4" />
                 Source Documents ({documents.length})
-              </button>
-
-              <button
-                onClick={() => setActiveTab('progress')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-                  activeTab === 'progress'
-                    ? 'bg-spine-accent text-white shadow-lg shadow-purple-600/30'
-                    : 'text-gray-300 hover:text-white hover:bg-slate-900 border border-transparent'
-                }`}
-              >
-                <BarChart3 className="w-4 h-4 text-spine-accent" />
-                Progress Board
               </button>
 
               <button
@@ -2907,13 +2928,6 @@ export default function App() {
         )}
 
         {/* TAB 4: REQUIREMENTS & ACTION ITEMS HUB */}
-        {activeTab === 'progress' && (
-          <ProductionDashboardPanel
-            productionId={selectedProductionId}
-            reloadKey={tagRevision}
-          />
-        )}
-
         {activeTab === 'requirements' && (
           <section className="space-y-4">
             {/* Header & KPI Summary */}
