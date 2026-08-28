@@ -1265,20 +1265,55 @@ export default function App() {
                 >
                   All ({takes.length})
                 </button>
-                {uniqueScenes.map(sc => (
-                  <button
-                    key={sc}
-                    onClick={() => setSelectedSceneFilter(sc)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-medium transition ${
-                      selectedSceneFilter === sc
-                        ? 'bg-spine-accent text-white'
-                        : 'bg-slate-950 text-gray-300 hover:text-white border border-slate-800'
-                    }`}
-                  >
-                    Sc {sc}
-                  </button>
-                ))}
+                {uniqueScenes.map(sc => {
+                  const sceneTag = tagsByTarget[`scene:${sc}`];
+                  return (
+                    <button
+                      key={sc}
+                      onClick={() => setSelectedSceneFilter(sc)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-mono font-medium transition flex items-center gap-1.5 ${
+                        selectedSceneFilter === sc
+                          ? 'bg-spine-accent text-white'
+                          : 'bg-slate-950 text-gray-300 hover:text-white border border-slate-800'
+                      }`}
+                      title={sceneTag ? 'This scene is tagged — select it to see or change the tag' : undefined}
+                    >
+                      Sc {sc}
+                      {/* A dot rather than the labels themselves: the row is for
+                          choosing a scene, and spelling every tag out here would
+                          bury that. Selecting the scene shows the tag in full. */}
+                      {sceneTag && (
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            sceneTag.needs.length ? 'bg-rose-400' : 'bg-emerald-400'
+                          }`}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
+
+              {/* The tag on the scene itself, not on any shot within it. Shown
+                  only once a scene is chosen, since there is no one scene to
+                  tag while the filter is on All. */}
+              {selectedSceneFilter !== 'ALL' && (
+                <div className="w-full flex items-center gap-2 pt-2 border-t border-slate-800">
+                  <span className="text-xs text-gray-300 font-semibold shrink-0">
+                    Scene {selectedSceneFilter}:
+                  </span>
+                  <EditorialTagBar
+                    productionId={selectedProductionId}
+                    targetType="scene"
+                    targetId={selectedSceneFilter}
+                    tag={tagsByTarget[`scene:${selectedSceneFilter}`]}
+                    vocabulary={tagVocabulary}
+                    currentUserHandle={currentUser.handle}
+                    onSave={handleSaveTag}
+                    onClear={handleClearTag}
+                  />
+                </div>
+              )}
 
               <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
                 <button
