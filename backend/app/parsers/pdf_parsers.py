@@ -574,8 +574,9 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
             current_notes.append(cleaned)
 
     if not records:
-        # Fallback to general editor log parser
-        return parse_editors_log_text(text)
+        # This document is not in the timecode log's layout. The editor's log
+        # state machine reads both of the layouts these reports come in.
+        return parse_scripte_detailed_editor_log_text(text)
 
     return unify_take_level_marks(records)
 
@@ -894,62 +895,7 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             current_notes.append(cleaned)
 
     if not records:
-        return parse_editors_log_text(text)
-
-    return unify_take_level_marks(records)
-
-
-def parse_editors_log_text(text: str) -> List[ParsedScriptRecord]:
-    """
-    Parses Script Supervisor Editor's Log text into script/editorial records.
-    """
-    if not text or not text.strip():
-        raise ParserFailureError("Empty Editor's Log text")
-
-    report_date = extract_report_date(text)
-
-    records: List[ParsedScriptRecord] = []
-    lines = text.strip().splitlines()
-
-    for line in lines:
-        cleaned = line.strip()
-        if not cleaned or "DAILY EDITOR'S LOG" in cleaned or "Slate Take #" in cleaned:
-            continue
-
-        m = re.search(r"^(" + SLATE_TOKEN + r")\s+(\d+[A-Z*]?)\s*(.*)$", cleaned)
-        if m:
-            raw_slate = m.group(1)
-            raw_take = m.group(2)
-            rest = m.group(3)
-            cr, raw_date = extract_script_camera_roll_and_date(rest)
-            if cr:
-                norm_slate = normalize_slate(raw_slate)
-                take_info = normalize_take(raw_take)
-                scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate
-
-                row_date = parse_shoot_date(raw_date) or report_date
-                records.append(
-                    ParsedScriptRecord(
-                        scene=scene,
-                        slate=norm_slate,
-                        take_id=take_info.take_id,
-                        camera_roll=cr,
-                        timecode_in=None,
-                        timecode_out=None,
-                        recording_date=row_date,
-                        is_starred=take_info.is_starred,
-                        is_pickup=take_info.is_pickup,
-                        is_false_start=take_info.is_false_start,
-                        is_wild_track=take_info.is_wild_track,
-                        is_vfx=take_info.is_vfx,
-                        is_mos=take_info.is_mos,
-                        note=rest or take_info.note,
-                        raw_payload={"camera_roll": cr},
-                    )
-                )
-
-    if not records:
-        raise ParserFailureError("Editor's Log parser yielded zero valid records")
+        raise ParserFailureError("Editor's log parser yielded zero valid records")
 
     return unify_take_level_marks(records)
 
