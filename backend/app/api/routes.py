@@ -16,6 +16,7 @@ from backend.app.streaming.broker import event_broker, SpineLiveEvent
 from backend.app.spine.writer import SpineWriter
 from backend.app.spine import production_store
 from backend.app.spine import requirement_store
+from backend.app.spine import breakdown_store
 from backend.app.spine import tag_store
 from backend.app.reconciliation.engine import ReconciliationEngine
 from backend.app.agents.mcp_server import ClickHouseMCPServer, GeminiDiscrepancyAssistant
@@ -2055,6 +2056,14 @@ class ScriptBreakdownRequest(BaseModel):
     custom_prompt: Optional[str] = None
     aspect_ratio: str = "2.39:1"
     character_profiles: Optional[List[CharacterProfile]] = None
+    # Which screenplay this scene belongs to, so the breakdown can be kept.
+    # Optional: a caller working against no stored screenplay still gets its
+    # shots back.
+    script_id: Optional[str] = None
+
+
+class SaveBreakdownRequest(BaseModel):
+    shots: List[Dict[str, Any]]
 
 
 class GenerateStoryboardRequest(BaseModel):
@@ -2486,11 +2495,52 @@ def generate_shot_breakdown(req: ScriptBreakdownRequest):
             s.storyboard.prompt = cam_a.prompt
             s.storyboard.status = "generated"
 
+    rendered = [s.model_dump() for s in shots]
+
+    # Kept against the scene, not just handed back. The frames cost a
+    # generation each, and the coverage is worked on afterwards rather than
+    # read once, so a reload used to throw away both.
+    saved = False
+    if req.script_id:
+        spine_writer.save_scene_breakdown(req.script_id, req.scene.scene_number, rendered)
+        saved = True
+
     return {
         "scene_number": req.scene.scene_number,
         "shots_count": len(shots),
-        "shots": [s.model_dump() for s in shots],
+        "shots": rendered,
+        # False when there was no screenplay to file it under, so the client
+        # does not report a save that did not happen.
+        "saved": saved,
     }
+
+
+@router.get("/script/{script_id}/breakdowns")
+def list_scene_breakdowns(script_id: str):
+    """
+    Every scene's breakdown for a screenplay, keyed by scene number.
+
+    The shape the Script Studio holds it in, so restoring what somebody was
+    working on is an assignment rather than a reduction.
+    """
+    return {"script_id": script_id, "breakdowns": spine_writer.list_scene_breakdowns(script_id)}
+
+
+@router.put("/script/{script_id}/breakdowns/{scene_number}")
+def save_scene_breakdown(script_id: str, scene_number: str, req: SaveBreakdownRequest):
+    """
+    Records the shot list as it now stands, after an edit to a camera, a
+    prompt, or a re-rendered frame.
+    """
+    try:
+        return spine_writer.save_scene_breakdown(script_id, scene_number, req.shots)
+    except breakdown_store.UnknownBreakdownValue as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.delete("/script/{script_id}/breakdowns/{scene_number}")
+def delete_scene_breakdown(script_id: str, scene_number: str):
+    return {"deleted": spine_writer.delete_scene_breakdown(script_id, scene_number)}
 
 
 @router.post("/script/generate-storyboard")

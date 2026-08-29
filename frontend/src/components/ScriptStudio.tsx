@@ -575,6 +575,71 @@ export const ScriptStudio: React.FC = () => {
     }
   };
 
+  // What has already been written for each scene, so the save-on-change effect
+  // below can tell a real edit from the assignment that restored it.
+  const savedBreakdowns = useRef<Record<string, string>>({});
+  const [isRestoringBreakdowns, setIsRestoringBreakdowns] = useState(false);
+
+  /**
+   * Brings back the breakdowns already worked out for this screenplay.
+   *
+   * The coverage is generated once and then edited -- a focal length nudged, a
+   * prompt rewritten and re-rendered -- and all of it used to live in this
+   * tab's memory, so a reload threw away the work and the generations it cost.
+   */
+  useEffect(() => {
+    if (!scriptId) return;
+    let live = true;
+    setIsRestoringBreakdowns(true);
+    fetch(`/api/script/${encodeURIComponent(scriptId)}/breakdowns`)
+      .then(res => res.json())
+      .then(data => {
+        if (!live) return;
+        const restored: Record<string, ShotProposal[]> = data?.breakdowns || {};
+        // Seeded before the state lands, so restoring does not read as an edit
+        // and immediately write back what it just read.
+        savedBreakdowns.current = Object.fromEntries(
+          Object.entries(restored).map(([scene, shots]) => [scene, JSON.stringify(shots)])
+        );
+        if (Object.keys(restored).length > 0) setShotsMap(restored);
+      })
+      .catch(() => {
+        // The studio works without them; only the restore is lost.
+      })
+      .finally(() => { if (live) setIsRestoringBreakdowns(false); });
+    return () => { live = false; };
+  }, [scriptId]);
+
+  /**
+   * Keeps every change to a breakdown, whatever made it.
+   *
+   * Watching the map rather than calling a save from each of the six places
+   * that edit it: adding a camera, changing a focal length, rewriting a
+   * prompt, re-rendering a frame. Debounced, because a slider drag is one
+   * edit to a person and thirty to React.
+   */
+  useEffect(() => {
+    if (!scriptId || isRestoringBreakdowns) return;
+
+    const timer = setTimeout(() => {
+      for (const [sceneNumber, shots] of Object.entries(shotsMap)) {
+        const serialized = JSON.stringify(shots);
+        if (savedBreakdowns.current[sceneNumber] === serialized) continue;
+        savedBreakdowns.current[sceneNumber] = serialized;
+        fetch(`/api/script/${encodeURIComponent(scriptId)}/breakdowns/${encodeURIComponent(sceneNumber)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shots })
+        }).catch(() => {
+          // Let the next edit try again rather than claiming this one stuck.
+          delete savedBreakdowns.current[sceneNumber];
+        });
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [shotsMap, scriptId, isRestoringBreakdowns]);
+
   /**
    * Shows the production this script is already attached to, if any.
    *
@@ -658,7 +723,8 @@ export const ScriptStudio: React.FC = () => {
           dop_overrides: Object.keys(overrides).length > 0 ? overrides : null,
           custom_prompt: dopMode === 'prompt' ? customMoodPrompt : null,
           aspect_ratio: aspectRatio,
-          character_profiles: characters
+          character_profiles: characters,
+          script_id: scriptId
         })
       });
 
@@ -1090,8 +1156,13 @@ export const ScriptStudio: React.FC = () => {
           setSelectedCharId(data.characters[0].id);
         }
         setSelectedSceneIndex(0);
-        setShotsMap({});
-        setSelectedShotId(null);
+        // Only when this is a different screenplay. Re-uploading the same file
+        // resolves to the same script id and its breakdowns are still that
+        // script's, so clearing them would hide work the server still holds.
+        if (data.script_id !== scriptId) {
+          setShotsMap({});
+          setSelectedShotId(null);
+        }
       } else {
         const text = await file.text();
         await handleParseScript(text, file.name.replace(/\.[^/.]+$/, ''));

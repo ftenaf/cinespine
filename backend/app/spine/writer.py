@@ -13,6 +13,7 @@ from backend.app.spine import production_store
 from backend.app.spine import requirement_store
 from backend.app.spine import notification_store
 from backend.app.spine import event_store
+from backend.app.spine import breakdown_store
 from backend.app.spine import tag_store
 from backend.app.spine import clickhouse
 from backend.app.streaming.models import DEFAULT_TEAM_USERS
@@ -152,6 +153,20 @@ class SpineWriter:
         updates: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
         return character_store.update_character_profile(script_id, character_id, updates)
+
+    def save_scene_breakdown(
+        self, script_id: str, scene_number: str, shots: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        return breakdown_store.save(script_id, scene_number, shots)
+
+    def get_scene_breakdown(self, script_id: str, scene_number: str) -> Optional[Dict[str, Any]]:
+        return breakdown_store.get(script_id, scene_number)
+
+    def list_scene_breakdowns(self, script_id: str) -> Dict[str, List[Dict[str, Any]]]:
+        return breakdown_store.list_for_script(script_id)
+
+    def delete_scene_breakdown(self, script_id: str, scene_number: str) -> bool:
+        return breakdown_store.delete(script_id, scene_number)
 
     def store_screenplay_scenes(self, script_id: str, scenes: List[Dict[str, Any]]) -> int:
         return character_store.store_screenplay_scenes(script_id, scenes)
