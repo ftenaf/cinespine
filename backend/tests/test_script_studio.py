@@ -544,3 +544,79 @@ def test_ai_cam_breakdown_with_cut_to_transitions():
 
 
 
+
+
+# --------------------------------------------------------------------------- #
+# A generated portrait is kept
+# --------------------------------------------------------------------------- #
+
+def _uploaded_script(client):
+    files = {"file": ("plain.txt", PLAINTEXT_SCRIPT.encode("utf-8"), "text/plain")}
+    body = client.post("/api/script/upload", files=files).json()
+    return body["script_id"], next(c for c in body["characters"] if c["name"] == "MAYA")
+
+
+def _generate(client, script_id, character, **over):
+    payload = {
+        "character_id": character["id"],
+        "character_name": character["name"],
+        "actor_reference": character.get("actor_reference", ""),
+        "look_and_costume": character.get("look_and_costume", ""),
+        "facial_features": character.get("facial_features", ""),
+        "script_id": script_id,
+        **over,
+    }
+    res = client.post("/api/script/characters/generate-portrait", json=payload)
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def test_a_generated_portrait_is_kept_against_the_character(client):
+    """
+    A portrait costs a generation to make and is the point of the cast
+    profiler -- the same face in every frame. Handing it back to the browser
+    and no further meant a reload threw away the likeness and the credit spent
+    on it.
+    """
+    script_id, maya = _uploaded_script(client)
+    generated = _generate(client, script_id, maya)
+    assert generated["saved"] is True
+
+    stored = client.get(f"/api/script/{script_id}/characters").json()["characters"]
+    kept = next(c for c in stored if c["id"] == maya["id"])
+    assert kept["avatar_url"] == generated["image_url"]
+    assert kept["portrait_prompt"] == generated["compiled_prompt"]
+
+
+def test_a_portrait_survives_re_parsing_the_same_screenplay(client):
+    """
+    Re-uploading refreshes what the parse knows and must not clobber what the
+    generator made: the portrait is user-owned, like the wardrobe notes.
+    """
+    script_id, maya = _uploaded_script(client)
+    generated = _generate(client, script_id, maya)
+
+    files = {"file": ("plain.txt", PLAINTEXT_SCRIPT.encode("utf-8"), "text/plain")}
+    client.post("/api/script/upload", files=files)
+
+    stored = client.get(f"/api/script/{script_id}/characters").json()["characters"]
+    assert next(c for c in stored if c["id"] == maya["id"])["avatar_url"] == generated["image_url"]
+
+
+def test_a_portrait_generated_against_no_screenplay_still_comes_back(client):
+    """
+    There is nothing to file it under, so it is not saved -- but the image was
+    made and the caller gets it.
+    """
+    _, maya = _uploaded_script(client)
+    body = _generate(client, None, maya)
+    assert body["saved"] is False
+    assert body["image_url"]
+
+
+def test_a_portrait_for_a_character_nobody_stored_is_not_reported_as_saved(client):
+    """A save that did not happen must not be reported as one."""
+    script_id, maya = _uploaded_script(client)
+    body = _generate(client, script_id, {**maya, "id": "char_nobody"})
+    assert body["saved"] is False
+    assert body["image_url"]
