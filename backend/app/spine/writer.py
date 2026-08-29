@@ -12,6 +12,7 @@ from backend.app.spine import character_store
 from backend.app.spine import production_store
 from backend.app.spine import requirement_store
 from backend.app.spine import notification_store
+from backend.app.spine import event_store
 from backend.app.spine import tag_store
 from backend.app.spine import clickhouse
 from backend.app.streaming.models import DEFAULT_TEAM_USERS
@@ -88,10 +89,16 @@ class SpineWriter:
         # Connect when one was not handed in. Absent or unreachable yields None
         # and the in-memory spine serves every read, exactly as before.
         self.client = clickhouse_client if clickhouse_client is not None else clickhouse.connect()
-        self._in_memory_spine: List[Dict[str, Any]] = []
-        self._documents: Dict[str, Dict[str, Any]] = {}
-        self._discrepancy_resolutions: Dict[str, Dict[str, Any]] = {}
+        # A cache over event_store, not the record itself. Every request that
+        # builds takes, sequences or discrepancies walks a production's events
+        # in full, so those passes stay in memory; the store is what makes them
+        # survivable. Loaded in arrival order, because several reads take the
+        # last event as the most recent word.
+        self._in_memory_spine: List[Dict[str, Any]] = event_store.load_events()
+        self._discrepancy_resolutions: Dict[str, Dict[str, Any]] = event_store.load_resolutions()
+        # The built-in team, with anyone registered since layered over it.
         self._team_users: Dict[str, Dict[str, Any]] = {k: dict(v) for k, v in DEFAULT_TEAM_USERS.items()}
+        self._team_users.update(event_store.load_users())
         # Rows waiting to go to ClickHouse. One insert per event turned a
         # 72-event ingestion from 0.8s into 7.4s and a 1991-event one into
         # minutes: each insert is a round trip and a new part on the server.
@@ -292,7 +299,7 @@ class SpineWriter:
         Stores raw document text/content with metadata, raw binary bytes, and checksum for in-app previewing and duplicate prevention.
         """
         doc_id = str(uuid.uuid4())
-        doc_record = {
+        doc_record: Dict[str, Any] = {
             "doc_id": doc_id,
             "production_id": production_id,
             "shoot_day": shoot_day,
@@ -306,7 +313,7 @@ class SpineWriter:
             "uploaded_at": datetime.now(timezone.utc).isoformat(),
             "metadata": metadata or {},
         }
-        self._documents[doc_id] = doc_record
+        event_store.store_document(doc_record)
         return doc_id
 
     def get_document_by_checksum(
@@ -318,61 +325,38 @@ class SpineWriter:
         """
         Finds if a document with the exact same content checksum exists for this production and shoot day.
         """
-        for doc in self._documents.values():
-            if (
-                doc.get("production_id") == production_id
-                and doc.get("shoot_day") == shoot_day
-                and doc.get("checksum") == checksum
-            ):
-                return doc
-        return None
+        return event_store.find_document_by_checksum(production_id, shoot_day, checksum)
 
     def delete_document(self, doc_id: str) -> bool:
         """
         Deletes an uploaded document from the repository and purges its events from the active spine.
         """
-        if doc_id not in self._documents:
+        if not event_store.delete_document(doc_id):
             return False
 
-        # Remove the document record
-        del self._documents[doc_id]
-
-        # Purge associated events from the in-memory spine
+        # Its readings go with it, from the store and from the cache over it.
+        event_store.delete_events_for_document(doc_id)
         self._in_memory_spine = [
             e for e in self._in_memory_spine if e.get("metadata", {}).get("doc_id") != doc_id
         ]
         return True
 
     def list_documents(self, production_id: Optional[str] = None, shoot_day: Optional[str] = None) -> List[Dict[str, Any]]:
-        docs = list(self._documents.values())
-        if production_id:
-            docs = [d for d in docs if d.get("production_id") == production_id]
-        if shoot_day:
-            docs = [d for d in docs if d.get("shoot_day") == shoot_day]
-        
-        # Return summary without full heavy content
-        return [
-            {
-                "doc_id": d["doc_id"],
-                "production_id": d["production_id"],
-                "shoot_day": d["shoot_day"],
-                "filename": d["filename"],
-                "doc_type": d["doc_type"],
-                "department": d["department"],
-                "checksum": d.get("checksum"),
-                "size_bytes": d["size_bytes"],
-                "uploaded_at": d["uploaded_at"],
-            }
-            for d in docs
-        ]
+        return event_store.list_documents(production_id=production_id, shoot_day=shoot_day)
 
     def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
-        return self._documents.get(doc_id)
+        return event_store.get_document(doc_id)
 
     def append_event(self, event: Dict[str, Any]) -> None:
         """
         Appends an event to the immutable spine.
+
+        Written to the store before the cache, so a reader that sees it in
+        memory can be sure it is on disk. The write is one insert on a held
+        connection in WAL: a 2000-event ingestion pays 0.06s for it, which is
+        cheap enough not to need a buffer that a crash could empty.
         """
+        event_store.append_event(event)
         self._in_memory_spine.append(event)
 
         prod_id = event.get("production_id")
@@ -662,24 +646,30 @@ class SpineWriter:
             "resolved_at": datetime.now(timezone.utc).isoformat(),
         }
         self._discrepancy_resolutions[discrepancy_id] = resolution
+        event_store.save_resolution(discrepancy_id, resolution)
         if entity_id:
             # Also key by entity_id so dynamic re-reconciliation finds the resolution
-            self._discrepancy_resolutions[f"{production_id}_{shoot_day}_{entity_id}"] = resolution
+            entity_key = f"{production_id}_{shoot_day}_{entity_id}"
+            self._discrepancy_resolutions[entity_key] = resolution
+            event_store.save_resolution(entity_key, resolution)
         return resolution
 
     def delete_discrepancy_resolution(self, discrepancy_id: str) -> bool:
         """
         Re-opens an active discrepancy by clearing its resolution record.
         """
-        deleted = False
-        if discrepancy_id in self._discrepancy_resolutions:
-            res = self._discrepancy_resolutions.pop(discrepancy_id)
-            deleted = True
-            ent_id = res.get("entity_id")
-            if ent_id:
-                ent_k = f"{res.get('production_id')}_{res.get('shoot_day')}_{ent_id}"
-                self._discrepancy_resolutions.pop(ent_k, None)
-        return deleted
+        if discrepancy_id not in self._discrepancy_resolutions:
+            return False
+
+        res = self._discrepancy_resolutions.pop(discrepancy_id)
+        keys = [discrepancy_id]
+        ent_id = res.get("entity_id")
+        if ent_id:
+            ent_k = f"{res.get('production_id')}_{res.get('shoot_day')}_{ent_id}"
+            self._discrepancy_resolutions.pop(ent_k, None)
+            keys.append(ent_k)
+        event_store.delete_resolutions(keys)
+        return True
 
     def get_discrepancy_resolutions(self, production_id: str, shoot_day: str) -> Dict[str, Dict[str, Any]]:
         """
@@ -738,6 +728,7 @@ class SpineWriter:
             "avatar_color": avatar_color,
         }
         self._team_users[norm_handle] = user
+        event_store.save_user(user)
         return user
 
     # ==========================================

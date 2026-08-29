@@ -69,6 +69,10 @@ data/examples/
 *.kdm
 *.db
 spine.db
+# WAL mode keeps two sidecar files beside the database. They hold committed
+# data that has not been checkpointed yet, so they are as local as the db.
+*.db-wal
+*.db-shm
 
 # Local code-intelligence indexes (rebuilt on demand, machine-specific)
 .codegraph/
