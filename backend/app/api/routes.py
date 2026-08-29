@@ -153,6 +153,10 @@ class UpdateRequirementRequest(BaseModel):
     assigned_to: Optional[str] = None
     status: Optional[str] = None
     target_label: Optional[str] = None
+    # Who is making the change. Requirements can now be reassigned and blocked
+    # from a production-wide board, where the person doing it is usually not
+    # the person who raised the requirement or the one it is assigned to.
+    updated_by: Optional[str] = None
 
 
 class ResolveRequirementRequest(BaseModel):
@@ -1602,10 +1606,80 @@ def get_requirement(requirement_id: str):
 
 @router.patch("/requirements/{requirement_id}")
 def update_requirement(requirement_id: str, updates: UpdateRequirementRequest):
+    """
+    Edits a requirement, and tells the people the edit is about.
+
+    Handing a requirement to somebody who is never told about it is the same as
+    dropping it, and a requirement moving to blocked is exactly the thing the
+    person who raised it needs to hear. Neither used to reach anyone: only
+    creating and resolving sent word, and both of those are done by someone
+    already looking at the requirement.
+    """
+    before = spine_writer.get_requirement(requirement_id)
+    if not before:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+
+    was_assigned_to = before.get("assigned_to")
+    was_status = before.get("status")
+
     update_data = {k: v for k, v in updates.model_dump().items() if v is not None}
+    actor = update_data.pop("updated_by", None) or "@user"
+    if not actor.startswith("@"):
+        actor = f"@{actor}"
+
     updated = spine_writer.update_requirement(requirement_id, update_data)
     if not updated:
         raise HTTPException(status_code=404, detail="Requirement not found")
+
+    def notify(recipient: Optional[str], kind: str, message: str) -> None:
+        # Never notify somebody about their own action: they just did it.
+        if not recipient or recipient.lower() == actor.lower():
+            return
+        spine_writer.create_notification({
+            "production_id": updated["production_id"],
+            "recipient_handle": recipient,
+            "actor_handle": actor,
+            "notification_type": kind,
+            "requirement_id": updated["requirement_id"],
+            "title": f"{updated['target_label']}: {updated['title']}",
+            "message": message,
+            "target_type": updated["target_type"],
+            "target_id": updated["target_id"],
+            "target_label": updated["target_label"],
+        })
+
+    now_assigned_to = updated.get("assigned_to")
+    if now_assigned_to and now_assigned_to != was_assigned_to:
+        notify(
+            now_assigned_to,
+            "ASSIGNED",
+            f"{actor} handed you this {updated['priority']} requirement: {updated['title']}",
+        )
+
+    now_status = updated.get("status")
+    if now_status and now_status != was_status:
+        notify(
+            updated.get("created_by"),
+            "STATUS_CHANGED",
+            f"{actor} moved this from {was_status} to {now_status}: {updated['title']}",
+        )
+
+    event_broker.publish_sync(SpineLiveEvent(
+        event_type="REQUIREMENT_UPDATED",
+        production_id=updated["production_id"],
+        shoot_day=updated["shoot_day"],
+        actor_handle=actor,
+        target_type=updated["target_type"],
+        target_id=updated["target_id"],
+        target_label=updated["target_label"],
+        summary=f"Requirement '{updated['title']}' is now {now_status}, assigned to {now_assigned_to}",
+        data={
+            "requirement_id": updated["requirement_id"],
+            "status": now_status,
+            "assigned_to": now_assigned_to,
+        },
+    ))
+
     return updated
 
 

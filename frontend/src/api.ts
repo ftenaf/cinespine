@@ -264,7 +264,13 @@ export async function createRequirement(payload: {
   return res.json();
 }
 
-export async function updateRequirement(requirementId: string, updates: Partial<import('./types').Requirement>): Promise<import('./types').Requirement> {
+export async function updateRequirement(
+  requirementId: string,
+  // `updated_by` is not part of a requirement: it is who is making this
+  // change, which the server needs to know so it can tell the right people
+  // and not notify somebody about their own edit.
+  updates: Partial<import('./types').Requirement> & { updated_by?: string },
+): Promise<import('./types').Requirement> {
   const res = await fetch(`${API_BASE}/requirements/${requirementId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },

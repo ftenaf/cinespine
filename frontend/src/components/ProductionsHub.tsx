@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Clapperboard, Plus, Pencil, Trash2, Check, Loader2, AlertTriangle,
-  BookOpen, CalendarDays, Layers, Film,
+  BookOpen, CalendarDays, Layers, Film, ListTodo,
 } from 'lucide-react';
-import { LinkedScript, Production } from '../types';
+import { LinkedScript, Production, Requirement, UserProfile } from '../types';
 import {
   createProduction, deleteProduction, fetchLinkedScript, fetchProductionVocabulary,
-  updateProduction,
+  fetchRequirements, updateProduction,
 } from '../api';
+import { summarizeRequirements } from '../requirementsBoard';
 import { ProductionDashboardPanel } from './ProductionDashboard';
+import { RequirementsBoard } from './RequirementsBoard';
 
 /**
  * The productions section: every production in one place, with the progress
@@ -56,6 +58,7 @@ function Stat({ icon, value, label }: { icon: React.ReactNode; value: string; la
 interface CardProps {
   production: Production;
   script: LinkedScript | null;
+  requirements: Requirement[];
   isSelected: boolean;
   statuses: string[];
   onSelect: () => void;
@@ -64,8 +67,9 @@ interface CardProps {
 }
 
 function ProductionCard({
-  production, script, isSelected, statuses, onSelect, onOpen, onChanged,
+  production, script, requirements, isSelected, statuses, onSelect, onOpen, onChanged,
 }: CardProps) {
+  const owed = summarizeRequirements(requirements);
   const [mode, setMode] = useState<'idle' | 'editing' | 'confirming'>('idle');
   const [draft, setDraft] = useState({
     name: production.name,
@@ -213,6 +217,22 @@ function ProductionCard({
             <Stat icon={<Layers className="w-3 h-3" />} value={String(production.total_events)} label="events" />
             <span className="text-[11px] text-gray-500">Last activity {when(production.last_activity)}</span>
           </div>
+
+          {/* What this production still owes, so the list answers "where are
+              the impediments" without opening each one in turn. */}
+          <p className="text-[11px] flex items-center gap-1.5">
+            <ListTodo className="w-3 h-3 shrink-0 text-gray-500" aria-hidden />
+            {owed.outstanding === 0 ? (
+              <span className="text-gray-500">Nothing outstanding</span>
+            ) : (
+              <span className="text-gray-300">
+                {owed.outstanding} outstanding
+                {owed.blocked > 0 && (
+                  <span className="text-red-300"> · {owed.blocked} blocked</span>
+                )}
+              </span>
+            )}
+          </p>
 
           <p className="text-[11px] flex items-center gap-1.5">
             <BookOpen className="w-3 h-3 shrink-0 text-gray-500" aria-hidden />
@@ -376,14 +396,21 @@ interface HubProps {
   onChanged: () => void;
   /** Changes when a tag changes anywhere, so the board follows live edits. */
   tagRevision: number;
+  /** Who the requirements can be handed to. */
+  team: UserProfile[];
+  currentUserHandle: string;
 }
 
 export function ProductionsHub({
   productions, selectedProductionId, onSelect, onOpen, onChanged, tagRevision,
+  team, currentUserHandle,
 }: HubProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [statuses, setStatuses] = useState<string[]>([]);
   const [scripts, setScripts] = useState<Record<string, LinkedScript | null>>({});
+  const [requirements, setRequirements] = useState<Record<string, Requirement[]>>({});
+  // Bumped whenever the board changes something, so the cards' counts follow.
+  const [requirementRevision, setRequirementRevision] = useState(0);
 
   useEffect(() => {
     fetchProductionVocabulary()
@@ -411,6 +438,22 @@ export function ProductionsHub({
     });
     return () => { live = false; };
   }, [productionIds]);
+
+  useEffect(() => {
+    let live = true;
+    Promise.all(
+      productions.map(p =>
+        fetchRequirements({ production_id: p.production_id })
+          .then(rows => [p.production_id, rows] as const)
+          // A production whose requirements cannot be read shows no count
+          // rather than a wrong one.
+          .catch(() => [p.production_id, [] as Requirement[]] as const),
+      ),
+    ).then(pairs => {
+      if (live) setRequirements(Object.fromEntries(pairs));
+    });
+    return () => { live = false; };
+  }, [productionIds, tagRevision, requirementRevision]);
 
   const selected = productions.find(p => p.production_id === selectedProductionId);
 
@@ -453,6 +496,7 @@ export function ProductionsHub({
             key={p.production_id}
             production={p}
             script={scripts[p.production_id] ?? null}
+            requirements={requirements[p.production_id] ?? []}
             isSelected={p.production_id === selectedProductionId}
             statuses={statuses.length ? statuses : [p.status ?? 'Active']}
             onSelect={() => onSelect(p.production_id)}
@@ -477,6 +521,20 @@ export function ProductionsHub({
           {/* The board reads a whole production, not one shoot day, which is
               why it belongs here rather than beside the day-by-day views. */}
           <ProductionDashboardPanel productionId={selected.production_id} reloadKey={tagRevision} />
+
+          <div className="flex items-baseline gap-2 pt-2">
+            <h3 className="text-sm font-bold text-white">Requirements</h3>
+            <span className="text-xs text-gray-400">
+              What {selected.name} still owes, across every shoot day
+            </span>
+          </div>
+          <RequirementsBoard
+            productionId={selected.production_id}
+            team={team}
+            currentUserHandle={currentUserHandle}
+            reloadKey={tagRevision + requirementRevision}
+            onChanged={() => setRequirementRevision(v => v + 1)}
+          />
         </div>
       )}
     </section>
