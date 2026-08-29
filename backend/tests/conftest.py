@@ -17,6 +17,22 @@ def isolated_character_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def close_spine_connections():
+    """
+    Closes the spine store's held connections after every test.
+
+    That store keeps one connection per database file open, which is what makes
+    an append cost a fraction of a millisecond. Each test points at a fresh
+    temporary file, so without this the suite would finish holding one open
+    connection per test.
+    """
+    from backend.app.spine import event_store
+
+    yield
+    event_store.close_all()
+
+
+@pytest.fixture(autouse=True)
 def isolated_ai_cache(tmp_path, monkeypatch):
     """
     Points the AI response cache at a temporary database for every test.
