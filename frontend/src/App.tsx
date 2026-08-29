@@ -1076,6 +1076,8 @@ export default function App() {
             }}
             onChanged={loadProductions}
             tagRevision={tagRevision}
+            team={teamUsers}
+            currentUserHandle={currentUser.handle}
           />
         </main>
       )}
