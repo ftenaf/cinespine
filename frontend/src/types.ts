@@ -169,6 +169,9 @@ export interface SequenceRecord {
   location: string;
   description: string;
   shoot_day: string;
+  /** Every day this sequence was shot, this row's day included. More than one
+   *  means the row in front of you is part of the sequence, not all of it. */
+  shoot_days?: string[];
   date: string;
   cards: string[];
   camera_cards: string[];
