@@ -1974,19 +1974,22 @@ def clear_tag(
 # ==========================================
 @router.get("/notifications")
 def get_notifications(user_handle: str, unread_only: bool = False):
-    notifs = spine_writer.list_notifications(recipient_handle=user_handle, unread_only=unread_only)
-    unread_all = spine_writer.list_notifications(recipient_handle=user_handle, unread_only=True)
     return {
         "recipient_handle": user_handle,
-        "unread_count": len(unread_all),
-        "notifications": notifs,
+        # Counted in SQL rather than by listing every alert and measuring the
+        # list: the badge is polled and does not need the messages.
+        "unread_count": spine_writer.count_unread_notifications(user_handle),
+        "notifications": spine_writer.list_notifications(
+            recipient_handle=user_handle, unread_only=unread_only
+        ),
     }
 
 
 @router.post("/notifications/{notification_id}/read")
 def mark_notification_read(notification_id: str):
-    success = spine_writer.mark_notification_read(notification_id)
-    return {"status": "READ", "notification_id": notification_id, "success": success}
+    if not spine_writer.mark_notification_read(notification_id):
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"status": "READ", "notification_id": notification_id, "success": True}
 
 
 @router.post("/notifications/read-all")
