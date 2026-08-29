@@ -2099,6 +2099,10 @@ class GeneratePortraitRequest(BaseModel):
     role: str = "Key Character"
     dop_preset: str = "Roger Deakins"
     economy_mode: bool = False
+    # Which screenplay this character belongs to, so the portrait can be kept.
+    # Optional: a caller generating one ad hoc, against no stored screenplay,
+    # still gets its image back.
+    script_id: Optional[str] = None
 
 
 @router.post("/script/characters/update")
@@ -2159,12 +2163,30 @@ async def generate_character_portrait(req: GeneratePortraitRequest):
         economy_mode=req.economy_mode
     )
 
+    # Kept against the character, not just handed back. A portrait costs a
+    # generation to make and is the whole point of the cast profiler -- the
+    # same face in every frame -- so leaving it in the browser's memory meant
+    # a reload threw away both the likeness and the credit spent on it.
+    saved = False
+    if req.script_id:
+        saved = spine_writer.update_character_profile(
+            script_id=req.script_id,
+            character_id=req.character_id,
+            updates={
+                "avatar_url": res["image_url"],
+                "portrait_prompt": res["compiled_prompt"],
+            },
+        ) is not None
+
     return {
         "character_id": req.character_id,
         "character_name": req.character_name,
         "image_url": res["image_url"],
         "compiled_prompt": res["compiled_prompt"],
-        "provider": res.get("provider", "AI Generative Engine")
+        "provider": res.get("provider", "AI Generative Engine"),
+        # False when there was no screenplay to file it under, so the client
+        # does not report a save that did not happen.
+        "saved": saved,
     }
 
 

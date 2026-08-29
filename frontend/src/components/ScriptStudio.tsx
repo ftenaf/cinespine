@@ -956,15 +956,22 @@ export const ScriptStudio: React.FC = () => {
           facial_features: char.facial_features,
           role: char.role,
           dop_preset: selectedPreset,
-          economy_mode: economyMode
+          economy_mode: economyMode,
+          // Named so the server can keep the portrait against the character
+          // rather than handing it back to be lost on the next reload.
+          script_id: scriptId
         })
       });
       if (res.ok) {
         const data = await res.json();
         const updatedChar = { ...char, avatar_url: data.image_url, portrait_prompt: data.compiled_prompt };
         setCharacters(prev => prev.map(c => (c.id === char.id ? updatedChar : c)));
-        setCharSaveSuccess(char.id);
-        setTimeout(() => setCharSaveSuccess(null), 3000);
+        // Only claim it was saved when it was. The portrait appearing is its
+        // own confirmation that it generated.
+        if (data.saved) {
+          setCharSaveSuccess(char.id);
+          setTimeout(() => setCharSaveSuccess(null), 3000);
+        }
       }
     } catch (err) {
       console.error('Failed to generate portrait:', err);
