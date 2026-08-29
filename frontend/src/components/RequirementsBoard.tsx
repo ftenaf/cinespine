@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, Ban, Check, ChevronDown, ChevronRight, Loader2, Search, Trash2,
-  UserRound,
+  AlertTriangle, Ban, Check, ChevronDown, ChevronRight, History, Loader2, Search,
+  Trash2, UserRound,
 } from 'lucide-react';
-import { Requirement, RequirementStatus, UserProfile } from '../types';
+import { Requirement, RequirementEvent, RequirementStatus, UserProfile } from '../types';
 import {
-  deleteRequirement, fetchRequirements, resolveRequirement, updateRequirement,
+  deleteRequirement, fetchRequirementHistory, fetchRequirements, resolveRequirement,
+  updateRequirement,
 } from '../api';
 import { elapsed, isOutstanding, sortByUrgency, summarizeRequirements } from '../requirementsBoard';
 
@@ -71,6 +72,76 @@ function Chip({ label, count, isActive, onClick, tone }: {
   );
 }
 
+/**
+ * What one change did, in a line.
+ *
+ * The event carries the fields that moved rather than the whole state, so this
+ * says what the actor actually did instead of leaving the reader to diff two
+ * rows and guess which difference was intended.
+ */
+function describeEvent(event: RequirementEvent): string {
+  const moved = Object.entries(event.changes ?? {});
+  switch (event.action) {
+    case 'created':
+      return 'raised it';
+    case 'resolved':
+      return event.note ? `resolved it: ${event.note}` : 'resolved it';
+    case 'reopened':
+      return 're-opened it';
+    case 'deleted':
+      return 'deleted it';
+    case 'reassigned': {
+      const handover = event.changes?.assigned_to;
+      return handover ? `handed it to ${handover[1] || 'nobody'}` : 'handed it on';
+    }
+    case 'status_changed': {
+      const status = event.changes?.status;
+      return status ? `moved it from ${status[0]} to ${status[1]}` : 'changed the status';
+    }
+    default:
+      return moved.length
+        ? `changed ${moved.map(([field]) => field.replace(/_/g, ' ')).join(', ')}`
+        : 'saved it';
+  }
+}
+
+function RequirementTrail({ requirementId }: { requirementId: string }) {
+  const [entries, setEntries] = useState<RequirementEvent[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    fetchRequirementHistory(requirementId)
+      .then(rows => { if (live) setEntries(rows); })
+      .catch(e => { if (live) setError(e?.detail ?? e?.message ?? 'Could not read the history'); });
+    return () => { live = false; };
+  }, [requirementId]);
+
+  if (error) return <p className="text-[11px] text-red-300">{error}</p>;
+  if (entries === null) {
+    return (
+      <p className="flex items-center gap-1.5 text-[11px] text-gray-500">
+        <Loader2 className="w-3 h-3 animate-spin" aria-hidden /> Reading the history&hellip;
+      </p>
+    );
+  }
+
+  return (
+    <ol className="space-y-1 border-l border-slate-800 pl-3">
+      {entries.map(entry => (
+        <li key={entry.event_id} className="text-[11px] text-gray-400">
+          <span className="text-gray-200">{entry.actor || 'somebody'}</span>{' '}
+          {describeEvent(entry)}{' '}
+          <span className="text-gray-600">{elapsed(entry.created_at)} ago</span>
+        </li>
+      ))}
+      {entries.length === 0 && (
+        <li className="text-[11px] text-gray-500">Nothing recorded.</li>
+      )}
+    </ol>
+  );
+}
+
 function RequirementRow({ requirement, team, currentUserHandle, onChanged }: {
   requirement: Requirement;
   team: UserProfile[];
@@ -83,6 +154,7 @@ function RequirementRow({ requirement, team, currentUserHandle, onChanged }: {
   const [note, setNote] = useState('');
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showTrail, setShowTrail] = useState(false);
 
   const run = async (work: () => Promise<unknown>) => {
     setIsBusy(true);
@@ -262,7 +334,7 @@ function RequirementRow({ requirement, team, currentUserHandle, onChanged }: {
                 <span className="flex items-center gap-2 text-[11px] text-gray-300">
                   Delete it?
                   <button
-                    onClick={() => run(() => deleteRequirement(requirement.requirement_id))}
+                    onClick={() => run(() => deleteRequirement(requirement.requirement_id, currentUserHandle))}
                     className="text-red-400 hover:text-red-300 font-semibold"
                   >
                     Yes
@@ -280,8 +352,19 @@ function RequirementRow({ requirement, team, currentUserHandle, onChanged }: {
                   <Trash2 className="w-3 h-3" /> Delete
                 </button>
               )}
+
+              {/* Every transition is kept, so the question a stale blocker
+                  raises -- who parked this, and when -- has an answer. */}
+              <button
+                onClick={() => setShowTrail(v => !v)}
+                className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-200 px-2 py-1 rounded-lg hover:bg-white/5"
+              >
+                <History className="w-3 h-3" /> {showTrail ? 'Hide history' : 'History'}
+              </button>
             </div>
           )}
+
+          {showTrail && <RequirementTrail requirementId={requirement.requirement_id} />}
         </div>
       )}
     </div>

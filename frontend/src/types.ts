@@ -229,6 +229,22 @@ export interface Requirement {
   updated_at: string;
 }
 
+/** One recorded transition of a requirement. Append-only; never edited. */
+export interface RequirementEvent {
+  event_id: string;
+  requirement_id: string;
+  production_id: string;
+  action: 'created' | 'updated' | 'reassigned' | 'status_changed' | 'resolved' | 'reopened' | 'deleted';
+  status: string;
+  priority: string;
+  assigned_to: string;
+  /** What moved, as {field: [before, after]}. */
+  changes: Record<string, [unknown, unknown]>;
+  note?: string | null;
+  actor?: string | null;
+  created_at: string;
+}
+
 export interface NotificationItem {
   notification_id: string;
   production_id: string;

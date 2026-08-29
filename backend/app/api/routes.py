@@ -15,6 +15,7 @@ from backend.app.streaming.dispatcher import IngestionDispatcher
 from backend.app.streaming.broker import event_broker, SpineLiveEvent
 from backend.app.spine.writer import SpineWriter
 from backend.app.spine import production_store
+from backend.app.spine import requirement_store
 from backend.app.spine import tag_store
 from backend.app.reconciliation.engine import ReconciliationEngine
 from backend.app.agents.mcp_server import ClickHouseMCPServer, GeminiDiscrepancyAssistant
@@ -1596,6 +1597,27 @@ def list_requirements(
     )
 
 
+@router.get("/requirements/activity")
+def requirement_activity(production_id: str, limit: int = 200):
+    """
+    Every requirement change on a production, newest first.
+
+    Declared above the by-id read so that 'activity' is not taken for an id.
+    """
+    return spine_writer.requirement_history(production_id=production_id, limit=limit)
+
+
+@router.get("/requirements/{requirement_id}/history")
+def requirement_history(requirement_id: str, limit: int = 200):
+    """
+    How this requirement got where it is -- who blocked it, who handed it on.
+
+    Kept even for a requirement that has since been deleted: a requirement that
+    was raised and then removed is a thing that happened.
+    """
+    return spine_writer.requirement_history(requirement_id=requirement_id, limit=limit)
+
+
 @router.get("/requirements/{requirement_id}")
 def get_requirement(requirement_id: str):
     req = spine_writer.get_requirement(requirement_id)
@@ -1627,7 +1649,10 @@ def update_requirement(requirement_id: str, updates: UpdateRequirementRequest):
     if not actor.startswith("@"):
         actor = f"@{actor}"
 
-    updated = spine_writer.update_requirement(requirement_id, update_data)
+    try:
+        updated = spine_writer.update_requirement(requirement_id, update_data, actor=actor)
+    except requirement_store.UnknownRequirementValue as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if not updated:
         raise HTTPException(status_code=404, detail="Requirement not found")
 
@@ -1743,15 +1768,17 @@ def resolve_requirement(requirement_id: str, body: ResolveRequirementRequest):
 
 
 @router.delete("/requirements/{requirement_id}")
-def delete_requirement(requirement_id: str):
-    success = spine_writer.delete_requirement(requirement_id)
-    if not success:
+def delete_requirement(requirement_id: str, deleted_by: str = "@user"):
+    existing = spine_writer.get_requirement(requirement_id)
+    if not existing:
         raise HTTPException(status_code=404, detail="Requirement not found")
+
+    spine_writer.delete_requirement(requirement_id, actor=deleted_by)
     event_broker.publish_sync(SpineLiveEvent(
         event_type="REQUIREMENT_DELETED",
-        production_id="ALL",
-        shoot_day="ALL",
-        actor_handle="@user",
+        production_id=existing["production_id"],
+        shoot_day=existing["shoot_day"],
+        actor_handle=deleted_by,
         target_type="requirement",
         target_id=requirement_id,
         target_label=requirement_id,

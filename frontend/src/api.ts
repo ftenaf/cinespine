@@ -290,11 +290,23 @@ export async function resolveRequirement(requirementId: string, resolutionNote: 
   return res.json();
 }
 
-export async function deleteRequirement(requirementId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/requirements/${requirementId}`, {
+export async function deleteRequirement(requirementId: string, deletedBy?: string): Promise<any> {
+  const q = new URLSearchParams();
+  // Named, because the deletion itself is kept in the trail: an anonymous last
+  // entry is the one nobody can follow up on.
+  if (deletedBy) q.set('deleted_by', deletedBy);
+  const res = await fetch(`${API_BASE}/requirements/${requirementId}?${q.toString()}`, {
     method: 'DELETE',
   });
   if (!res.ok) throw new Error('Failed to delete requirement');
+  return res.json();
+}
+
+export async function fetchRequirementHistory(
+  requirementId: string,
+): Promise<import('./types').RequirementEvent[]> {
+  const res = await fetch(`${API_BASE}/requirements/${requirementId}/history`);
+  if (!res.ok) throw await apiError(res, 'Failed to read the requirement history');
   return res.json();
 }
 
