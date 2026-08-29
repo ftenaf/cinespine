@@ -11,6 +11,7 @@ from typing import Dict, Any, List, Optional
 from backend.app.spine import character_store
 from backend.app.spine import production_store
 from backend.app.spine import requirement_store
+from backend.app.spine import notification_store
 from backend.app.spine import tag_store
 from backend.app.spine import clickhouse
 from backend.app.streaming.models import DEFAULT_TEAM_USERS
@@ -91,7 +92,6 @@ class SpineWriter:
         self._documents: Dict[str, Dict[str, Any]] = {}
         self._discrepancy_resolutions: Dict[str, Dict[str, Any]] = {}
         self._team_users: Dict[str, Dict[str, Any]] = {k: dict(v) for k, v in DEFAULT_TEAM_USERS.items()}
-        self._notifications: Dict[str, Dict[str, Any]] = {}
         # Rows waiting to go to ClickHouse. One insert per event turned a
         # 72-event ingestion from 0.8s into 7.4s and a 1991-event one into
         # minutes: each insert is a round trip and a new part on the server.
@@ -858,78 +858,30 @@ class SpineWriter:
     # ==========================================
     def create_notification(self, notification: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Creates and stores an alert notification for a user.
-        """
-        notif_id = notification.get("notification_id") or f"notif_{uuid.uuid4().hex[:10]}"
-        now_ts = datetime.now(timezone.utc).isoformat()
-        recipient = notification.get("recipient_handle", "").strip()
-        if recipient and not recipient.startswith("@"):
-            recipient = f"@{recipient}"
-        actor = notification.get("actor_handle", "").strip()
-        if actor and not actor.startswith("@"):
-            actor = f"@{actor}"
+        Sends an alert to one person.
 
-        notif = {
-            "notification_id": notif_id,
-            "production_id": notification.get("production_id", "DEMO_PRODUCTION"),
-            "recipient_handle": recipient,
-            "actor_handle": actor,
-            "notification_type": notification.get("notification_type", "ASSIGNED"),
-            "requirement_id": notification.get("requirement_id", ""),
-            "title": notification.get("title", ""),
-            "message": notification.get("message", ""),
-            "target_type": notification.get("target_type", "take"),
-            "target_id": str(notification.get("target_id", "")),
-            "target_label": notification.get("target_label", ""),
-            "is_read": False,
-            "created_at": notification.get("created_at") or now_ts,
-        }
-        self._notifications[notif_id] = notif
-        return notif
+        Stored rather than remembered: held in memory this was the one part of
+        the exchange that did not survive a restart. The requirement stayed and
+        its trail stayed, while the alert telling somebody it was now theirs
+        quietly vanished, and an alert nobody can be shown was never sent.
+        """
+        return notification_store.create(notification)
+
+    def get_notification(self, notification_id: str) -> Optional[Dict[str, Any]]:
+        return notification_store.get(notification_id)
 
     def list_notifications(
         self,
         recipient_handle: str,
         unread_only: bool = False,
     ) -> List[Dict[str, Any]]:
-        """
-        Lists notifications for a specific user handle, sorted newest first.
-        """
-        norm_r = recipient_handle.strip().lower()
-        if not norm_r.startswith("@"):
-            norm_r = f"@{norm_r}"
+        return notification_store.list_for(recipient_handle, unread_only=unread_only)
 
-        notifs = [
-            n for n in self._notifications.values()
-            if n.get("recipient_handle", "").lower() == norm_r
-        ]
-        if unread_only:
-            notifs = [n for n in notifs if not n.get("is_read")]
-
-        return sorted(notifs, key=lambda x: x.get("created_at", ""), reverse=True)
+    def count_unread_notifications(self, recipient_handle: str) -> int:
+        return notification_store.unread_count(recipient_handle)
 
     def mark_notification_read(self, notification_id: str) -> bool:
-        """
-        Marks a specific notification as read.
-        """
-        if notification_id in self._notifications:
-            self._notifications[notification_id]["is_read"] = True
-            return True
-        return False
+        return notification_store.mark_read(notification_id)
 
     def mark_all_notifications_read(self, recipient_handle: str) -> int:
-        """
-        Marks all unread notifications for a user as read. Returns count of updated alerts.
-        """
-        norm_r = recipient_handle.strip().lower()
-        if not norm_r.startswith("@"):
-            norm_r = f"@{norm_r}"
-
-        count = 0
-        for n in self._notifications.values():
-            if n.get("recipient_handle", "").lower() == norm_r and not n.get("is_read"):
-                n["is_read"] = True
-                count += 1
-        return count
-
-
+        return notification_store.mark_all_read(recipient_handle)
