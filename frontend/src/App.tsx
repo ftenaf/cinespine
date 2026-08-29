@@ -2287,6 +2287,30 @@ export default function App() {
                             <Calendar className="w-3 h-3 text-blue-400" />
                             {seq.shoot_day}
                           </div>
+                          {/* A scene is rarely finished in one go. Without the
+                              other days, this row reads as if the sequence
+                              began and ended here. */}
+                          {(seq.shoot_days?.length ?? 0) > 1 && (
+                            <div className="mt-1 space-y-0.5">
+                              <span className="text-[9px] text-gray-500 uppercase tracking-wide">
+                                Also shot on
+                              </span>
+                              <div className="flex flex-wrap gap-1">
+                                {seq.shoot_days!
+                                  .filter(d => d !== selectedDay)
+                                  .map(d => (
+                                    <button
+                                      key={d}
+                                      onClick={() => setSelectedDay(d)}
+                                      title={`Show day ${d} for this production`}
+                                      className="px-1.5 py-0.5 rounded bg-blue-950/60 border border-blue-500/40 text-blue-300 hover:text-white hover:border-blue-400 text-[10px] font-bold transition"
+                                    >
+                                      Day {d}
+                                    </button>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
                         </td>
 
                         {/* 5. DATE */}

@@ -1314,6 +1314,36 @@ def unresolve_discrepancy(discrepancy_id: str):
 
 
 
+def _sequence_shoot_days(production_id: str) -> Dict[str, List[str]]:
+    """
+    Every day each sequence was shot, across the whole production.
+
+    A scene is rarely finished in one go: it is covered over as many days as it
+    takes, and the second half may be shot weeks after the first. The matrix is
+    a day's log and stays one, but a row that says only "Day 31" reads as if
+    the sequence began and ended there -- so each row also carries the other
+    days it runs to, and someone reconciling it knows there is more to find.
+    """
+    days: Dict[str, set] = {}
+    for event in spine_writer.get_events(production_id=production_id):
+        day = event.get("shoot_day")
+        if not day:
+            continue
+        payload = event.get("payload") or {}
+        # The same key the rows are grouped under, so the two agree.
+        sequence = payload.get("scene") or (
+            str(payload.get("slate") or "").split("/")[0] or None
+        )
+        if not sequence:
+            continue
+        days.setdefault(str(sequence), set()).add(str(day))
+
+    return {
+        sequence: sorted(found, key=lambda d: (not d.isdigit(), int(d) if d.isdigit() else d))
+        for sequence, found in days.items()
+    }
+
+
 @router.get("/sequences")
 def get_sequences(production_id: str = "DEMO_PRODUCTION", shoot_day: str = "31") -> List[Dict[str, Any]]:
     """
@@ -1343,6 +1373,7 @@ def get_sequences(production_id: str = "DEMO_PRODUCTION", shoot_day: str = "31")
     takes = get_takes(production_id=production_id, shoot_day=shoot_day)
     docs = list_documents(production_id=production_id, shoot_day=shoot_day)
     discrepancies = get_discrepancies(production_id=production_id, shoot_day=shoot_day)
+    days_by_sequence = _sequence_shoot_days(production_id)
 
     # Document map for quick resolution
     doc_map: Dict[str, Optional[Dict[str, str]]] = {
@@ -1440,6 +1471,10 @@ def get_sequences(production_id: str = "DEMO_PRODUCTION", shoot_day: str = "31")
             "location": loc,
             "description": desc_str,
             "shoot_day": f"Day {shoot_day}",
+            # Every day this sequence was shot, this one included. One entry is
+            # the ordinary case; more than one means the row in front of you is
+            # part of the sequence rather than all of it.
+            "shoot_days": days_by_sequence.get(seq, [str(shoot_day)]),
             "date": s_takes[0].get("recording_date") or "28/07/2026",
             "cards": all_cards,
             "camera_cards": cam_cards,
