@@ -121,7 +121,10 @@ function ProductionCard({
     }
   };
 
-  const isEmpty = production.total_events === 0;
+  // Requirements outlive the events now, so a production with no paperwork in
+  // the spine can still be holding work. Asking only about events promised a
+  // delete the server would refuse.
+  const isEmpty = production.total_events === 0 && requirements.length === 0;
 
   return (
     <div

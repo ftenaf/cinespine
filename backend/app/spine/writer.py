@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional
 
 from backend.app.spine import character_store
 from backend.app.spine import production_store
+from backend.app.spine import requirement_store
 from backend.app.spine import tag_store
 from backend.app.spine import clickhouse
 from backend.app.streaming.models import DEFAULT_TEAM_USERS
@@ -90,7 +91,6 @@ class SpineWriter:
         self._documents: Dict[str, Dict[str, Any]] = {}
         self._discrepancy_resolutions: Dict[str, Dict[str, Any]] = {}
         self._team_users: Dict[str, Dict[str, Any]] = {k: dict(v) for k, v in DEFAULT_TEAM_USERS.items()}
-        self._requirements: Dict[str, Dict[str, Any]] = {}
         self._notifications: Dict[str, Dict[str, Any]] = {}
         # Rows waiting to go to ClickHouse. One insert per event turned a
         # 72-event ingestion from 0.8s into 7.4s and a 1991-event one into
@@ -745,45 +745,18 @@ class SpineWriter:
     # ==========================================
     def create_requirement(self, requirement: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Creates and stores a requirement attached to a Scene, Shot, or Take.
-        """
-        req_id = requirement.get("requirement_id") or f"req_{uuid.uuid4().hex[:10]}"
-        now_ts = datetime.now(timezone.utc).isoformat()
-        assigned = requirement.get("assigned_to", "").strip()
-        if assigned and not assigned.startswith("@"):
-            assigned = f"@{assigned}"
-        created_by = requirement.get("created_by", "@user").strip()
-        if created_by and not created_by.startswith("@"):
-            created_by = f"@{created_by}"
+        Raises a requirement against a scene, shot or take.
 
-        rec = {
-            "requirement_id": req_id,
-            "production_id": requirement.get("production_id", "DEMO_PRODUCTION"),
-            "shoot_day": str(requirement.get("shoot_day", "1")),
-            "target_type": requirement.get("target_type", "take"),
-            "target_id": str(requirement.get("target_id", "")),
-            "target_label": requirement.get("target_label") or f"{requirement.get('target_type', 'target').capitalize()} {requirement.get('target_id', '')}",
-            "title": requirement.get("title", ""),
-            "description": requirement.get("description", ""),
-            "priority": requirement.get("priority", "medium"),
-            "category": requirement.get("category", "general"),
-            "created_by": created_by,
-            "assigned_to": assigned,
-            "status": requirement.get("status", "open"),
-            "resolution_note": requirement.get("resolution_note"),
-            "resolved_by": requirement.get("resolved_by"),
-            "resolved_at": requirement.get("resolved_at"),
-            "created_at": requirement.get("created_at") or now_ts,
-            "updated_at": now_ts,
-        }
-        self._requirements[req_id] = rec
-        return rec
+        Stored rather than remembered: a requirement outlives the day it was
+        raised on -- that is what raising one is for -- and keeping it in
+        process memory wiped a production's outstanding work on every restart,
+        while the tags and the script link beside it survived.
+        """
+        record = requirement_store.create(requirement)
+        return self._mirror_requirement_event(record)
 
     def get_requirement(self, requirement_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Retrieves a single requirement by ID.
-        """
-        return self._requirements.get(requirement_id)
+        return requirement_store.get(requirement_id)
 
     def list_requirements(
         self,
@@ -795,46 +768,24 @@ class SpineWriter:
         created_by: Optional[str] = None,
         status: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """
-        Lists and filters requirements by production, shoot day, target, assignee, or status.
-        """
-        reqs = list(self._requirements.values())
-        if production_id:
-            reqs = [r for r in reqs if r.get("production_id") == production_id]
-        if shoot_day:
-            reqs = [r for r in reqs if str(r.get("shoot_day")) == str(shoot_day)]
-        if target_type:
-            reqs = [r for r in reqs if r.get("target_type") == target_type]
-        if target_id:
-            reqs = [r for r in reqs if str(r.get("target_id")) == str(target_id)]
-        if assigned_to:
-            norm_a = assigned_to if assigned_to.startswith("@") else f"@{assigned_to}"
-            reqs = [r for r in reqs if r.get("assigned_to", "").lower() == norm_a.lower()]
-        if created_by:
-            norm_c = created_by if created_by.startswith("@") else f"@{created_by}"
-            reqs = [r for r in reqs if r.get("created_by", "").lower() == norm_c.lower()]
-        if status:
-            reqs = [r for r in reqs if r.get("status") == status]
+        return requirement_store.list_requirements(
+            production_id=production_id,
+            shoot_day=shoot_day,
+            target_type=target_type,
+            target_id=target_id,
+            assigned_to=assigned_to,
+            created_by=created_by,
+            status=status,
+        )
 
-        # Return sorted by created_at descending
-        return sorted(reqs, key=lambda x: x.get("created_at", ""), reverse=True)
-
-    def update_requirement(self, requirement_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """
-        Updates fields of an existing requirement.
-        """
-        if requirement_id not in self._requirements:
-            return None
-
-        req = self._requirements[requirement_id]
-        for k, v in updates.items():
-            if k in ["title", "description", "priority", "category", "status", "assigned_to", "target_label"]:
-                if k == "assigned_to" and v and not str(v).startswith("@"):
-                    v = f"@{v}"
-                req[k] = v
-
-        req["updated_at"] = datetime.now(timezone.utc).isoformat()
-        return req
+    def update_requirement(
+        self,
+        requirement_id: str,
+        updates: Dict[str, Any],
+        actor: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        record = requirement_store.update(requirement_id, updates, actor=actor)
+        return self._mirror_requirement_event(record)
 
     def resolve_requirement(
         self,
@@ -842,30 +793,65 @@ class SpineWriter:
         resolution_note: str,
         resolved_by: str,
     ) -> Optional[Dict[str, Any]]:
+        record = requirement_store.resolve(requirement_id, resolution_note, resolved_by)
+        return self._mirror_requirement_event(record)
+
+    def delete_requirement(self, requirement_id: str, actor: Optional[str] = None) -> bool:
+        record = requirement_store.delete(requirement_id, actor=actor)
+        self._mirror_requirement_event(record)
+        return record is not None
+
+    def requirement_history(
+        self,
+        requirement_id: Optional[str] = None,
+        production_id: Optional[str] = None,
+        limit: int = 200,
+    ) -> List[Dict[str, Any]]:
+        return requirement_store.history(
+            requirement_id=requirement_id, production_id=production_id, limit=limit
+        )
+
+    def _mirror_requirement_event(
+        self, record: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
         """
-        Marks a requirement as resolved, records resolution note and resolver.
+        Copies a requirement change to the analytical spine when there is one,
+        and hands the record back without the private event field.
+
+        SQLite has already recorded it by this point, so a ClickHouse that is
+        down costs the analytics copy and nothing else. An edit that changed
+        nothing carries no event and mirrors nothing.
         """
-        if requirement_id not in self._requirements:
+        if record is None:
             return None
+        event = record.pop("_event", None)
+        if not event or not self.mirror_available():
+            return record
 
-        norm_r = resolved_by if resolved_by.startswith("@") else f"@{resolved_by}"
-        now_ts = datetime.now(timezone.utc).isoformat()
-        req = self._requirements[requirement_id]
-        req["status"] = "resolved"
-        req["resolution_note"] = resolution_note
-        req["resolved_by"] = norm_r
-        req["resolved_at"] = now_ts
-        req["updated_at"] = now_ts
-        return req
-
-    def delete_requirement(self, requirement_id: str) -> bool:
-        """
-        Deletes a requirement record.
-        """
-        if requirement_id in self._requirements:
-            del self._requirements[requirement_id]
-            return True
-        return False
+        self._try_insert(
+            "cinespine.requirement_events",
+            [[
+                event["event_id"],
+                event["requirement_id"],
+                event["production_id"],
+                event["action"],
+                event.get("status") or "",
+                event.get("priority") or "",
+                event.get("assigned_to") or "",
+                json.dumps(event.get("changes") or {}),
+                event.get("note") or "",
+                event.get("actor") or "",
+                # SQLite's own timestamp, not the server's clock: the two
+                # copies of the trail have to agree on the order.
+                _clickhouse_datetime(event.get("created_at")),
+            ]],
+            column_names=[
+                "event_id", "requirement_id", "production_id", "action",
+                "status", "priority", "assigned_to", "changes_json",
+                "note", "actor", "created_at",
+            ],
+        )
+        return record
 
     # ==========================================
     # Real-Time Alerts & Notification Center

@@ -68,7 +68,33 @@ CREATE TABLE IF NOT EXISTS cinespine.editorial_tag_events (
 ) ENGINE = MergeTree()
 ORDER BY (production_id, target_type, target_id, created_at);
 
--- 4. Audit Discrepancies Table
+-- 4. Requirement History
+--
+-- Same split as the tag trail above, for the same reason. What is owed right
+-- now lives in SQLite: a handful of mutable rows, read one at a time and as a
+-- list per production, which is not a shape this engine is good at. What is
+-- mirrored here is the trail, where the questions are analytical -- how long
+-- does a blocker sit, which department is the bottleneck, what got re-opened
+-- -- and the table only ever grows.
+CREATE TABLE IF NOT EXISTS cinespine.requirement_events (
+    event_id       String,
+    requirement_id String,
+    production_id  String,
+    action         String,
+    status         String,
+    priority       String,
+    assigned_to    String,
+    changes_json   String,
+    note           String,
+    actor          String,
+    -- Millisecond resolution and written by the caller, matching the tag
+    -- trail: at second resolution two changes made in the same second come
+    -- back unorderable, and the order is the thing a trail exists for.
+    created_at     DateTime64(3)
+) ENGINE = MergeTree()
+ORDER BY (production_id, requirement_id, created_at);
+
+-- 5. Audit Discrepancies Table
 CREATE TABLE IF NOT EXISTS cinespine.audit_discrepancies (
     discrepancy_id UUID,
     production_id LowCardinality(String),
