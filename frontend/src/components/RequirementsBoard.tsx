@@ -142,7 +142,16 @@ function RequirementTrail({ requirementId }: { requirementId: string }) {
   );
 }
 
-function RequirementRow({ requirement, team, currentUserHandle, onChanged }: {
+/**
+ * One requirement, with everything that can be done to it.
+ *
+ * Exported so the slate navigator shows the same controls as the production
+ * board rather than its own read-only card: a requirement raised on a take is
+ * the same object wherever it is looked at, and being able to resolve it in
+ * one place and only stare at it in another is the kind of difference nobody
+ * can hold in their head.
+ */
+export function RequirementRow({ requirement, team, currentUserHandle, onChanged }: {
   requirement: Requirement;
   team: UserProfile[];
   currentUserHandle: string;

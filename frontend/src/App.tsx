@@ -29,6 +29,7 @@ import {
 import { ScriptStudio } from './components/ScriptStudio';
 import { EditorialTagBar } from './components/EditorialTagBar';
 import { ScriptSceneButton } from './components/ScriptContextPanel';
+import { RequirementRow } from './components/RequirementsBoard';
 import { ProductionsHub } from './components/ProductionsHub';
 
 
@@ -2153,59 +2154,24 @@ export default function App() {
                             No requirements assigned to this take. Click "+ Add Requirement" to assign one to an editor, mixer, or VFX artist.
                           </p>
                         ) : (
+                          /* The same controls the production board has, not a
+                             read-only copy of them. A requirement raised on a
+                             take is the same object wherever it is looked at,
+                             and being able to hand it on in one place and only
+                             stare at it in another is a difference nobody can
+                             hold in their head. */
                           <div className="space-y-2">
                             {currentFocusTake.requirements.map(req => (
-                              <div
+                              <RequirementRow
                                 key={req.requirement_id}
-                                className={`p-3 rounded-lg border text-xs space-y-1.5 ${
-                                  req.status === 'resolved'
-                                    ? 'bg-spine-success/20 border-spine-success/30 text-gray-200'
-                                    : 'bg-slate-900 border-slate-800 text-gray-100'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2">
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono uppercase ${
-                                      req.status === 'resolved'
-                                        ? 'bg-spine-success/20 text-spine-success border border-spine-success/40'
-                                        : 'bg-spine-warning/20 text-spine-warning border border-spine-warning/40'
-                                    }`}>
-                                      {req.status}
-                                    </span>
-                                    <span className="font-bold text-white text-xs">{req.title}</span>
-                                  </div>
-                                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-spine-900/60 text-spine-accent border border-spine-accent/30">
-                                    {req.priority.toUpperCase()}
-                                  </span>
-                                </div>
-                                <p className="text-[11px] text-gray-200 leading-relaxed">{req.description}</p>
-                                <div className="text-[10px] text-gray-300 font-mono flex items-center justify-between pt-1 border-t border-slate-800/60">
-                                  <span>Created by <strong className="text-spine-accent">{req.created_by}</strong> → Assigned to <strong className="text-white">{req.assigned_to}</strong></span>
-                                  {req.status !== 'resolved' && (
-                                    <button
-                                      onClick={() => {
-                                        setSelectedReqForResolve(req);
-                                        setReqResolutionNote('');
-                                        setViewingReqsList({
-                                          target_label: `Take ${currentFocusTake.slate} T${currentFocusTake.take_id}`,
-                                          target_type: 'take',
-                                          target_id: `${currentFocusTake.slate}_${currentFocusTake.take_id}`,
-                                          requirements: currentFocusTake.requirements || [],
-                                        });
-                                      }}
-                                      className="text-spine-success hover:text-spine-success font-bold underline flex items-center gap-1"
-                                    >
-                                      <Check className="w-3 h-3" />
-                                      Resolve Requirement
-                                    </button>
-                                  )}
-                                </div>
-                                {req.status === 'resolved' && (
-                                  <div className="mt-1.5 p-2 rounded bg-spine-success/40 border border-spine-success/30 text-[10px] text-spine-success">
-                                    <strong>✓ Resolved by {req.resolved_by}:</strong> "{req.resolution_note}"
-                                  </div>
-                                )}
-                              </div>
+                                requirement={req}
+                                team={teamUsers}
+                                currentUserHandle={currentUser.handle}
+                                onChanged={() => {
+                                  loadSpineData();
+                                  loadUsersAndNotifications(currentUser.handle);
+                                }}
+                              />
                             ))}
                           </div>
                         )}

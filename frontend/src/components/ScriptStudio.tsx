@@ -18,6 +18,7 @@ import {
   
   
   Plus,
+  Pencil,
   Trash2,
   Link2,
   Check,
@@ -845,6 +846,104 @@ export const ScriptStudio: React.FC = () => {
   };
 
   // Add a New Camera Angle to a Specific Shot Setup
+  // ------------------------------------------------------------------ //
+  // Setups: adding, editing and removing a shot
+  //
+  // The breakdown is a proposal, not a schedule. A DoP reads it and wants a
+  // setup the model did not think of, or wants one gone, or wants the framing
+  // called something else -- and until now the only way to change any of that
+  // was to re-run the whole scene and lose every camera and frame with it.
+  // ------------------------------------------------------------------ //
+
+  /** What a setup may be, so the list stays countable and sortable. */
+  const SHOT_SIZES = ['EWS', 'WS', 'MWS', 'MS', 'MCU', 'CU', 'ECU', 'OTS', 'POV', 'INSERT'];
+  const CAMERA_ANGLES = ['EYE_LEVEL', 'LOW_ANGLE', 'HIGH_ANGLE', 'DUTCH_ANGLE', 'OVERHEAD', 'WORM_EYE'];
+  const CAMERA_MOVEMENTS = ['STATIC', 'PAN_TILT', 'DOLLY_IN', 'DOLLY_OUT', 'SLIDER', 'HANDHELD', 'STEADICAM', 'CRANE'];
+
+  // Which setup is open for editing, by id. One at a time: two open forms in a
+  // narrow column is a column nobody can read.
+  const [editingShotId, setEditingShotId] = useState<string | null>(null);
+
+  const handleAddShotToScene = (scene: ScreenplayScene) => {
+    if (!scene) return;
+    const sceneShots = shotsMap[scene.scene_number] || [];
+    const shotNumber = String(sceneShots.length + 1);
+    const shotId = `SHOT-${scene.scene_number}-${Date.now().toString(36).toUpperCase()}`;
+
+    const newShot: ShotProposal = {
+      id: shotId,
+      scene_number: scene.scene_number,
+      shot_number: shotNumber,
+      shot_name: `SCENE ${scene.scene_number} - SHOT ${shotNumber}`,
+      shot_size: 'MS',
+      camera_angle: 'EYE_LEVEL',
+      camera_movement: 'STATIC',
+      dramatic_beat: '',
+      subject_description: '',
+      characters: scene.characters || [],
+      // The scene's own optics, so a hand-added setup matches the ones around
+      // it rather than resetting to a different look.
+      dop_spec: sceneShots[0]?.dop_spec || {
+        dop_preset: selectedPreset,
+        focal_length: customFocalLength,
+        aperture: customAperture,
+        color_temperature_k: customColorTemp,
+        lighting_ratio: customLightingRatio,
+        sensor_format: customSensorFormat,
+        lut_emulation: customLutEmulation,
+        lighting_style: '',
+        mood_notes: customMoodPrompt
+      } as DoPSpecification,
+      cameras: [{
+        id: `CAM-${shotId}-A`,
+        camera_letter: 'A',
+        camera_role: 'Primary Setup',
+        shot_size: 'MS',
+        focal_length: 50,
+        aperture: 'T2.8',
+        camera_angle: 'EYE_LEVEL',
+        camera_movement: 'STATIC',
+        coverage_description: 'Primary coverage.',
+        prompt: '',
+        status: 'pending'
+      }],
+      active_camera: 'A',
+      storyboard: { image_url: undefined, prompt: '', aspect_ratio: aspectRatio, status: 'pending' }
+    };
+
+    setShotsMap(prev => ({
+      ...prev,
+      [scene.scene_number]: [...sceneShots, newShot]
+    }));
+    setSelectedShotId(shotId);
+    setActiveCamLetter('A');
+    setEditingShotId(shotId);
+  };
+
+  const handleUpdateShotProperty = (shot: ShotProposal, patch: Partial<ShotProposal>) => {
+    setShotsMap(prev => {
+      const sceneShots = prev[shot.scene_number] || [];
+      return {
+        ...prev,
+        [shot.scene_number]: sceneShots.map(s => (s.id === shot.id ? { ...s, ...patch } : s))
+      };
+    });
+  };
+
+  const handleRemoveShotFromScene = (shot: ShotProposal) => {
+    setShotsMap(prev => {
+      const remaining = (prev[shot.scene_number] || []).filter(s => s.id !== shot.id);
+      // Move the selection off the setup that is going, rather than leaving
+      // the canvas pointed at something that no longer exists.
+      if (selectedShotId === shot.id) {
+        setSelectedShotId(remaining[0]?.id || null);
+        setActiveCamLetter(remaining[0]?.active_camera || 'A');
+      }
+      return { ...prev, [shot.scene_number]: remaining };
+    });
+    setEditingShotId(current => (current === shot.id ? null : current));
+  };
+
   const handleAddCameraToShot = (shot: ShotProposal) => {
     if (!shot) return;
     const existingLetters = (shot.cameras || []).map(c => c.camera_letter);
@@ -1808,9 +1907,24 @@ export const ScriptStudio: React.FC = () => {
               <div>
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider">Multi-Cam Setups</h3>
                 <p className="text-[11px] text-gray-300">
-                  {currentShots.length > 0 ? `${currentShots.length} Setups (3 Cams / Setup)` : 'No breakdown yet'}
+                  {currentShots.length > 0
+                    ? `${currentShots.length} ${currentShots.length === 1 ? 'setup' : 'setups'}`
+                    : 'No breakdown yet'}
                 </p>
               </div>
+              {/* The breakdown is a proposal. A DoP who wants a setup the model
+                  did not think of should not have to re-run the scene and lose
+                  every camera and frame with it. */}
+              {currentScene && (
+                <button
+                  onClick={() => handleAddShotToScene(currentScene)}
+                  title="Add a setup to this scene by hand"
+                  className="px-2 py-1 text-[10px] font-bold text-spine-accent hover:text-white bg-spine-900/40 hover:bg-spine-900/60 border border-spine-accent/30 rounded-lg flex items-center gap-1 transition shrink-0"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add Setup
+                </button>
+              )}
             </div>
 
             <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
@@ -1845,14 +1959,95 @@ export const ScriptStudio: React.FC = () => {
                         : 'bg-slate-900/50 border-slate-800 hover:border-slate-700'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-black text-white">{shot.shot_name}</span>
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-800 text-gray-200 rounded border border-slate-700">
-                        {shot.shot_size} • {shot.camera_angle}
-                      </span>
+                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                      <span className="text-xs font-black text-white min-w-0 truncate">{shot.shot_name}</span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-800 text-gray-200 rounded border border-slate-700">
+                          {shot.shot_size} • {shot.camera_angle}
+                        </span>
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            setSelectedShotId(shot.id);
+                            setEditingShotId(editingShotId === shot.id ? null : shot.id);
+                          }}
+                          title="Edit this setup"
+                          className="p-0.5 text-gray-500 hover:text-white transition"
+                        >
+                          <Pencil className="w-2.5 h-2.5" />
+                        </button>
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            handleRemoveShotFromScene(shot);
+                          }}
+                          title="Remove this setup"
+                          className="p-0.5 text-gray-500 hover:text-rose-400 transition"
+                        >
+                          <Trash2 className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
                     </div>
 
-                    <p className="text-[11px] text-gray-200 line-clamp-2">{shot.subject_description}</p>
+                    {editingShotId === shot.id ? (
+                      <div className="space-y-1.5 pb-1" onClick={e => e.stopPropagation()}>
+                        <input
+                          value={shot.shot_name}
+                          onChange={e => handleUpdateShotProperty(shot, { shot_name: e.target.value })}
+                          placeholder="Setup name"
+                          className="w-full bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-[11px] text-white"
+                        />
+                        <div className="grid grid-cols-3 gap-1">
+                          <select
+                            value={shot.shot_size}
+                            onChange={e => handleUpdateShotProperty(shot, { shot_size: e.target.value })}
+                            title="Shot size"
+                            className="bg-slate-950 border border-slate-700 rounded px-1 py-1 text-[10px] text-gray-200"
+                          >
+                            {SHOT_SIZES.map(v => <option key={v} value={v}>{v}</option>)}
+                          </select>
+                          <select
+                            value={shot.camera_angle}
+                            onChange={e => handleUpdateShotProperty(shot, { camera_angle: e.target.value })}
+                            title="Camera angle"
+                            className="bg-slate-950 border border-slate-700 rounded px-1 py-1 text-[10px] text-gray-200"
+                          >
+                            {CAMERA_ANGLES.map(v => <option key={v} value={v}>{v.replace(/_/g, ' ')}</option>)}
+                          </select>
+                          <select
+                            value={shot.camera_movement}
+                            onChange={e => handleUpdateShotProperty(shot, { camera_movement: e.target.value })}
+                            title="Camera movement"
+                            className="bg-slate-950 border border-slate-700 rounded px-1 py-1 text-[10px] text-gray-200"
+                          >
+                            {CAMERA_MOVEMENTS.map(v => <option key={v} value={v}>{v.replace(/_/g, ' ')}</option>)}
+                          </select>
+                        </div>
+                        <textarea
+                          value={shot.subject_description}
+                          onChange={e => handleUpdateShotProperty(shot, { subject_description: e.target.value })}
+                          rows={2}
+                          placeholder="What the camera is on"
+                          className="w-full bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-[10px] text-gray-200"
+                        />
+                        <input
+                          value={shot.dramatic_beat}
+                          onChange={e => handleUpdateShotProperty(shot, { dramatic_beat: e.target.value })}
+                          placeholder="Dramatic beat"
+                          className="w-full bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-[10px] text-gray-200"
+                        />
+                        <button
+                          onClick={() => setEditingShotId(null)}
+                          className="text-[10px] text-spine-accent hover:text-white font-semibold"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-gray-200 line-clamp-2">
+                        {shot.subject_description || <span className="text-gray-500 italic">No description yet.</span>}
+                      </p>
+                    )}
 
                     {/* Camera Switcher & Multi-Angle Manager */}
                     <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2 border-t border-slate-800/80">
@@ -1880,7 +2075,7 @@ export const ScriptStudio: React.FC = () => {
                                   e.stopPropagation();
                                   handleRemoveCameraFromShot(shot, cam.camera_letter);
                                 }}
-                                className="opacity-0 group-hover/cam:opacity-100 ml-0.5 p-0.5 text-gray-400 hover:text-rose-400 transition"
+                                className="ml-0.5 p-0.5 text-gray-600 hover:text-rose-400 transition"
                                 title={`Remove Camera ${cam.camera_letter}`}
                               >
                                 <X className="w-2.5 h-2.5" />
