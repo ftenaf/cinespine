@@ -30,6 +30,7 @@ import { ScriptStudio } from './components/ScriptStudio';
 import { EditorialTagBar } from './components/EditorialTagBar';
 import { ScriptSceneButton } from './components/ScriptContextPanel';
 import { RequirementRow } from './components/RequirementsBoard';
+import { identify, startAnalytics, trackView } from './analytics';
 import { ProductionsHub } from './components/ProductionsHub';
 
 
@@ -334,6 +335,19 @@ export default function App() {
       setIsResolvingReqSubmitting(false);
     }
   };
+
+  // Analytics, if a self-hosted PostHog is configured. Inert otherwise, which
+  // is the normal state in development.
+  useEffect(() => { startAnalytics(); }, []);
+  useEffect(() => { identify(currentUser.handle); }, [currentUser.handle]);
+
+  // Which surface someone is working in. Named rather than a URL: the pillars
+  // are the app's own vocabulary, and a URL would carry the production id.
+  useEffect(() => {
+    trackView(currentPillar === 'spine' ? `spine:${activeTab}` : currentPillar, {
+      layout: currentPillar === 'spine' ? masterLayout : null,
+    });
+  }, [currentPillar, activeTab, masterLayout]);
 
   const jumpToTarget = (targetType: string, targetId: string) => {
     // 1. Close drawers and modals
