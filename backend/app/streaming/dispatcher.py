@@ -1,7 +1,9 @@
 """
 Ingestion Dispatcher Worker.
 
-Consumes raw document events from Kafka, runs auto-classification, parsers, and emits verified events onto the spine topic.
+Subscribes to the raw document topics on the in-process event bus, runs
+auto-classification and the deterministic parsers, and emits verified events
+onto the spine topic.
 """
 import logging
 from typing import Dict, Any

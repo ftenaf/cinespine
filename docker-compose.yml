@@ -19,23 +19,6 @@ services:
         soft: 262144
         hard: 262144
 
-  # Redpanda / Kafka Event Stream (Lightweight, Kafka API-compatible)
-  redpanda:
-    image: docker.redpanda.com/redpandadata/redpanda:v23.3.11
-    container_name: cinespine-kafka
-    command:
-      - redpanda start
-      - --smp 1
-      - --memory 512M
-      - --reserve-memory 0M
-      - --overprovisioned
-      - --node-id 0
-      - --kafka-addr PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
-      - --advertise-kafka-addr PLAINTEXT://redpanda:9092,OUTSIDE://localhost:19092
-    ports:
-      - "19092:19092"
-      - "9644:9644" # Admin API
-
   # Grafana Lighthouse Dashboards
   grafana:
     image: grafana/grafana:10.4.0

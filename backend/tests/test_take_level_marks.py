@@ -114,7 +114,7 @@ def _take_events(filename, text, doc_type):
     from backend.app.streaming.dispatcher import IngestionDispatcher
     from backend.app.streaming.models import AxisType, DepartmentType, EventEnvelope
 
-    bus = EventBus(in_memory=True)
+    bus = EventBus()
     captured = []
     bus.subscribe("production.events.spine", lambda e: captured.append(e))
     IngestionDispatcher(bus=bus).handle_script_drop(
@@ -224,7 +224,7 @@ def test_a_take_is_filed_under_the_day_the_document_says_it_was_shot():
     from backend.app.streaming.dispatcher import IngestionDispatcher
     from backend.app.streaming.models import AxisType, DepartmentType, DocumentType, EventEnvelope
 
-    bus = EventBus(in_memory=True)
+    bus = EventBus()
     captured = []
     bus.subscribe("production.events.spine", lambda e: captured.append(e))
     IngestionDispatcher(bus=bus).handle_script_drop(
@@ -247,7 +247,7 @@ def test_a_take_whose_day_is_unstated_keeps_the_day_it_was_uploaded_against():
     from backend.app.streaming.dispatcher import IngestionDispatcher
     from backend.app.streaming.models import AxisType, DepartmentType, DocumentType, EventEnvelope
 
-    bus = EventBus(in_memory=True)
+    bus = EventBus()
     captured = []
     bus.subscribe("production.events.spine", lambda e: captured.append(e))
     IngestionDispatcher(bus=bus).handle_script_drop(

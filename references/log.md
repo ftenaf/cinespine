@@ -11,6 +11,23 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**Kafka was never running, and has been removed rather than wired.** `EventBus` carried a Confluent
+producer that could not execute -- the only construction passed `in_memory=True`, which short-circuits
+the branch that builds it -- and `docker-compose.yml` started a Redpanda container that this app never
+connected to. Tracing the ingest path settled it: upload, parse, spine write and mirror are one
+synchronous call stack in one process, so the broker would have sat between two functions. The spine is
+already an append-only log in SQLite that the mirror rebuilds from, so the durability argument runs the
+other way. Container, `confluent-kafka` wheel and dead branch all gone; the bus stayed, because
+ingestion and DLQ telemetry both run through it. The REQ-01 gap is now recorded as a decision in
+[findings/spec-drift.md](findings/spec-drift.md).
+
+**Publishing to a topic nobody listens on is silent, and the ingest path swallows handler failures.**
+Two related holes found while removing the broker. The first already caused a bug once -- office
+documents were classified, published to `production.raw.office`, and produced nothing while the upload
+reported INGESTED -- and `EventBus.topics()` now makes the wiring inspectable. The second is open: a
+handler that raises is logged and swallowed, so a spine write that fails still returns 200. The fix is
+to acknowledge after the write, not to put a queue in front of it.
+
 **Six questions answered by the domain source.** `pt` means part; "complete" is a chain of seven stages
 rather than a state; reject rows that do not look like takes; delete from the mirror too; requirements
 need a production level; the demo should run on anonymised real paperwork. The first two are now domain

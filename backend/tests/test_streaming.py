@@ -1,5 +1,5 @@
 """
-TDD Test Suite for Slice 2: Confluent Kafka Event Bus & Ingestion Stream.
+TDD Test Suite for Slice 2: Event Bus & Ingestion Stream.
 
 Evidence:
 - references/domain/handoffs.md
@@ -28,7 +28,7 @@ class TestEventBusAndEnvelope:
         assert envelope.timestamp is not None
 
     def test_in_memory_event_bus_publish_and_subscribe(self):
-        bus = EventBus(in_memory=True)
+        bus = EventBus()
         received_events = []
 
         def handler(event: EventEnvelope):
@@ -52,7 +52,7 @@ class TestEventBusAndEnvelope:
 
 class TestIngestionDispatcher:
     def test_dispatch_sound_ale_to_spine_events(self):
-        bus = EventBus(in_memory=True)
+        bus = EventBus()
         dispatcher = IngestionDispatcher(bus=bus)
 
         spine_events = []
@@ -78,7 +78,7 @@ class TestIngestionDispatcher:
         assert spine_events[0]["payload"]["take_id"] == "1"
 
     def test_dispatch_malformed_to_dlq(self):
-        bus = EventBus(in_memory=True)
+        bus = EventBus()
         dispatcher = IngestionDispatcher(bus=bus)
 
         spine_events = []
