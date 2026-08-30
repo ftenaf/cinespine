@@ -24,6 +24,10 @@ class DiscrepancyType(str, Enum):
     # A scene Office planned and states was not shot. A negative fact, and one
     # nothing downstream could previously ask about.
     SCENE_SCHEDULED_NOT_SHOT = "SCENE_SCHEDULED_NOT_SHOT"
+    # Takes were logged on this day and no offload report has arrived, so
+    # whether the material exists is unknown. Not the same as missing, and the
+    # two need opposite responses: this one is chased with DIT.
+    AWAITING_OFFLOAD = "AWAITING_OFFLOAD"
 
 
 class Severity(str, Enum):

@@ -23,6 +23,11 @@ shot on day 31 and no other department has filed anything for either.
 **REQ-12, the privacy gate.** Both document endpoints served the original paperwork ungated. Closed
 2026-08-30; see [constraints/privacy.md](../constraints/privacy.md).
 
+**REQ-08.4, `AWAITING_OFFLOAD`.** The gate refused to report missing media without an offload report,
+which is the negative, and then said nothing at all -- so a day nobody had offloaded rendered as a clean
+day. Closed 2026-08-30 with one finding per day rather than one per take, and it uncovered two larger
+defects behind it. See [defects-found.md](defects-found.md).
+
 **REQ-15, deep-linking cleared the reader's search box.** `jumpToTarget` called `setSearchQuery('')`,
 with a comment reasoning its way to the opposite of the requirement's negative. Closed 2026-08-30 -- and
 the clearing was hiding a second defect: the jump found an index into `takes` while the navigator reads
@@ -31,10 +36,6 @@ now pinned by identity and stays reachable when the reader's filters exclude it,
 out loud rather than shown silently.
 
 ## Open
-
-**REQ-08.4, `AWAITING_OFFLOAD`.** The gating works: a missing offload never renders as missing media. But
-the requirement wants an explicit state and the code emits *nothing*, so an un-offloaded day looks
-identical to a clean one. The string appears nowhere in the codebase.
 
 **REQ-10, two gauges that can never fill.** `cinespine_department_sync_lag_seconds` and
 `cinespine_active_discrepancies` are declared; `set_sync_lag` and `set_discrepancies_count` have no

@@ -11,6 +11,11 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**A day nobody had offloaded rendered as a clean day.** The gate had the negative -- never report missing
+media without a report -- and then said nothing, which is the same mistake pointing the other way. Fixing
+it surfaced two larger defects sharing the block: the existence findings were computed into a local and
+dropped, and the clip matcher failed on a file extension.
+
 **Clearing the search box was hiding a wrong-array bug.** Deep-linking emptied the reader's query, which
 the requirement forbids -- and the emptying was load-bearing: the jump computed an index into `takes` and
 the navigator reads `filteredTakes`, so it only ever landed correctly because the filters had just been

@@ -89,7 +89,10 @@ class TestReconciliationEngine:
         logged_take = {"slate": "27/7", "take_id": "1", "clip_name": "A120_C001_260728.MOV"}
         media_files = []  # No media file found
 
-        # Case A: NO offload report uploaded yet -> Must NOT flag missing media (False gap)
+        # Case A: NO offload report uploaded yet -> must NOT flag missing media,
+        # and must NOT stay silent either. This assertion used to read
+        # `len(res_no_offload) == 0`, which is a weaker statement of the same
+        # requirement and is what let the day render as a clean day for months.
         res_no_offload = self.engine.reconcile_existence(
             production_id="PROD_01",
             shoot_day="31",
@@ -97,7 +100,13 @@ class TestReconciliationEngine:
             media_files=media_files,
             has_offload_report=False,
         )
-        assert len(res_no_offload) == 0
+        assert not [
+            d for d in res_no_offload
+            if d.discrepancy_type == DiscrepancyType.PAPERWORK_WITHOUT_MEDIA
+        ], "a day nobody has offloaded must never render as missing material"
+        assert [d.discrepancy_type for d in res_no_offload] == [DiscrepancyType.AWAITING_OFFLOAD]
+        assert res_no_offload[0].entity_type == "shoot_day", "one finding for the day, not one per take"
+        assert res_no_offload[0].severity == Severity.INFO
 
         # Case B: Offload report present but clip is missing -> REAL MISSING MEDIA
         res_with_offload = self.engine.reconcile_existence(

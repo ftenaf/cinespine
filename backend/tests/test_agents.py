@@ -301,8 +301,14 @@ class TestClickHouseMCPServerAndAssistant:
         })
 
         discrepancies = self.mcp.query_production_discrepancies(production_id="PROD_01", shoot_day="31")
-        assert len(discrepancies) == 1
-        assert discrepancies[0]["discrepancy_type"] == "CIRCLED_TAKE_MISMATCH"
+        kinds = [d["discrepancy_type"] for d in discrepancies]
+        assert "CIRCLED_TAKE_MISMATCH" in kinds
+
+        # The day also reports itself as awaiting offload, because takes were
+        # logged on it and no offload report has arrived. Asserted rather than
+        # tolerated: a day nobody has offloaded used to render as a clean day.
+        assert "AWAITING_OFFLOAD" in kinds
+        assert len([k for k in kinds if k == "AWAITING_OFFLOAD"]) == 1, "one per day, not one per take"
 
     def test_assistant_explains_take_witnesses(self):
         # Seed take witnesses
