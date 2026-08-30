@@ -11,6 +11,33 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**The analytical mirror can now live somewhere other than this machine.** The connector hardcoded plain
+HTTP on 8123, so a hosted ClickHouse was unreachable by construction. `CLICKHOUSE_SECURE` now selects
+TLS and the default port follows it to 8443, because the two are not independent: a managed instance
+answers only on the TLS port, and a secure connection aimed at 8123 does not fail with "wrong protocol"
+-- it fails as unreachable, which reads like the server being down and sends people to the wrong end.
+The failure message now names the protocol and port it tried, for the same reason. `CLICKHOUSE_VERIFY`
+exists for a self-hosted instance with a private certificate authority, and defaults to checking.
+
+TLS is stated, never inferred from the hostname. Inferring means keeping a list of what hosted endpoints
+look like, and that list is wrong the day a provider adds a domain.
+
+Verified against a real TLS server rather than by asserting the flag was passed: a ClickHouse with a
+self-signed certificate on 18443 accepted the connection and all five tables were created over it. Both
+negatives were checked too -- certificate verification on refuses a self-signed cert, and plain HTTP
+aimed at the TLS port fails with a message naming plain HTTP. The handshake test stays in the suite,
+skipped unless `CINESPINE_TLS_CLICKHOUSE` is set.
+
+**Whether PostHog and CineSpine could share one ClickHouse: tested, and the answer is no.** The schema
+applies to PostHog's ClickHouse 22.8 and all six analytics queries return the same shapes there as on
+24.3, so it would work. It should still not be done. PostHog 1.43 refuses ClickHouse >=22.9, so sharing
+pins the mirror at a version a third party controls; the mirror would live inside a stack that is
+optional and may not exist at all if PostHog's cloud is used; a `down -v` on that file would delete it,
+which is the coupling the compose projects were just separated to prevent; and PostHog owns that
+server's cluster, keeper and migrations. In the cloud it is not possible at all -- PostHog's SaaS runs
+its own ClickHouse with no way to point it elsewhere, and self-hosted PostHog needs `remote_servers` and
+`macros` that ClickHouse Cloud does not let anyone define.
+
 **The self-hosted-only check was removed, and the payload is now the whole defence.** Both clients used
 to refuse a host on `posthog.com`. The deployment may use PostHog's cloud, so the check is gone --
 `is_configured` is now just "a key and a host", with the host still required rather than defaulted
