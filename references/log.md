@@ -11,6 +11,33 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**The department sync matrix is built, and it says which kind of measurement each row is.** REQ-10's
+original ask, computable at last because the shoot day now carries a calendar date: wrap on 2026-07-28 at
+18:55, minus when each department first filed.
+
+The concern that kept it unbuilt was not that the number is wrong -- it is exactly right -- but that it
+would be read wrong. On this paperwork every department filed 780-odd hours after wrap because the
+documents were imported a month later, and 780 hours in a matrix a reader expects to be hours tells them
+something false in a form that looks true. So every row carries `measurement`: `handover` or `backfill`.
+Nothing decides a backfill is uninteresting, only that it is not the same measurement, and the gauge
+carries the same label so a dashboard cannot add the two together.
+
+`CINESPINE_HANDOVER_WINDOW_HOURS` decides where one becomes the other, defaulting to 48. Written down as
+a judgement rather than a domain fact: a day's paperwork is expected before the next shooting day and a
+weekend can sit in between, and a production that works differently should not inherit this one's habits.
+
+`cinespine_department_sync_lag_seconds` is back, ten hours after being removed. The removal was right
+while it stood -- there was no date to subtract from, and a gauge that can never fill reads as "no lag"
+rather than "not known". Its test was rewritten rather than deleted, because the reason it went is worth
+as much as the reason it returned. What survives from that decision is that nothing unmeasurable is
+published: a day with no wrap or no date gets no series, because a zero would claim the department filed
+at the moment of a wrap nobody recorded.
+
+**Two backfills of history came with it.** The `shoot_date` claims only existed for documents ingested
+after the subscriber was added, so `scripts/backfill_shoot_dates.py` appends the claim each stored
+document was always making -- it alters nothing, and skips documents that state no date. Nine of eleven
+had one.
+
 **The shoot day is bound to a calendar date, and the last open question is closed.** Francisco named
 where the date is written and which source to trust: the Thumbnail Report's volume stamp, `260728_SD31`,
 because it is the only place the date and the shoot day appear together and so cannot be paired wrongly.

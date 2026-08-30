@@ -136,21 +136,37 @@ def test_the_gauge_appears_in_the_metrics_endpoint():
 
 
 # --------------------------------------------------------------------------- #
-# The one that was removed
+# The one that was removed, and came back
 # --------------------------------------------------------------------------- #
 
-def test_the_sync_lag_gauge_is_gone_rather_than_permanently_empty():
+def test_the_sync_lag_gauge_is_back_and_measurable():
     """
-    Wrap is stated as a time of day with no date on it, and what the spine has
-    to subtract from is when the document was uploaded here -- months later for
-    a day shot in July. The subtraction would invent a number neither witness
-    supports, so the gauge was removed rather than filled with a guess.
+    This asserted the gauge was *gone*, and that was right while it was: wrap
+    is a time of day, nothing bound a shoot day to a date, and a gauge that can
+    never fill renders as a flat zero -- "no lag" rather than "not known".
 
-    Recorded in references/open-questions.md, which now names what is missing:
-    the report's own date.
+    The date reached the spine the same afternoon, so the subtraction is real
+    and the gauge is back. What keeps it honest now is the `measurement` label:
+    see test_sync_lag.py. Kept rather than deleted, because the reason it went
+    is worth as much as the reason it returned.
     """
-    assert not hasattr(telemetry, "DEPARTMENT_SYNC_LAG")
-    assert not hasattr(TelemetryExporter, "set_sync_lag")
+    assert hasattr(telemetry, "DEPARTMENT_SYNC_LAG")
+    assert hasattr(TelemetryExporter, "record_sync_lag")
 
+    labels = telemetry.DEPARTMENT_SYNC_LAG._labelnames
+    assert "measurement" in labels, (
+        "without it a backfill and a handover are one number on a dashboard"
+    )
+
+
+def test_it_still_publishes_nothing_it_cannot_measure():
+    """
+    The half of the original decision that survives. A day with no wrap or no
+    date has no baseline, and a zero would claim the department filed at the
+    moment of a wrap nobody recorded.
+    """
+    TelemetryExporter.record_sync_lag("GAUGE_UNMEASURED", [
+        {"shoot_day": "31", "department": "camera", "lag_seconds": None, "measurement": None},
+    ])
     body = client.get("/api/metrics").text
-    assert "cinespine_department_sync_lag_seconds" not in body
+    assert 'production_id="GAUGE_UNMEASURED"' not in body

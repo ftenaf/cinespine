@@ -43,19 +43,25 @@ may be right as it stands -- recorded as open because nobody has confirmed it ei
 
 ## Deliberate divergences, not drift
 
-**REQ-10's two gauges, one filled and one removed.** Closed on 2026-08-30, in opposite directions.
+**REQ-10's two gauges, both filled in the end.** Closed on 2026-08-30, in three moves.
 `cinespine_active_discrepancies` is now written wherever discrepancies are computed, labelled by
 production and day so one day cannot overwrite another, with every severity and kind written on each
 observation -- zeros included, because a gauge keeps its last value and a resolved discrepancy would
 otherwise show its old count.
 
-`cinespine_department_sync_lag_seconds` was removed rather than wired. It cannot be computed: a daily
-production report states wrap as a time of day with no date on it, and the only other timestamp available
-is when the document reached this system, which for day 31 is months after it was shot. Subtracting one
-from the other invents a number neither witness supports. What REQ-10 actually asks for -- a department
-sync matrix -- is answered instead by the acknowledgement axis added the same day, which measures from a
-fact the product records: how long between something being raised and somebody saying they have it. See
-`analytics.time_to_acknowledge`.
+`cinespine_department_sync_lag_seconds` was removed the same morning and rebuilt the same evening. It
+could not be computed while wrap was a time of day with nothing binding a shoot day to a calendar date;
+once the date reached the spine the subtraction became real.
+
+It carries a `measurement` label, and that is what makes it safe to publish. On imported paperwork every
+department filed 780 hours after wrap, which is correct and describes nothing about the night it was
+filed -- so a row says whether it is a `handover` or a `backfill`, and a dashboard cannot show them as one
+number. Nothing unmeasurable is published: a day with no wrap or no date gets no series rather than a
+zero. See `analytics.sync_matrix` and `core.sync_lag`.
+
+The acknowledgement axis answers the same question from the other side -- how long between a thing being
+raised and somebody saying they have it -- and is the better measure on a live shoot, because it does not
+depend on when paperwork happened to be imported. See `analytics.time_to_acknowledge`.
 
 **REQ-13's `NOTIFICATION_ADDED` is not emitted, and adding it would change nothing.** The specified event
 does not exist. The behaviour it is for does: notifications are created alongside `REQUIREMENT_CREATED`,

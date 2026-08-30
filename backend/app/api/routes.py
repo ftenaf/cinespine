@@ -2231,6 +2231,11 @@ def get_production_analytics(production_id: str):
             ),
         }
 
+    # Computed before the response so it can also reach Prometheus: the gauge
+    # and the panel must not be able to disagree about the same measurement.
+    sync_matrix = spine_analytics.sync_matrix(client, production_id)
+    TelemetryExporter.record_sync_lag(production_id, sync_matrix or [])
+
     return {
         "production_id": production_id,
         "available": True,
@@ -2244,6 +2249,10 @@ def get_production_analytics(production_id: str):
         # and it was a gauge that could never fill; these answer the same
         # question from a fact the product records rather than a wrap time
         # with no date on it.
+        # The department sync matrix REQ-10 asks for, computable since the
+        # shoot day gained a calendar date. Every row says whether it measures
+        # a handover or a backfill; they are different facts.
+        "sync_matrix": sync_matrix,
         "time_to_acknowledge": spine_analytics.time_to_acknowledge(client, production_id),
         "unacknowledged_requirements": spine_analytics.unacknowledged_requirements(client, production_id),
         "unreviewed_days": spine_analytics.unreviewed_days(client, production_id),
