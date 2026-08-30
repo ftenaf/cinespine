@@ -22,6 +22,7 @@ from backend.app.parsers.pdf_parsers import (
 )
 from backend.app.parsers.dpr import parse_daily_production_report
 from backend.app.parsers.base import ParsedCameraRecord, ParserFailureError
+from backend.app.normalizers.shoot_days import extract_shoot_date
 from backend.app.normalizers.slates import normalize_slate
 from backend.app.normalizers.takes import normalize_take
 
@@ -54,6 +55,62 @@ class IngestionDispatcher:
         # while the upload reported INGESTED. The confident nothing, on the
         # axis the whole architecture is named for.
         self.bus.subscribe("production.raw.office", self.handle_office_drop)
+
+        # What day of the calendar this shoot day was. Subscribed to every raw
+        # topic rather than folded into the parsers, for two reasons: every
+        # department's paperwork states it, and a document whose parser refuses
+        # it has still said what day it covers. A date claim that only survived
+        # a successful parse would go missing exactly when the disagreement is
+        # most worth seeing.
+        for topic in (
+            "production.raw.sound", "production.raw.camera", "production.raw.dit",
+            "production.raw.silverstack", "production.raw.script", "production.raw.office",
+        ):
+            self.bus.subscribe(topic, self.handle_shoot_date)
+
+    def handle_shoot_date(self, envelope: EventEnvelope) -> None:
+        """
+        Emits what this document says the shoot day's calendar date was.
+
+        Francisco, 2026-08-30: the date is on the daily production report, in
+        the Thumbnail Report's volume stamp (`260728_SD31`), in every script
+        report header and on the sound report -- and the Thumbnail Report is
+        the most reliable, because its stamp is the only place the date and the
+        shoot day are written together and so cannot be paired wrongly.
+
+        One claim per document, carrying which document said it and how. Five
+        witnesses to the same fact is the shape this whole product is built
+        around: they can disagree, and a date with no source is a number nobody
+        can check.
+        """
+        try:
+            found = extract_shoot_date(envelope.raw_content or "", envelope.filename or "")
+            if not found:
+                return
+            self.bus.publish("production.events.spine", {
+                "event_id": envelope.event_id,
+                "production_id": envelope.production_id,
+                "shoot_day": envelope.shoot_day,
+                "axis": envelope.axis.value,
+                "department": envelope.department.value,
+                "doc_type": envelope.doc_type.value,
+                "entity_type": "shoot_date",
+                "payload": {
+                    "date": found["date"],
+                    "source": found["source"],
+                    # Only the volume stamp states the day alongside the date.
+                    # Where it does, the pairing is the document's own and not
+                    # this system's assumption about which day it was filed on.
+                    "stated_shoot_day": found.get("shoot_day"),
+                    "filename": envelope.filename,
+                },
+                "metadata": envelope.metadata,
+                "timestamp": envelope.timestamp,
+            })
+        except EventHandlerError:
+            raise
+        except Exception as e:
+            logger.warning("Could not read a shoot date from %s: %s", envelope.filename, e)
 
     def handle_sound_drop(self, envelope: EventEnvelope) -> None:
         try:

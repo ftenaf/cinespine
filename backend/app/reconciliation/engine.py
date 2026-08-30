@@ -373,6 +373,68 @@ class ReconciliationEngine:
 
         return discrepancies
 
+    def reconcile_shoot_date(
+        self,
+        production_id: str,
+        shoot_day: str,
+        date_claims: List[Dict[str, Any]],
+    ) -> List["Discrepancy"]:
+        """
+        Whether the departments agree what day of the calendar this was.
+
+        Every department's paperwork states the date: the daily production
+        report at the top of the page, the Thumbnail Report's volume stamp, the
+        script report header, the sound report. They should all say the same
+        thing. When two of them do not, one document is filed under the wrong
+        shoot day -- and every take on it is attributed to the wrong date.
+
+        The volume stamp is named as the most reliable, because it is the only
+        place the date and the shoot day are written together and so cannot be
+        paired wrongly. That does not make it the answer: this reports the
+        disagreement rather than resolving it, because which document is wrong
+        is a question for the people who wrote them.
+
+        One claim is not a disagreement, and no claims is not a clean day --
+        it is a day whose paperwork does not say, which is why nothing is
+        reported in either case.
+        """
+        by_date: Dict[str, List[Dict[str, Any]]] = {}
+        for claim in date_claims:
+            date = str((claim.get("payload") or {}).get("date") or "").strip()
+            if date:
+                by_date.setdefault(date, []).append(claim)
+
+        if len(by_date) < 2:
+            return []
+
+        witnesses = []
+        for date, claims in sorted(by_date.items()):
+            for claim in claims:
+                payload = claim.get("payload") or {}
+                witnesses.append({
+                    "department": claim.get("department", "unknown"),
+                    "claim": "shoot_date",
+                    "date": date,
+                    "source": payload.get("source"),
+                    "document": payload.get("filename"),
+                })
+
+        stated = sorted(by_date)
+        return [Discrepancy(
+            production_id=production_id,
+            shoot_day=shoot_day,
+            entity_type="shoot_day",
+            entity_id=shoot_day,
+            discrepancy_type=DiscrepancyType.SHOOT_DATE_DISAGREEMENT,
+            severity=Severity.WARNING,
+            description=(
+                f"Day {shoot_day} is dated {' and '.join(stated)} by different documents. "
+                "One of them is filed under the wrong day, and every take on it carries "
+                "that date."
+            ),
+            witnesses=witnesses,
+        )]
+
     def reconcile_existence(
         self,
         production_id: str,

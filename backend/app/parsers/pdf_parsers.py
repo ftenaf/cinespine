@@ -1308,6 +1308,15 @@ def parse_silverstack_clips_text(text: str, thumbnails_map: Optional[Dict[str, s
     return clips
 
 
+# `260728_SD31` on a line of its own: the volume stamp. Skipped as furniture
+# here and read for its date by normalizers.shoot_days.extract_shoot_date,
+# which is where the shoot day and its calendar date are bound together.
+_VOLUME_STAMP_LINE = re.compile(r"^\d{6}_SD\d+$", re.IGNORECASE)
+
+# `Offloads started between 27 and 28 July` and the like.
+_OFFLOAD_WINDOW = re.compile(r"^(?:and\s+)?\d{1,2}\s+\w+(?:\s+\d{4})?$", re.IGNORECASE)
+
+
 def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[str, str]] = None) -> List[ParsedSilverstackClip]:
     """
     Parses Pomfort Silverstack Thumbnail Reports (e.g. Thumbnail-260728_SD31-20260728-1927.pdf).
@@ -1323,12 +1332,18 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
 
     for line in lines:
         if (
+            # Report furniture, matched on what it is rather than on the
+            # strings this one demo document happens to contain. "and 28 July",
+            # "260728_SD31" and "DEMO PRODUCTION" were listed literally, so
+            # another production's report would have carried those lines into
+            # its clips -- the keyed list that rots, and it was also discarding
+            # the volume stamp that binds the shoot day to its date.
             "Thumbnail Report" in line
             or "Pomfort Silverstack" in line
             or "Offloads started" in line
-            or "and 28 July" in line
-            or "260728_SD31" in line
-            or "DEMO PRODUCTION" in line
+            or line.startswith("Production:")
+            or _VOLUME_STAMP_LINE.match(line)
+            or _OFFLOAD_WINDOW.match(line)
             or "★★★★★" in line
         ):
             continue
