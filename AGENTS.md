@@ -33,6 +33,19 @@ It handles real production paperwork, resolves discrepancies across departments,
 - **Event Spine:** ClickHouse / SQLite (`spine.db`). Immutable append-only log of documents, take facts, and discrepancies.
 - **GCS:** Google Cloud Storage for media archival.
 
+## What has been learned here
+
+`references/` holds what working on this codebase has taught: the decisions whose reasoning would
+otherwise be rediscovered, the defects already paid for once, and the questions nobody has answered.
+Start at [references/index.md](references/index.md).
+
+Read it **before** changing ingestion, persistence, the analytical mirror, or anything that serves a
+source document. Three of those have produced the same mistake more than once.
+
+The requirements this build is measured against live in a separate workspace,
+`E:/projects/agentic-cinema-design`. That decides what must be true; `references/` records what is true
+here. The current gap between them is [references/findings/spec-drift.md](references/findings/spec-drift.md).
+
 ## Domain Model: The 3 Axes
 The core of the discrepancy engine relies on checking alignment across three axes:
 1. **Intent:** What the Office planned (Screenplay, Prep).

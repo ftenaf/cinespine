@@ -1,0 +1,84 @@
+---
+type: findings
+title: Defects found in this codebase
+description: What was wrong, how it showed itself, and what it cost to find
+tags: [findings, defects]
+status: confirmed
+evidence: each entry names its reproduction
+---
+
+# Defects found in this codebase
+
+Each was paid for once. The point of writing them down is that the *shape* recurs even when the instance
+does not; the shapes are named in
+[constraints/failure-modes.md](../constraints/failure-modes.md).
+
+## Ingestion and parsing
+
+**A compound slate reported three cards as a conflict.** `119/5` on card A046, `41+122A/4` on A068 and
+`97+121/4` on A080 came back as "Camera A roll mismatch on 119/5". The slate pattern did not admit
+compound scenes, so three separate setups folded into one.
+
+**A facing page filed its rows under the wrong day.** See
+[domain/shoot-days.md](../domain/shoot-days.md).
+
+**A wild track stole the block's day.** Six takes filed under day 31 belonged to day 25.
+
+**Part-takes were lost.** `2.1` and `2.2` are distinct takes; the take pattern read the first digit.
+
+**A blank camera-roll column inherited the wrong roll**, until the block's roll was carried forward
+explicitly and the inheritance marked on the record.
+
+**A camera CSV row that was not a take became one.** A contact line ended up in the `slate` field and
+reached the analytical mirror. Found on 2026-08-30 while writing a scene grouping; the query now requires
+a scene to start with a digit, but the parser is where it should be caught. See
+[open-questions.md](../open-questions.md).
+
+## The spine and its stores
+
+**Every event was inserted to ClickHouse separately.** A 72-event document went from 0.8s to 7.4s; a
+1,991-event volume took minutes. Batching returned them to 0.86s and 2.0s.
+
+**`DateTime` at second resolution lost the trail's order**, which is the one thing a trail is for.
+`DateTime64(3)` and caller-supplied timestamps fixed it.
+
+**A naive datetime was read as local time**, so mirrored rows landed an hour early on a machine offset
+from UTC. The order stayed right, which is what makes that kind of mistake survive review.
+
+**Clearing an editorial tag credited the wrong actor.** The board said `@ana removed the tag` when @ana
+had only ever set it.
+
+**Requirements lost every transition between created and resolved.** Handovers and blocks were in-place
+overwrites, so "who parked this" could not be answered five minutes later.
+
+**Deleting a document did not reach the mirror.** By design -- it is append-only -- but it means anything
+that gets in stays in.
+
+## Surfaces
+
+**An editorial tag control looked like a display.** It had been interactive since it was built and
+verified working; once tagged it rendered as bare chips beside genuinely read-only badges, so nobody
+would think to click it. A test that clicks a button cannot tell you nobody would try.
+
+**A camera remover was `opacity-0` until hover**, which is indistinguishable from absent.
+
+**The recent-changes feed repeated identical saves** as two identical lines with nothing to tell them
+apart.
+
+**A generated character portrait was never saved.** The endpoint returned the image, the UI showed a green
+tick claiming it had been stored, and a reload threw away both the likeness and the generation spent
+making it.
+
+**Shot breakdowns lived only in the tab's memory.** Generated once and then edited -- a focal length
+nudged, a prompt rewritten and re-rendered -- and a reload discarded all of it.
+
+## Process
+
+**Verified against the wrong instance, twice.** Both times a console error was blamed on new code when the
+browser held a module from between two edits.
+
+**A compound-slate fix was verified against `pdfplumber` text while the pipeline uses `pypdf`.** The bug
+was still fully present.
+
+**A heredoc mangled escape sequences twice**, once turning `\b` into a literal backspace and once turning
+a separator into a NUL that made git classify a source file as binary.
