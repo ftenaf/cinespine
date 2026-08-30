@@ -1,6 +1,8 @@
 """
 ClickHouse Append-Only Event Spine Schema & DDL.
 """
+from typing import List
+
 
 _SCHEMA_TEMPLATE = """
 CREATE DATABASE IF NOT EXISTS {db};
@@ -94,7 +96,37 @@ CREATE TABLE IF NOT EXISTS {db}.requirement_events (
 ) ENGINE = MergeTree()
 ORDER BY (production_id, requirement_id, created_at);
 
--- 5. Audit Discrepancies Table
+-- 5. Who saw what, and when they took it on
+--
+-- The gap handoffs.md names: "No acknowledgement is recorded anywhere." This
+-- is the axis that answers whether the sound supervisor saw the blocker, and
+-- when -- not how many times a surface was opened.
+--
+-- `viewed` and `acknowledged` are kept apart deliberately. A view is weak
+-- evidence about attention; an acknowledgement is a claim a person made, and
+-- only the second can carry an obligation.
+--
+-- The actor is a role token (@sound_supervisor), never a crew member's name.
+CREATE TABLE IF NOT EXISTS {db}.user_activity (
+    event_id      String,
+    production_id LowCardinality(String),
+    shoot_day     LowCardinality(String),
+    actor         LowCardinality(String),
+    department    LowCardinality(String),
+    action        LowCardinality(String),
+    target_type   LowCardinality(String),
+    target_id     String,
+    target_label  String,
+    -- How long the target had existed when it was seen. Stored rather than
+    -- joined: the target's creation time lives in a different table on a
+    -- different axis, and time-to-acknowledge is the whole question.
+    seconds_since_target_created Nullable(Float64),
+    context_json  String,
+    created_at    DateTime64(3)
+) ENGINE = MergeTree()
+ORDER BY (production_id, target_type, target_id, created_at);
+
+-- 6. Audit Discrepancies Table
 CREATE TABLE IF NOT EXISTS {db}.audit_discrepancies (
     discrepancy_id UUID,
     production_id LowCardinality(String),
@@ -110,6 +142,24 @@ CREATE TABLE IF NOT EXISTS {db}.audit_discrepancies (
 ) ENGINE = ReplacingMergeTree(created_at)
 ORDER BY (production_id, shoot_day, discrepancy_type, entity_id);
 """
+
+
+def statements(db: str = "cinespine") -> List[str]:
+    """
+    The DDL as executable statements.
+
+    Comments are removed *before* the split, not after. Splitting the raw text
+    on `;` is unsafe because a semicolon inside a `--` comment cuts a CREATE
+    TABLE in half, and the halves fail as "Empty query" or a syntax error a
+    long way from the prose that caused them. That happened the moment a
+    comment contained an ordinary sentence with a semicolon in it -- and the
+    table it belonged to went missing without anything saying so.
+    """
+    without_comments = "\n".join(
+        line for line in schema_ddl(db).splitlines()
+        if not line.strip().startswith("--")
+    )
+    return [chunk.strip() for chunk in without_comments.split(";") if chunk.strip()]
 
 
 def schema_ddl(db: str = "cinespine") -> str:

@@ -3,6 +3,7 @@ import asyncio
 import os
 import re
 import uuid
+from datetime import datetime, timezone
 import hashlib
 from dataclasses import asdict
 from typing import List, Dict, Any, Optional
@@ -14,7 +15,7 @@ from backend.app.streaming.bus import EventBus, EventHandlerError
 from backend.app.streaming.dispatcher import IngestionDispatcher
 from backend.app.streaming.broker import event_broker, SpineLiveEvent
 from backend.app.spine.writer import SpineWriter
-from backend.app.spine import analytics as spine_analytics
+from backend.app.spine import activity_store, analytics as spine_analytics
 from backend.app.spine import production_store
 from backend.app.spine import requirement_store
 from backend.app.spine import breakdown_store
@@ -2239,7 +2240,126 @@ def get_production_analytics(production_id: str):
         "scene_coverage": spine_analytics.scene_coverage(client, production_id),
         "editorial_state": spine_analytics.editorial_state(client, production_id),
         "requirement_ageing": spine_analytics.requirement_ageing(client, production_id),
+        # The acknowledgement axis. REQ-10 asks for a department sync matrix
+        # and it was a gauge that could never fill; these answer the same
+        # question from a fact the product records rather than a wrap time
+        # with no date on it.
+        "time_to_acknowledge": spine_analytics.time_to_acknowledge(client, production_id),
+        "unacknowledged_requirements": spine_analytics.unacknowledged_requirements(client, production_id),
+        "unreviewed_days": spine_analytics.unreviewed_days(client, production_id),
+        "department_attention": spine_analytics.department_attention(client, production_id),
         "tables": spine_analytics.table_sizes(client),
+    }
+
+
+def _seconds_since_target_created(
+    production_id: str, target_type: str, target_id: str
+) -> Optional[float]:
+    """
+    How long the target had existed when somebody saw it, or None.
+
+    None where the creation time is not known -- a scene or a shoot day was
+    never "created" at a moment. None rather than zero: zero would say it was
+    acknowledged instantly, which is a claim, and it would drag every average
+    it appears in towards a number nobody measured.
+    """
+    created_at: Optional[str] = None
+    if target_type == "requirement":
+        found = spine_writer.get_requirement(target_id)
+        created_at = (found or {}).get("created_at")
+    elif target_type == "notification":
+        for note in spine_writer.get_notifications(None):
+            if note.get("notification_id") == target_id:
+                created_at = note.get("created_at")
+                break
+
+    if not created_at:
+        return None
+    try:
+        started = datetime.fromisoformat(created_at)
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        return max((datetime.now(timezone.utc) - started).total_seconds(), 0.0)
+    except (ValueError, TypeError):
+        return None
+
+
+class RecordActivityRequest(BaseModel):
+    production_id: str
+    actor: str = Field(description="a role token like @sound_supervisor, never a crew name")
+    action: str = Field(description="viewed or acknowledged")
+    target_type: str
+    target_id: str
+    shoot_day: str = ""
+    department: str = ""
+    target_label: str = ""
+    context: Dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/activity")
+def record_activity(req: RecordActivityRequest):
+    """
+    Records that somebody saw something, or took it on.
+
+    The gap `handoffs.md` names: "No acknowledgement is recorded anywhere." A
+    blocker is raised, a notification goes out, and nothing can answer whether
+    the person it was for ever saw it.
+
+    `viewed` and `acknowledged` stay apart. A view is weak evidence about
+    attention; an acknowledgement is a claim somebody made, and only the second
+    can carry an obligation.
+
+    How long the target had existed is computed here rather than sent by the
+    client: a browser clock is not a witness, and time-to-acknowledge is the
+    whole point of the record.
+    """
+    age = _seconds_since_target_created(
+        req.production_id, req.target_type, req.target_id,
+    )
+    try:
+        event = spine_writer.record_activity(
+            production_id=req.production_id,
+            actor=req.actor,
+            action=req.action,
+            target_type=req.target_type,
+            target_id=req.target_id,
+            shoot_day=req.shoot_day,
+            department=req.department,
+            target_label=req.target_label,
+            seconds_since_target_created=age,
+            context=req.context,
+        )
+    except activity_store.UnknownActivityValue as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    analytics.capture(req.actor, f"entity_{req.action}", {
+        "production_id": req.production_id,
+        "shoot_day": req.shoot_day,
+        "department": req.department,
+        "target_type": req.target_type,
+    })
+    return event
+
+
+@router.get("/activity")
+def get_activity(production_id: str, target_type: str, target_id: str):
+    """
+    Everything anybody did to one thing, and whether it was taken on.
+
+    `acknowledged_at` is null when nobody has. Null rather than false: "nobody
+    has acknowledged this" and "this needs no acknowledgement" are different,
+    and a boolean cannot tell them apart.
+    """
+    events = spine_writer.activity_for_target(production_id, target_type, target_id)
+    ack = spine_writer.acknowledgement_of(production_id, target_type, target_id)
+    return {
+        "production_id": production_id,
+        "target_type": target_type,
+        "target_id": target_id,
+        "events": events,
+        "viewed_by": sorted({e["actor"] for e in events if e["action"] == "viewed"}),
+        "acknowledged_by": ack["actor"] if ack else None,
+        "acknowledged_at": ack["created_at"] if ack else None,
     }
 
 

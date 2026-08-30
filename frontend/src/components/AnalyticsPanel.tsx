@@ -134,6 +134,78 @@ export function AnalyticsPanel({ productionId, reloadKey }: {
         />
       </Section>
 
+      {/* The acknowledgement axis.
+
+          REQ-10 asks for a department sync matrix. It was a gauge that could
+          never fill, because the only baseline available was a wrap time with
+          no date on it. These answer the same question from something the
+          product records itself: who saw what, and when they took it on. */}
+      <Section
+        title="How long until somebody takes it on"
+        subtitle="Measured from the thing being raised to somebody saying they have it. About where a handover stalls, not who is slow — the actor is a role, not a person."
+      >
+        <Rows
+          rows={data.time_to_acknowledge}
+          empty="No acknowledgements in the analytical mirror yet."
+          render={(row, i) => (
+            <div key={i} className="flex items-center justify-between text-[11px] py-1 border-b border-slate-800/60 last:border-0">
+              <span className="text-gray-200">
+                {row.department || 'unattributed'}
+                <span className="text-gray-500"> · {row.target_type}</span>
+              </span>
+              <span className="text-gray-400 tabular-nums">
+                median {row.median_minutes}m · slowest {row.slowest_minutes}m
+                <span className="text-gray-600"> ({row.acknowledged})</span>
+              </span>
+            </div>
+          )}
+        />
+      </Section>
+
+      <Section
+        title="Raised, and nobody has taken it on"
+        subtitle="Two different silences. Opened and not acknowledged is somebody deciding not to; never opened at all is a blocker that has not reached anyone."
+      >
+        <Rows
+          rows={data.unacknowledged_requirements}
+          empty="No unacknowledged requirements in the mirror. If the board above shows some, the mirror has not been filled from the spine — see scripts/rebuild_mirror.py."
+          render={(row, i) => (
+            <div key={i} className="flex items-center justify-between text-[11px] py-1 border-b border-slate-800/60 last:border-0">
+              <span className="text-gray-200">
+                {row.requirement_id}
+                <span className="text-gray-500"> · {row.priority} · {row.assigned_to || 'unassigned'}</span>
+              </span>
+              <span className={row.views === 0 ? 'text-amber-300' : 'text-gray-400'}>
+                {row.views === 0 ? 'never opened' : `${row.views} view${row.views === 1 ? '' : 's'}, not taken on`}
+              </span>
+            </div>
+          )}
+        />
+      </Section>
+
+      <Section
+        title="Days nobody has looked at"
+        subtitle="A day with no witness is not a day with nothing wrong. The same distinction the offload gate makes, one level up."
+        >
+        <Rows
+          rows={data.unreviewed_days}
+          empty="No days with material in the mirror. If the spine has days, the mirror has not been filled from it — see scripts/rebuild_mirror.py."
+          render={(row, i) => (
+            <div key={i} className="flex items-center justify-between text-[11px] py-1 border-b border-slate-800/60 last:border-0">
+              <span className="text-gray-200">
+                Day {row.shoot_day}
+                <span className="text-gray-500"> · {row.spine_events} events</span>
+              </span>
+              <span className={row.views === 0 ? 'text-amber-300' : 'text-gray-400'}>
+                {row.views === 0
+                  ? 'no witness'
+                  : `seen by ${(row.seen_by || []).filter(Boolean).join(', ') || `${row.views}`}`}
+              </span>
+            </div>
+          )}
+        />
+      </Section>
+
       <Section
         title="When each department filed"
         subtitle="Arrival times, not a lag from wrap: the report states a time of day and this records an ingest, and subtracting one from the other would invent a number."

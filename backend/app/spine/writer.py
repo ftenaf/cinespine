@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
-from backend.app.spine import character_store
+from backend.app.spine import character_store, activity_store
 from backend.app.spine import production_store
 from backend.app.spine import requirement_store
 from backend.app.spine import notification_store
@@ -270,6 +270,51 @@ class SpineWriter:
                 table, exc, MIRROR_COOLDOWN_SECONDS,
             )
             return False
+
+    def record_activity(self, **kwargs: Any) -> Dict[str, Any]:
+        """
+        Appends one activity event and mirrors it.
+
+        SQLite first and always; the mirror is best effort, exactly like the
+        tag and requirement trails. Somebody acknowledging a blocker must not
+        fail because a reporting database is unreachable.
+        """
+        event = activity_store.record(**kwargs)
+        self._mirror_activity(event)
+        return event
+
+    def _mirror_activity(self, event: Dict[str, Any]) -> None:
+        if not self.mirror_available():
+            return
+        self._try_insert(
+            f"{_db()}.user_activity",
+            [[
+                event.get("event_id", ""),
+                event.get("production_id", ""),
+                event.get("shoot_day", ""),
+                event.get("actor", ""),
+                event.get("department", ""),
+                event.get("action", ""),
+                event.get("target_type", ""),
+                event.get("target_id", ""),
+                event.get("target_label", ""),
+                event.get("seconds_since_target_created"),
+                event.get("context_json", "{}"),
+                # SQLite's own timestamp, so the two copies agree on order.
+                _clickhouse_datetime(event.get("created_at")),
+            ]],
+            column_names=[
+                "event_id", "production_id", "shoot_day", "actor", "department",
+                "action", "target_type", "target_id", "target_label",
+                "seconds_since_target_created", "context_json", "created_at",
+            ],
+        )
+
+    def activity_for_target(self, production_id: str, target_type: str, target_id: str) -> List[Dict[str, Any]]:
+        return activity_store.for_target(production_id, target_type, target_id)
+
+    def acknowledgement_of(self, production_id: str, target_type: str, target_id: str) -> Optional[Dict[str, Any]]:
+        return activity_store.acknowledgement(production_id, target_type, target_id)
 
     def _mirror_tag_event(self, record: Dict[str, Any], action: str) -> None:
         """

@@ -11,6 +11,49 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**Acknowledgement is an axis on the spine now, not a metric bought from someone else.** `handoffs.md`
+names the gap: "No acknowledgement is recorded anywhere." A blocker is raised, a notification goes out,
+and nothing in the production can answer whether the person it was for ever saw it. `user_activity` is
+that answer -- appended in SQLite, mirrored to ClickHouse, queried by the app's own analytics surface.
+
+`viewed` and `acknowledged` are kept apart and always must be. A view is weak evidence about attention;
+an acknowledgement is a claim somebody made, and only the second can carry an obligation. Conflating them
+would turn "three people had this on screen" into "three people took this on". The view is recorded when
+a requirement is expanded rather than when it renders, for the same reason: a row scrolling past in a
+list is not somebody looking at it.
+
+Four queries came with it, and they are the department sync matrix REQ-10 asked for -- from a fact the
+product records rather than a wrap time with no date on it: time to acknowledge by department, raised and
+nobody has taken it on, days nobody has looked at, and which departments are looking at what. The middle
+two separate two silences that an empty list conflates: opened and not acknowledged is somebody deciding
+not to; never opened at all is a blocker that has not reached anyone.
+
+How long the target had existed is measured server-side, never sent by the client. A browser clock is not
+a witness, and time-to-acknowledge is the whole point of the record. Where a target has no creation time
+-- a scene, a shoot day -- the age is null rather than zero: zero would say it was acknowledged instantly
+and drag every average towards a number nobody measured.
+
+Verified end to end against ClickHouse Cloud: a requirement raised, viewed, acknowledged six seconds
+later, and the panel reading `sound · requirement — median 0.1m`.
+
+**`sound_ale` had the PII hole that `camera_csv` had.** Found by probing the other parsers rather than
+assuming the one fix was enough: a contact line with an email and a phone number became a slate, exactly
+as it did in the camera parser, and it now leaves the machine because the mirror is hosted. Guarded with
+the same shape test. Fixing it exposed a second defect underneath -- `normalize_slate` keeps the `.WAV`
+on a filename, so a row whose slate comes from the NAME column became the slate `49WTT01.WAV`, truthy
+enough that the filename fallback below it never ran. Stripping the extension first resolves it properly
+to `49/WT`.
+
+**A semicolon in a comment deleted a table.** The DDL was split on `;`, so an ordinary sentence in a new
+comment -- "a view is weak evidence about attention; an acknowledgement is a claim" -- cut a CREATE TABLE
+in half and `user_activity` silently never got created. Comments are now stripped before the split. Worth
+recording because the failure was a syntax error a long way from the prose that caused it.
+
+**And one I introduced and caught.** The new panel said "Everything raised has been acknowledged" while
+three unacknowledged requirements sat on the board above it -- because the Cloud mirror holds no
+requirement rows to join against. A query returning nothing is not a fact about the production. The empty
+states now say what was found and name the rebuild script.
+
 **The cast detail is one component again, and every screenplay type has one home.** 314 lines of markup
 were duplicated between `ScriptStudio.tsx`, which is what actually rendered, and
 `CharacterProfileCard.tsx`, which rendered in the popup. Diffed before collapsing rather than assumed
