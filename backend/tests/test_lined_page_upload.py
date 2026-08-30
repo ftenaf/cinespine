@@ -95,6 +95,10 @@ def test_an_ordinary_document_is_untouched(unique):
 # --------------------------------------------------------------------------- #
 
 def test_a_read_page_reaches_the_response_and_the_document(unique, monkeypatch):
+    # This asserts the extraction travels with the stored document, which
+    # means reading the document back. Serving the material is gated by
+    # default; the gate has its own tests in test_privacy_gate.py.
+    monkeypatch.setenv("CINESPINE_SERVE_SOURCE_DOCUMENTS", "1")
     monkeypatch.delenv("CINESPINE_DISABLE_LINING_EXTRACTION", raising=False)
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     _stub_model(monkeypatch, lambda m: PAGE_JSON)
