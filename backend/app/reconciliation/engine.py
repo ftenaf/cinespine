@@ -172,6 +172,93 @@ class ReconciliationEngine:
                     return True
         return False
 
+    def reconcile_intent(
+        self,
+        production_id: str,
+        shoot_day: str,
+        scene_events: List[Dict[str, Any]],
+        scenes_with_material: set,
+    ) -> List["Discrepancy"]:
+        """
+        Office's plan and Office's belief, against what every other department
+        filed.
+
+        Three findings, and they are different questions:
+
+        * A scene Office scheduled and calls complete, with nothing filed for
+          it by camera, sound or the disk. Office does not observe what
+          happened, so this is two witnesses disagreeing -- not a scene that is
+          missing, and not proof the day went wrong.
+        * A scene shot without being scheduled, and one scheduled and not shot.
+          Office writes both of these down in named fields every day, and they
+          have always died on the PDF. Surfacing them is the whole value of
+          reading the page.
+
+        `scenes_with_material` is what the other axes actually said. An empty
+        set means no department has filed anything yet, which is a day nobody
+        has offloaded rather than a day that went wrong -- so nothing is
+        reported, the same gate the existence check uses.
+        """
+        discrepancies: List[Discrepancy] = []
+
+        scheduled = {
+            e.get("payload", {}).get("scene")
+            for e in scene_events
+            if e.get("axis") == "intent" and e.get("payload", {}).get("state") == "scheduled"
+        }
+        by_office_state: Dict[str, set] = {}
+        for event in scene_events:
+            payload = event.get("payload") or {}
+            state = payload.get("office_state")
+            if state and payload.get("scene"):
+                by_office_state.setdefault(state, set()).add(payload["scene"])
+
+        # Office says shot; nobody filed anything. Only worth saying once some
+        # department has filed something for the day.
+        if scenes_with_material:
+            claimed = by_office_state.get("complete", set()) | by_office_state.get("part_complete", set())
+            for scene in sorted(claimed - scenes_with_material):
+                discrepancies.append(Discrepancy(
+                    production_id=production_id,
+                    shoot_day=shoot_day,
+                    entity_type="scene",
+                    entity_id=scene,
+                    discrepancy_type=DiscrepancyType.SCENE_COMPLETE_WITHOUT_MATERIAL,
+                    severity=Severity.WARNING,
+                    description=(
+                        f"Office reports scene {scene} shot on day {shoot_day}, and no camera, "
+                        "sound or offload paperwork mentions it."
+                    ),
+                    witnesses=[{"department": "office", "claim": "complete", "scene": scene}],
+                ))
+
+        # The two negatives the report states itself.
+        for scene in sorted(by_office_state.get("scheduled_not_shot", set())):
+            discrepancies.append(Discrepancy(
+                production_id=production_id,
+                shoot_day=shoot_day,
+                entity_type="scene",
+                entity_id=scene,
+                discrepancy_type=DiscrepancyType.SCENE_SCHEDULED_NOT_SHOT,
+                severity=Severity.INFO,
+                description=f"Scene {scene} was scheduled for day {shoot_day} and Office reports it was not shot.",
+                witnesses=[{"department": "office", "claim": "scheduled_not_shot", "scene": scene}],
+            ))
+
+        for scene in sorted(by_office_state.get("shot_not_scheduled", set()) - scheduled):
+            discrepancies.append(Discrepancy(
+                production_id=production_id,
+                shoot_day=shoot_day,
+                entity_type="scene",
+                entity_id=scene,
+                discrepancy_type=DiscrepancyType.SCENE_SHOT_NOT_SCHEDULED,
+                severity=Severity.INFO,
+                description=f"Scene {scene} was shot on day {shoot_day} without being scheduled.",
+                witnesses=[{"department": "office", "claim": "shot_not_scheduled", "scene": scene}],
+            ))
+
+        return discrepancies
+
     def reconcile_existence(
         self,
         production_id: str,

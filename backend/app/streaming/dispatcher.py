@@ -18,11 +18,22 @@ from backend.app.parsers.pdf_parsers import (
     parse_silverstack_volume_text,
     parse_silverstack_pdf_text,
 )
+from backend.app.parsers.dpr import parse_daily_production_report
 from backend.app.parsers.base import ParsedCameraRecord, ParserFailureError
 from backend.app.normalizers.slates import normalize_slate
 from backend.app.normalizers.takes import normalize_take
 
 logger = logging.getLogger(__name__)
+
+
+def _looks_like_pdf(text: str) -> bool:
+    """
+    Whether this arrived as PDF bytes decoded into a string.
+
+    The JSON upload route carries raw_content as text, so a DPR posted that
+    way needs its text layer extracting before any field is readable.
+    """
+    return bool(text) and text.lstrip().startswith("%PDF")
 
 
 class IngestionDispatcher:
@@ -36,6 +47,11 @@ class IngestionDispatcher:
         self.bus.subscribe("production.raw.dit", self.handle_silverstack_drop)
         self.bus.subscribe("production.raw.silverstack", self.handle_silverstack_drop)
         self.bus.subscribe("production.raw.script", self.handle_script_drop)
+        # Office had no subscriber at all. Its documents were classified,
+        # published to a topic nobody listened on, and produced nothing --
+        # while the upload reported INGESTED. The confident nothing, on the
+        # axis the whole architecture is named for.
+        self.bus.subscribe("production.raw.office", self.handle_office_drop)
 
     def handle_sound_drop(self, envelope: EventEnvelope) -> None:
         try:
@@ -195,6 +211,71 @@ class IngestionDispatcher:
                     "timestamp": envelope.timestamp,
                 }
                 self.bus.publish("production.events.spine", spine_event)
+        except ParserFailureError as e:
+            self._emit_dlq(envelope, "PARSER_FAILURE", str(e))
+        except Exception as e:
+            self._emit_dlq(envelope, "SYSTEM_ERROR", str(e))
+
+    def handle_office_drop(self, envelope: EventEnvelope) -> None:
+        """
+        Reads Office's daily production report onto the intent axis.
+
+        Two axes come off one page, and keeping them apart is the point.
+        `Scenes Scheduled` is intent: what Office planned. Everything else the
+        report says about the day -- complete, part complete, not shot, shot
+        without being scheduled -- is Office's *belief* about what happened,
+        and Office does not observe what happened. Writing those as existence
+        would make the plan authoritative for reality, which is exactly the
+        boundary dept-office.md calls load-bearing.
+
+        Both negatives are stated on the page and have always died there.
+        Emitting them is what lets anything downstream ask.
+        """
+        try:
+            text = envelope.raw_content
+            if envelope.doc_type == DocumentType.DPR and _looks_like_pdf(text):
+                text = extract_text_from_pdf(text.encode("latin-1", errors="ignore"))
+
+            report = parse_daily_production_report(text)
+
+            def emit(payload: Dict[str, Any], axis: str, entity_type: str) -> None:
+                self.bus.publish("production.events.spine", {
+                    "event_id": envelope.event_id,
+                    "production_id": envelope.production_id,
+                    "shoot_day": envelope.shoot_day,
+                    "axis": axis,
+                    "department": envelope.department.value,
+                    "doc_type": envelope.doc_type.value,
+                    "entity_type": entity_type,
+                    "payload": payload,
+                    "metadata": envelope.metadata,
+                    "timestamp": envelope.timestamp,
+                })
+
+            # 1. Intent. What Office planned for the day.
+            for ref in report.scenes_scheduled:
+                emit({"scene": ref.scene, "raw": ref.raw, "state": "scheduled"},
+                     "intent", "scene")
+
+            # 2. Office's belief about the same day. A separate axis from the
+            #    plan, and separate from what Set and the disk say.
+            office_states = (
+                ("complete", report.scenes_complete),
+                ("part_complete", report.scenes_part_complete),
+                ("scheduled_not_shot", report.scenes_scheduled_not_shot),
+                ("shot_not_scheduled", report.scenes_shot_not_scheduled),
+            )
+            for state, refs in office_states:
+                for ref in refs:
+                    emit({"scene": ref.scene, "raw": ref.raw, "office_state": state},
+                         "belief", "scene")
+
+            # 3. The day itself: wrap and call times, set-ups, pages, and the
+            #    card and slate ranges. The wrap time is the baseline a
+            #    department's handover lag is measured from, and a slate
+            #    outside every range was never scheduled.
+            emit(report.as_payload(), "intent", "shoot_day")
+
         except ParserFailureError as e:
             self._emit_dlq(envelope, "PARSER_FAILURE", str(e))
         except Exception as e:
