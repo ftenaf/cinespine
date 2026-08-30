@@ -55,6 +55,58 @@ def test_nothing_is_sent_when_nothing_is_configured():
     assert analytics.capture("@ana", "requirement_raised", {"priority": "high"}) is False
 
 
+@pytest.mark.parametrize("host", [
+    "http://localhost:8000",
+    "https://posthog.example.com",
+    "http://10.0.0.5:8000",
+])
+def test_a_host_on_our_own_domain_is_accepted(host):
+    assert analytics.is_self_hosted(host) is True
+
+
+@pytest.mark.parametrize("host", [
+    "https://us.i.posthog.com",
+    "https://eu.i.posthog.com",
+    "https://app.posthog.com",
+    "posthog.com",
+    "https://POSTHOG.COM/ingest",
+    # A region added tomorrow, refused without anyone updating a list.
+    "https://ap-southeast-3.i.posthog.com",
+])
+def test_posthogs_own_endpoint_is_refused(host):
+    """
+    "Self-hosted only" that nothing checks is a comment. This product's
+    telemetry says which surfaces are used on which production.
+    """
+    assert analytics.is_self_hosted(host) is False
+
+
+def test_a_lookalike_domain_is_not_mistaken_for_posthog():
+    assert analytics.is_self_hosted("https://notposthog.com") is True
+    assert analytics.is_self_hosted("https://posthog.com.example.org") is True
+
+
+def test_a_cloud_host_leaves_analytics_disabled(monkeypatch):
+    monkeypatch.setenv("POSTHOG_API_KEY", "phc_test")
+    monkeypatch.setenv("POSTHOG_HOST", "https://us.i.posthog.com")
+    analytics.reset()
+    assert analytics.is_configured() is False
+    assert analytics.capture("@ana", "requirement_raised", {}) is False
+
+
+def test_the_refusal_says_why_rather_than_failing_quietly(monkeypatch, caplog):
+    """
+    Somebody deliberately pointed this at the cloud and needs to know it was
+    refused, not that it silently did nothing.
+    """
+    monkeypatch.setenv("POSTHOG_API_KEY", "phc_test")
+    monkeypatch.setenv("POSTHOG_HOST", "https://eu.i.posthog.com")
+    analytics.reset()
+    with caplog.at_level("ERROR"):
+        analytics.start()
+    assert "self-hosted only" in caplog.text
+
+
 def test_a_key_without_a_host_is_not_configured(monkeypatch):
     """
     Both, or neither. A key alone would default to PostHog's cloud, and this

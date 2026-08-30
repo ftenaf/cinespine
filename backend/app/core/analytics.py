@@ -50,17 +50,47 @@ FORBIDDEN_PROPERTIES = frozenset({
 })
 
 
+# PostHog's own hosted endpoints. A self-hosted instance lives on the
+# deployer's domain or on localhost; nothing that belongs to PostHog is a
+# self-hosted instance, whatever it is called.
+SAAS_DOMAIN = "posthog.com"
+
+
+def is_self_hosted(host: str) -> bool:
+    """
+    Whether this host is somewhere we are willing to send.
+
+    The rule is the domain, not a list of known endpoints: PostHog can add a
+    region tomorrow, and a list of hostnames is the failure mode this project
+    calls "the keyed list that rots". An instance at posthog.example.com is
+    self-hosted and passes; us.i.posthog.com is not and does not.
+    """
+    cleaned = (host or "").strip().lower()
+    if not cleaned:
+        return False
+
+    # Strip scheme, port, path, so the comparison is on the hostname alone.
+    without_scheme = cleaned.split("://", 1)[-1]
+    hostname = without_scheme.split("/", 1)[0].split("@")[-1].split(":", 1)[0]
+    if not hostname:
+        return False
+
+    return hostname != SAAS_DOMAIN and not hostname.endswith("." + SAAS_DOMAIN)
+
+
 def is_configured() -> bool:
     """
-    Sending takes an explicit key and host.
+    Sending takes an explicit key, and a host that is not PostHog's.
 
-    Both, not either: a key with no host would default to PostHog's cloud, and
-    this product's telemetry must not leave the machine it is deployed on.
+    Both, not either: a key with no host would default to PostHog's cloud. And
+    the host is checked rather than trusted, because "self-hosted only" that
+    nothing enforces is a comment, not a constraint -- this product's telemetry
+    says which surfaces are used on which production, and that must not leave
+    the machine it is deployed on.
     """
-    return bool(
-        os.environ.get("POSTHOG_API_KEY", "").strip()
-        and os.environ.get("POSTHOG_HOST", "").strip()
-    )
+    key = os.environ.get("POSTHOG_API_KEY", "").strip()
+    host = os.environ.get("POSTHOG_HOST", "").strip()
+    return bool(key and host and is_self_hosted(host))
 
 
 def start() -> Optional[Any]:
@@ -75,7 +105,16 @@ def start() -> Optional[Any]:
     _started = True
 
     if not is_configured():
-        logger.info("PostHog not configured (POSTHOG_API_KEY / POSTHOG_HOST); analytics disabled")
+        host = os.environ.get("POSTHOG_HOST", "").strip()
+        if host and not is_self_hosted(host):
+            # Loud, not silent: somebody deliberately pointed this at PostHog's
+            # cloud and needs to know it was refused rather than working.
+            logger.error(
+                "POSTHOG_HOST=%s is a PostHog-hosted endpoint. This product's "
+                "telemetry is self-hosted only, so analytics are disabled.", host,
+            )
+        else:
+            logger.info("PostHog not configured (POSTHOG_API_KEY / POSTHOG_HOST); analytics disabled")
         return None
 
     try:
