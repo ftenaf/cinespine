@@ -11,6 +11,27 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**The cast detail is one component again, and every screenplay type has one home.** 314 lines of markup
+were duplicated between `ScriptStudio.tsx`, which is what actually rendered, and
+`CharacterProfileCard.tsx`, which rendered in the popup. Diffed before collapsing rather than assumed
+equal: they differed in 21 lines, all cosmetic or a callback the card already takes as a prop. The inline
+copy is now a `<CharacterProfileCard>`, and ScriptStudio is 2703 lines rather than ~3050.
+
+**Five types were declared twice, and two of them disagreed.** `CharacterProfile`,
+`CharacterRelationship` and `DialogueLine` were identical. `ScreenplayScene` and `ShotProposal` were not:
+one file said `dialogues`, the other `dialogue?`, and they disagreed about what a camera is. Two types
+with one name and different shapes is worse than a duplicate -- the compiler is content either way and
+the mismatch only shows at runtime. The copies in `types.ts` turned out to be dead, imported by nothing
+in the file or out of it, so the live versions moved in and the dead ones went, taking `CameraSetup` with
+them, which existed only to serve the dead `ShotProposal`.
+
+**`--reload` wedges this backend, and the fix is a flag.** Recommended this morning without noticing:
+the app holds a Server-Sent Events stream open, uvicorn's graceful shutdown waits for connections to
+close, and the SSE connection never does. Every code change left the server stuck on "Waiting for
+connections to close" until the browser tab was shut. `.claude/launch.json` now passes
+`--timeout-graceful-shutdown 1`. The symptom looked like a frontend fault -- 500s in the console -- which
+is why it took a while to see.
+
 **A character's personality, scored from the script, with the lines it was read from beside it.** Five
 axes drawn as a polygon, and every line that character speaks, navigable in script order. The two are
 deliberately side by side: the polygon is a reading and the lines are its evidence, and a reading nobody
