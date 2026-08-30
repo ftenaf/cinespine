@@ -495,3 +495,21 @@ export async function fetchProductionAnalytics(
   if (!res.ok) throw await apiError(res, 'Failed to read the analytical spine');
   return res.json();
 }
+
+/**
+ * Every line a character speaks, in script order.
+ *
+ * The evidence behind a personality reading. A profile that says "guarded,
+ * evasive" is unverifiable without it: the director would have to page through
+ * the whole script to check.
+ */
+export async function fetchCharacterLines(
+  scriptId: string,
+  characterName: string,
+): Promise<import('./types').CharacterLines> {
+  const res = await fetch(
+    `${API_BASE}/script/${encodeURIComponent(scriptId)}/characters/${encodeURIComponent(characterName)}/lines`,
+  );
+  if (!res.ok) throw new Error(`Could not load lines for ${characterName}`);
+  return res.json();
+}

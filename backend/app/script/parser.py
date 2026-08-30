@@ -44,6 +44,11 @@ class CharacterProfile(BaseModel):
     look_and_costume: str = "Production wardrobe matching scene setting"
     facial_features: str = "Expressive cinematic facial features"
     personality_traits: List[str] = Field(default_factory=list)
+    # Five scored axes, or absent. A score may be null where the script does
+    # not support one -- see character_ai.PERSONALITY_AXES. Kept as a plain
+    # dict rather than a model so an axis the inference did not fill stays
+    # null instead of acquiring a default.
+    personality_axes: Optional[Dict[str, Any]] = None
     relationships: List[CharacterRelationship] = Field(default_factory=list)
     dialogue_count: int = 0
     scenes_present: List[str] = Field(default_factory=list)

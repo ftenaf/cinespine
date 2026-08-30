@@ -2255,7 +2255,7 @@ def get_prometheus_metrics():
 # Script Breakdown, DoP Cinematography & Previz Storyboard Endpoints
 # ---------------------------------------------------------------------------
 
-from backend.app.script.parser import parse_fountain_screenplay, parse_screenplay_file, Screenplay, ScreenplayScene, CharacterProfile
+from backend.app.script.parser import parse_fountain_screenplay, parse_screenplay_file, clean_character_name, Screenplay, ScreenplayScene, CharacterProfile
 from backend.app.script.dop_presets import DOP_MASTER_PRESETS, resolve_dop_specification, suggest_dop_preset_metadata
 from backend.app.script.breakdown_engine import breakdown_scene_to_shots, ShotProposal
 from backend.app.script.storyboard_generator import render_cinematic_storyboard_svg
@@ -2385,6 +2385,83 @@ def list_character_profiles(script_id: str):
         "script_id": script_id,
         "title": screenplay.get("title"),
         "characters": spine_writer.get_character_profiles(script_id),
+    }
+
+
+@router.get("/script/{script_id}/characters/{character_name}/lines")
+def get_character_lines(script_id: str, character_name: str):
+    """
+    Every line this character speaks, in script order, with where to find it.
+
+    The profile says who somebody is; this is the evidence for it. A director
+    reading "guarded, evasive" has no way to check that against the script
+    without paging through the whole thing, and a reading nobody can check is
+    just an assertion with a chart around it.
+
+    Lines are recovered by re-parsing each stored scene rather than from a
+    dialogue table, because the scene body is what was persisted and the
+    parser that produced it is the same one used here. A second extractor
+    would drift from the first.
+    """
+    screenplay = spine_writer.get_screenplay(script_id)
+    if screenplay is None:
+        raise HTTPException(status_code=404, detail=f"Unknown script '{script_id}'.")
+
+    wanted = clean_character_name(character_name).upper()
+    scenes = spine_writer.get_screenplay_scenes(script_id)
+
+    lines: List[Dict[str, Any]] = []
+    scenes_present: List[str] = []
+    for scene in scenes:
+        body = scene.get("body") or ""
+        if not body.strip():
+            continue
+        parsed = parse_fountain_screenplay(body, title=screenplay.get("title") or "Screenplay")
+        spoke_here = False
+        for parsed_scene in parsed.scenes:
+            for index, dialogue in enumerate(parsed_scene.dialogues):
+                if clean_character_name(dialogue.character).upper() != wanted:
+                    continue
+                spoke_here = True
+                lines.append({
+                    "ordinal": scene.get("ordinal"),
+                    "scene_number": scene.get("scene_number"),
+                    "heading": scene.get("heading"),
+                    "index_in_scene": index,
+                    "parenthetical": dialogue.parenthetical,
+                    "line": dialogue.line,
+                })
+        if spoke_here:
+            scenes_present.append(str(scene.get("scene_number")))
+
+    has_profile = any(
+        clean_character_name(c.get("name", "")).upper() == wanted
+        for c in spine_writer.get_character_profiles(script_id)
+    )
+
+    # Character profiles are built from dialogue cues, so a character who never
+    # speaks has no profile -- and without this, "appears and never speaks"
+    # would be indistinguishable from "not in this script". They are different
+    # facts, and telling a director the second when the first is true sends
+    # them looking for the wrong thing.
+    #
+    # Matched on a whole-word uppercase occurrence, which is the screenplay
+    # convention for naming someone in action. Case-sensitive on purpose: a
+    # lowercase "lead" in prose is the English word, not the character.
+    appears = has_profile
+    if not appears and wanted:
+        pattern = re.compile(rf"(?<![A-Z0-9]){re.escape(wanted)}(?![A-Z0-9])")
+        appears = any(pattern.search(scene.get("body") or "") for scene in scenes)
+
+    return {
+        "script_id": script_id,
+        "character": character_name,
+        "known_character": appears,
+        # Kept apart so a caller can tell why there are no lines.
+        "has_profile": has_profile,
+        "scenes_present": scenes_present,
+        "line_count": len(lines),
+        "lines": lines,
     }
 
 

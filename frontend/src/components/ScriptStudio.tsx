@@ -25,6 +25,9 @@ import {
   X
 } from 'lucide-react';
 import { CharacterProfileCard } from './CharacterProfileCard';
+import type { PersonalityAxes } from '../types';
+import { PersonalityPolygon } from './PersonalityPolygon';
+import { CharacterLinesPanel } from './CharacterLinesPanel';
 import {
   
   DEFAULT_SENSOR_ID,
@@ -65,6 +68,11 @@ export interface CharacterRelationship {
   interaction_count: number;
 }
 
+// NOTE: this duplicates CharacterProfile in types.ts, which is where the rest
+// of the app reads it from. Both were extended with personality_axes. The
+// duplication predates this change and is worth collapsing on its own, not in
+// the same pass as a feature -- but until it is, a field added to one and not
+// the other type-errors in exactly one place and is easy to miss.
 export interface CharacterProfile {
   id: string;
   name: string;
@@ -73,6 +81,7 @@ export interface CharacterProfile {
   look_and_costume: string;
   facial_features: string;
   personality_traits: string[];
+  personality_axes?: PersonalityAxes | null;
   relationships?: CharacterRelationship[];
   dialogue_count: number;
   scenes_present: string[];
@@ -1730,6 +1739,40 @@ export const ScriptStudio: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Personality, and the lines it was read from.
+                    Kept side by side deliberately: the polygon is a reading
+                    and the lines are its evidence. A reading nobody can check
+                    against the script is an assertion with a chart around it.
+
+                    NOTE: this whole cast detail is duplicated in
+                    CharacterProfileCard.tsx, which renders in the popup. Both
+                    were changed. The duplication predates this and is worth
+                    collapsing, but not in the same pass as a feature. */}
+                <div className="pt-6 border-t border-slate-800 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  <PersonalityPolygon
+                    axes={selectedCharacter.personality_axes}
+                    name={selectedCharacter.name}
+                  />
+                  {scriptId ? (
+                    <CharacterLinesPanel
+                      scriptId={scriptId}
+                      characterName={selectedCharacter.name}
+                      // Selecting a line moves the studio to that scene, so the
+                      // breakdown beside it is about the line being read.
+                      onGoToScene={(sceneNumber: string) => {
+                        const idx = parsedScenes.findIndex(
+                          sc => String(sc.scene_number) === String(sceneNumber),
+                        );
+                        if (idx >= 0) setSelectedSceneIndex(idx);
+                      }}
+                    />
+                  ) : (
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-xs text-gray-500">
+                      Lines appear once the screenplay has been stored.
+                    </div>
+                  )}
+                </div>
+
                 {/* Character Relationship Network Section */}
                 <div className="pt-6 border-t border-slate-800 space-y-3.5">
                   <div className="flex items-center justify-between">
@@ -2970,6 +3013,7 @@ export const ScriptStudio: React.FC = () => {
                 generatingPortraitMap={generatingPortraitMap}
                 handleGenerateCharacterPortrait={handleGenerateCharacterPortrait}
                 setEnlargedImage={setEnlargedImage}
+                scriptId={scriptId ?? undefined}
                 setSelectedCharId={(id: string) => {
                   setSelectedCharId(id);
                   setPopupCharacter(characters.find(c => c.id === id) || null);
