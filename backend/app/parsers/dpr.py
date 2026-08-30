@@ -28,9 +28,11 @@ a department's handover lag is measured from.
 # What this does not claim to know
 
 Scene tokens arrive with suffixes -- `27pt`, `6WT`. The scene number is
-extracted and the token kept exactly as written, because what `pt` means on
-this production has not been confirmed, and a parser that quietly decides is
-how a guess becomes a fact.
+extracted and the token kept exactly as written. `pt` means *part*: the script
+notes the scene was not fully shot (confirmed by Francisco, 2026-08-30). The
+token is still kept raw rather than folded into a boolean, because it is what
+the report said, and what it means is recorded in
+`references/domain/scene-tokens.md` where a reader can check it.
 """
 import re
 from dataclasses import dataclass, field

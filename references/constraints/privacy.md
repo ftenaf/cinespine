@@ -57,8 +57,15 @@ centrally on **both** ends -- a TypeScript type stops nothing once a value arriv
 anything over 64 characters is dropped, because a blocklist cannot anticipate every name prose might
 arrive under.
 
-## The assumption that is not yet guaranteed
+## The premise the gate rests on
 
-"Parsed facts carry no contact details" is the premise the gate rests on, and nothing enforces it. A
-camera CSV row that was not a take at all left a contact line in a `slate` field. See
-[open-questions.md](../open-questions.md).
+"Parsed facts carry no contact details" is what makes it safe to serve them, and until 2026-08-30 nothing
+enforced it: a camera CSV row that was not a take at all left a contact line in a `slate` field, which
+reached the spine, the analytical mirror and an analytics result.
+
+`parse_camera_csv` now tests the shape of a slate before accepting a row, so a footer or a contact block
+cannot become a scene. The test is the shape of a slate rather than a list of junk to exclude, because a
+blocklist is the failure mode this project calls the keyed list that rots.
+
+The other parsers have not had the same pass. A row that is not a take is a shape every tabular parser
+here can meet.

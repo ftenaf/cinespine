@@ -11,6 +11,16 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**Six questions answered by the domain source.** `pt` means part; "complete" is a chain of seven stages
+rather than a state; reject rows that do not look like takes; delete from the mirror too; requirements
+need a production level; the demo should run on anonymised real paperwork. The first two are now domain
+documents, three are implemented, and the last is a piece of work nobody has started. See
+[open-questions.md](open-questions.md).
+
+**A camera CSV footer could become a scene.** normalize_slate canonicalises whatever it is given, so a
+contact line became a slate and reached the spine, the mirror and an analytics result. The parser now
+tests the shape of a slate before accepting a row.
+
 **A day nobody had offloaded rendered as a clean day.** The gate had the negative -- never report missing
 media without a report -- and then said nothing, which is the same mistake pointing the other way. Fixing
 it surfaced two larger defects sharing the block: the existence findings were computed into a local and

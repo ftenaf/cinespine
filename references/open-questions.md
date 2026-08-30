@@ -10,45 +10,54 @@ status: open
 
 A plausible guess written as fact is the expensive failure in this domain. These are recorded instead.
 
-## For Francisco
+Answered questions leave this file. Where the answer is a domain fact it moves into `domain/`; where it
+was a decision, what was done with it is noted below.
 
-**What does `pt` mean on a scene token?** The daily production report writes `Scenes Scheduled: 27pt,
-49pt, 117pt, 6WT`. `WT` is a wild track. `pt` is probably "part", but that has not been confirmed. The
-parser extracts the number so it can be joined and keeps the token verbatim, so nothing rides on the
-answer -- but a later reader will assume something.
+## Still open
 
-**Are the slate ranges usable as a completeness check?** The report states `Slates: 27/7 - 8, 49/1 - 9,
-117/1 - 5`. `dept-office.md` says a slate outside every stated range was never scheduled, which is a
-check nothing else in the day provides. The ranges are parsed and on the spine; nothing uses them yet.
+**Are the slate ranges usable as a completeness check?** The daily production report states
+`Slates: 27/7 - 8, 49/1 - 9, 117/1 - 5`. `dept-office.md` says a slate outside every stated range was
+never scheduled, which is a check nothing else in the day provides. The ranges are parsed and on the
+spine; nothing uses them yet.
 
-**Does `Scenes Complete` on the DPR mean Office watched it happen, or that Set told them?** It is treated
-as Office's belief either way, which is safe. But if it is Set's word relayed, then Office and Set
-agreeing is one witness photocopied rather than two agreeing -- the "corroboration by one author" problem.
+**Does the editorial vocabulary need the rest of the chain?** "Complete" runs to seven stages and the tag
+statuses cover three of them; `finished` currently claims "no further work expected" when four stages
+follow it. See [domain/completion.md](domain/completion.md). Adding picture lock, conforming and DCP is a
+migration of stored tags, not a rename, so it needs deciding rather than doing.
 
-## For the team to decide
+**Sync lag has a baseline and no consumer.** The intent axis supplies the wrap time; nothing computes the
+lag from it. Wrap is a time of day and an ingest is a timestamp, so the report's own date is needed before
+the subtraction means anything.
 
-**Parsed facts are assumed to carry no contact details, and nothing enforces it.** A camera CSV row that
-was not a take at all left a contact line in a `slate` field, which reached ClickHouse and surfaced in an
-analytics result. The privacy gate rests on this assumption. Options: validate slate shape at the parser,
-reject rows that do not look like takes, or accept that the derived side needs its own filter.
+**Two Grafana gauges have no callers.** `cinespine_department_sync_lag_seconds` and
+`cinespine_active_discrepancies` are declared and never set, so a metric that can never fill looks like a
+production with nothing happening.
 
-**Anything that reaches the mirror stays there.** Deleting a document purges its events from SQLite and
-not from ClickHouse, which is correct for an append-only store and wrong if what got in should never have.
-There is no procedure for this.
+## Answered, and what came of it
 
-**Should requirements have a `production` target level?** The requirements document names four; the code
-has three. Nobody has asked for a production-level requirement, so this may be spec drift in the other
-direction.
+**`pt` on a scene token means *part*: the script notes it was not fully shot.** Francisco, 2026-08-30.
+Recorded in [domain/scene-tokens.md](domain/scene-tokens.md). The parser already kept the token verbatim,
+which turned out to be right, so nothing changed but the docstring that called it unconfirmed.
 
-**Is the demo running on real paperwork or fixtures?** The privacy gate refuses real documents by default.
-If the demo shows the document previewer against the real day 31, the flag has to be set and crew contact
-details are then on screen. Which documents are being shown is a decision, not a default.
+**"Complete" is a chain of seven stages, not a state.** Francisco, 2026-08-30. Recorded in
+[domain/completion.md](domain/completion.md), which also sets out how far the code represents it. The
+remaining decision is listed above.
 
-## Unresolved in the code
+**Reject rows that do not look like takes.** Francisco, 2026-08-30. `parse_camera_csv` now tests the shape
+of a slate before accepting a row, so a footer or a contact block cannot become a scene. Skipped rather
+than rejected -- one junk row does not make a report unparseable -- and the empty-result guard still
+catches a document that is entirely junk.
 
-**`AWAITING_OFFLOAD` has no representation.** The gate suppresses rather than states, so an un-offloaded
-day and a clean day render identically.
+**Deleting a document should remove it from ClickHouse too.** Francisco, 2026-08-30. It now does, by
+mutation, and that is the one thing permitted to delete from the append-only mirror. Never fatal: the
+document is already gone from the store the app reads.
 
-**Sync lag has a baseline now and no consumer.** The intent axis supplies the wrap time; nothing computes
-the lag from it. Note that wrap is a time of day and ingest is a timestamp, so the report's own date is
-needed before the subtraction means anything.
+**Requirements should have a `production` target level.** Francisco, 2026-08-30. Added, alongside scene,
+shot and take.
+
+**The demo should run on real paperwork, anonymised and scrambled.** Francisco, 2026-08-30. Not yet done,
+and it is a piece of work rather than a setting: it needs a pass that replaces crew names, contact details
+and any unreleased content with plausible substitutes while keeping every slate, roll, timecode and
+checksum intact -- because those are what the parsers and the reconciliation are being demonstrated on. A
+scramble that alters a roll number breaks the thing it is meant to show. Until it exists the demo runs on
+the embedded synthetic fixtures, which the privacy gate serves and which carry no real material.

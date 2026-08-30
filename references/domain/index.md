@@ -13,3 +13,5 @@ codebase has got **wrong** at least once, written down so the next version does 
 | Document | The mistake it prevents |
 |---|---|
 | [shoot-days.md](shoot-days.md) | Treating the day a document arrived as the day its contents belong to |
+| [completion.md](completion.md) | Reading "complete" as one state when it is a chain of seven |
+| [scene-tokens.md](scene-tokens.md) | Guessing at what a suffix on a scene number means |
