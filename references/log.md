@@ -11,6 +11,55 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**The self-hosted-only check was removed, and the payload is now the whole defence.** Both clients used
+to refuse a host on `posthog.com`. The deployment may use PostHog's cloud, so the check is gone --
+`is_configured` is now just "a key and a host", with the host still required rather than defaulted
+because where telemetry goes should be written down rather than inherited. The argument for the original
+constraint was not wrong; what changed is the judgement that the disclosure is acceptable, and that rests
+entirely on the payload being bounded. So the bound is now stated exactly in
+[constraints/privacy.md](constraints/privacy.md) rather than implied: which production, which day, which
+department, which surface, and a role token for who. Twelve tests went and three replaced them; every
+filter test stayed, and carries more weight than it did.
+
+`advanced_disable_decide: true` matters more after this change, not less. `/decide` is how PostHog can
+switch capture on from the server, and with a third-party destination that is the difference between
+settings that are ours and settings that can be changed remotely.
+
+**A self-hosted PostHog stack exists as an opt-in file**, `docker-compose.posthog.yml`, on port 8010 --
+PostHog's default is 8000, which is this app's backend, and `.env.example` had been documenting that
+collision as if it were a working value. Seven containers, including PostHog's own ClickHouse and Kafka:
+its internal architecture, not this project's, and the reason it is opt-in rather than in the default up.
+
+Brought up and verified rather than written and asserted. Four things were wrong on the first attempt:
+the MinIO healthcheck used `curl`, which that image does not contain; `mc ready local` assumes port 9000
+while the container serves 19000, so the check never passed and the web service waited forever on a
+dependency that was actually healthy; the web command `/compose/start` is mounted from PostHog's own repo
+and does not exist in the image, whose entrypoint already runs migrate, worker and server; and Postgres
+was pinned to 16, which this PostHog release refuses outright.
+
+**A `--remove-orphans` took down the base stack, and all three compose files are now separate projects.**
+Every file defaulted to the project name `cinespine`, so tearing down one reached the containers of
+another -- ClickHouse, Grafana and Prometheus, up 21 hours, all removed. The named volumes meant no data
+was lost (5914 events still in the mirror). Now: `cinespine`, `cinespine-observability`,
+`cinespine-posthog`.
+
+The base file keeps the name it had, deliberately. A project name is part of a volume's name, so
+renaming it would orphan `cinespine_clickhouse_data` and the mirror would come back empty -- which looks
+exactly like a mirror that was never written to. The observability file was safe to rename because
+everything in it is a bind mount.
+
+**Separate projects turned up a second bug that had to be fixed first.** Grafana was defined in *two*
+files, same container name, same port. While they shared a project name Compose treated the two as one
+service and the last `up` won, so nothing ever complained; split into separate projects they collided
+outright and neither would start. The definition in `docker-compose.yml` was the stub -- no provisioning,
+no dashboards, and its `grafana_data` volume had never been written to -- so it went, and Grafana is now
+defined only in the observability file. Migrating the running containers needed them removed once, since
+they still carried the old project label.
+
+Falsified with the command that caused the incident: `docker compose -f docker-compose.observability.yml
+down --remove-orphans` now removes its own two containers and leaves ClickHouse and all seven PostHog
+containers running.
+
 **Acknowledging after the write.** The hole found while removing Kafka is closed: `EventBus.publish`
 now runs every handler and then raises `EventHandlerError` carrying all the failures, so handlers stay
 isolated from each other while a failure becomes impossible to absorb. `/api/upload` and

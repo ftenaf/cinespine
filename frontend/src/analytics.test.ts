@@ -1,52 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import {
-  FORBIDDEN_PROPERTIES, INIT_OPTIONS, isSelfHosted, safeProperties,
+  FORBIDDEN_PROPERTIES, INIT_OPTIONS, safeProperties,
 } from './analytics';
 
 /**
- * The three rules, as tests rather than comments.
+ * The two rules, as tests rather than comments.
  *
  * This interface renders unreleased footage and a document previewer showing
  * facing pages that carry crew phone numbers. What must never be sent matters
  * more than what is.
+ *
+ * There used to be a third: self-hosted only, with a host on posthog.com
+ * refused. It was removed on 2026-08-30 because the deployment may use their
+ * cloud. Nothing below changes — but everything below now carries the weight
+ * that check used to share, because the destination may be a third party.
  */
-
-describe('self-hosted only', () => {
-  it('accepts a host on the deployer’s own domain', () => {
-    expect(isSelfHosted('https://posthog.example.com')).toBe(true);
-  });
-
-  it('accepts localhost and a private address', () => {
-    expect(isSelfHosted('http://localhost:8000')).toBe(true);
-    expect(isSelfHosted('http://10.0.0.5:8000')).toBe(true);
-  });
-
-  it.each([
-    'https://us.i.posthog.com',
-    'https://eu.i.posthog.com',
-    'https://app.posthog.com',
-    'posthog.com',
-    'https://POSTHOG.COM/ingest',
-  ])('refuses PostHog’s own endpoint %s', host => {
-    expect(isSelfHosted(host)).toBe(false);
-  });
-
-  it('matches the domain rather than a list of known endpoints', () => {
-    // A region added tomorrow must be refused without anyone updating a list:
-    // that is "the keyed list that rots".
-    expect(isSelfHosted('https://ap-southeast-3.i.posthog.com')).toBe(false);
-  });
-
-  it('is not fooled by a lookalike domain', () => {
-    expect(isSelfHosted('https://notposthog.com')).toBe(true);
-    expect(isSelfHosted('https://posthog.com.example.org')).toBe(true);
-  });
-
-  it('treats a missing host as not configured', () => {
-    expect(isSelfHosted(undefined)).toBe(false);
-    expect(isSelfHosted('   ')).toBe(false);
-  });
-});
 
 describe('nothing is captured, only emitted', () => {
   it('has autocapture off', () => {

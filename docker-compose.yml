@@ -1,4 +1,13 @@
-version: '3.8'
+# Named explicitly rather than derived from the directory. Every compose file
+# here used to default to `cinespine`, so a `--remove-orphans` against one
+# reached the containers of another: testing the PostHog stack took down this
+# one's ClickHouse, along with Grafana and Prometheus.
+#
+# This one keeps the name it already had, deliberately. The project name is
+# part of a volume's name, so changing it would orphan
+# `cinespine_clickhouse_data` and the spine's analytical mirror would come back
+# empty, which looks exactly like a mirror that was never written to.
+name: cinespine
 
 services:
   # ClickHouse OLAP Event Spine
@@ -19,20 +28,11 @@ services:
         soft: 262144
         hard: 262144
 
-  # Grafana Lighthouse Dashboards
-  grafana:
-    image: grafana/grafana:10.4.0
-    container_name: cinespine-grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
-    volumes:
-      - grafana_data:/var/lib/grafana
-
+# Grafana is defined in docker-compose.observability.yml and nowhere else.
+# There used to be a second one here with the same container name and the same
+# port; a shared project name let Compose treat the two as one service, so the
+# last `up` quietly won and nobody noticed. The volume it declared,
+# cinespine_grafana_data, was never written to -- the running Grafana uses bind
+# mounts -- and is left on disk rather than removed here.
 volumes:
   clickhouse_data:
-  grafana_data:

@@ -1,5 +1,18 @@
 """
-Product analytics, sent to a self-hosted PostHog.
+Product analytics, sent to PostHog -- self-hosted or their cloud.
+
+# Where this goes
+
+Either is allowed. `POSTHOG_HOST` says which, and it is required rather than
+defaulted, so the destination is always something somebody wrote down.
+
+A destination outside the machine is a disclosure, and it is worth being exact
+about its size. What leaves is the shape of the work: which production, which
+shoot day, which department, which surface, and a role token like
+`@sound_supervisor` for who. Not what any of it says. The filters below are
+what makes that true, and they apply to every destination equally --
+`docker-compose.posthog.yml` stands up a self-hosted instance for deployments
+that would rather this went nowhere.
 
 What this answers that the spine cannot: the spine records what a production
 did. This records what the *tool* did -- which surfaces get used, how long a
@@ -10,7 +23,8 @@ recorded anywhere."
 # What is deliberately not sent
 
 This app renders unreleased footage, crew names, and source documents carrying
-phone numbers and email addresses. So nothing here captures content:
+phone numbers and email addresses. So nothing here captures content, whoever
+is receiving it:
 
   * No autocapture and no session replay. Those would record the slate
     navigator mid-frame and the document previewer showing a facing page.
@@ -50,47 +64,17 @@ FORBIDDEN_PROPERTIES = frozenset({
 })
 
 
-# PostHog's own hosted endpoints. A self-hosted instance lives on the
-# deployer's domain or on localhost; nothing that belongs to PostHog is a
-# self-hosted instance, whatever it is called.
-SAAS_DOMAIN = "posthog.com"
-
-
-def is_self_hosted(host: str) -> bool:
-    """
-    Whether this host is somewhere we are willing to send.
-
-    The rule is the domain, not a list of known endpoints: PostHog can add a
-    region tomorrow, and a list of hostnames is the failure mode this project
-    calls "the keyed list that rots". An instance at posthog.example.com is
-    self-hosted and passes; us.i.posthog.com is not and does not.
-    """
-    cleaned = (host or "").strip().lower()
-    if not cleaned:
-        return False
-
-    # Strip scheme, port, path, so the comparison is on the hostname alone.
-    without_scheme = cleaned.split("://", 1)[-1]
-    hostname = without_scheme.split("/", 1)[0].split("@")[-1].split(":", 1)[0]
-    if not hostname:
-        return False
-
-    return hostname != SAAS_DOMAIN and not hostname.endswith("." + SAAS_DOMAIN)
-
-
 def is_configured() -> bool:
     """
-    Sending takes an explicit key, and a host that is not PostHog's.
+    Sending takes an explicit key and an explicit host.
 
-    Both, not either: a key with no host would default to PostHog's cloud. And
-    the host is checked rather than trusted, because "self-hosted only" that
-    nothing enforces is a comment, not a constraint -- this product's telemetry
-    says which surfaces are used on which production, and that must not leave
-    the machine it is deployed on.
+    Both, not either. The host is required even though the library has a
+    default, because the default is a third party: where this goes should be
+    something somebody wrote down, not something that happened.
     """
     key = os.environ.get("POSTHOG_API_KEY", "").strip()
     host = os.environ.get("POSTHOG_HOST", "").strip()
-    return bool(key and host and is_self_hosted(host))
+    return bool(key and host)
 
 
 def start() -> Optional[Any]:
@@ -105,16 +89,7 @@ def start() -> Optional[Any]:
     _started = True
 
     if not is_configured():
-        host = os.environ.get("POSTHOG_HOST", "").strip()
-        if host and not is_self_hosted(host):
-            # Loud, not silent: somebody deliberately pointed this at PostHog's
-            # cloud and needs to know it was refused rather than working.
-            logger.error(
-                "POSTHOG_HOST=%s is a PostHog-hosted endpoint. This product's "
-                "telemetry is self-hosted only, so analytics are disabled.", host,
-            )
-        else:
-            logger.info("PostHog not configured (POSTHOG_API_KEY / POSTHOG_HOST); analytics disabled")
+        logger.info("PostHog not configured (POSTHOG_API_KEY / POSTHOG_HOST); analytics disabled")
         return None
 
     try:

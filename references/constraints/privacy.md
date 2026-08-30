@@ -44,13 +44,34 @@ straight around any check on the stored bytes.
 
 ## Telemetry
 
-Product analytics go to a **self-hosted** PostHog or nowhere. A host on `posthog.com` is refused, matched
-on the domain rather than a list of endpoints so a region added tomorrow is refused without anyone
-updating a list.
+Product analytics go to PostHog -- self-hosted or their cloud. `POSTHOG_HOST` says which, and it is
+required rather than defaulted, so the destination is always something somebody wrote down.
+
+**This changed on 2026-08-30.** The clients used to refuse a host on `posthog.com` outright, on the
+argument that shipping this product's telemetry to a third party is a bigger disclosure than the
+raw-document endpoint the gate below exists to guard. That check was removed because the deployment may
+use PostHog's cloud. The argument was not wrong; the decision is that the disclosure is acceptable, and
+what makes it acceptable is that the payload is bounded. So it is worth being exact about the bound.
+
+**What leaves:** which production, which shoot day, which department, which document type, which axis,
+which surface was opened, a requirement's status/priority/category, and a role token like
+`@sound_supervisor` for who did it.
+
+**What does not:** any text a person typed, any filename, any content, any screenshot. Titles,
+descriptions, notes and resolution notes are stripped by name; anything over 64 characters is dropped
+whatever it is called, on the reasoning that ids and enumerations are short and prose is not; objects and
+arrays are dropped rather than stringified, because stringifying a payload is how content leaks as one
+long value. The filter is central, not per call site, because the next call site will be written by
+somebody who has not read the file.
 
 Autocapture and session replay are off. Autocapture records the text of everything clicked; session replay
-records the screen, and the screen is the footage. `/decide` is refused outright, because that is how
-capture can be switched on from the server.
+records the screen, and the screen is the footage. Pageviews are off too, because a URL carries the
+production id. `/decide` is refused outright, because that is how capture can be switched on from the
+server -- which matters more now than it did, not less: with a third-party destination it is the
+difference between settings that are ours and settings that can be changed remotely.
+
+`docker-compose.posthog.yml` stands up a self-hosted instance for deployments that would rather none of
+this left the machine.
 
 Events carry ids and enumerations. Titles, descriptions, notes, filenames and target labels are stripped
 centrally on **both** ends -- a TypeScript type stops nothing once a value arrives as `any` -- and

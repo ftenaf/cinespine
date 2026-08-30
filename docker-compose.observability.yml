@@ -1,3 +1,13 @@
+# Its own project, so a teardown here cannot reach the spine's ClickHouse or
+# the PostHog stack. Safe to rename, unlike docker-compose.yml: everything
+# below is a bind mount, so no named volume changes identity.
+#
+# Grafana is defined here and nowhere else. docker-compose.yml used to declare
+# a second one with the same container name and port. While both files shared a
+# project name Compose treated them as one service and the last `up` won, which
+# is why it went unnoticed; as separate projects they would collide outright.
+name: cinespine-observability
+
 services:
   prometheus:
     image: prom/prometheus:latest

@@ -1,19 +1,24 @@
 import posthog from 'posthog-js';
 
 /**
- * Product analytics, sent to a self-hosted PostHog.
+ * Product analytics, sent to PostHog — self-hosted or their cloud.
  *
- * Three rules, enforced here rather than assumed:
+ * `VITE_POSTHOG_HOST` says which, and it is required rather than defaulted, so
+ * the destination is always something somebody wrote down.
  *
- *   1. Self-hosted only. A host on posthog.com is refused, not trusted to be
- *      the right one. "Self-hosted only" that nothing checks is a comment.
- *   2. Nothing is captured, only emitted. Autocapture records the text of
+ * Two rules, enforced here rather than assumed, and they hold for either
+ * destination:
+ *
+ *   1. Nothing is captured, only emitted. Autocapture records the text of
  *      everything clicked; session replay records the screen. This interface
  *      renders unreleased footage and a previewer showing facing pages that
  *      carry crew phone numbers, so the screen is the material itself.
- *   3. Ids and actions. Properties are filtered at runtime, not just typed:
+ *   2. Ids and actions. Properties are filtered at runtime, not just typed:
  *      a type stops nothing once a value is `any`, and the call sites are
  *      spread across the app.
+ *
+ * What leaves is the shape of the work — which production, which day, which
+ * surface, and a role token for who. Not what any of it says.
  *
  * Unconfigured is the normal state in development, and every call below is
  * then a no-op.
@@ -21,28 +26,6 @@ import posthog from 'posthog-js';
 
 const KEY = import.meta.env.VITE_POSTHOG_KEY as string | undefined;
 const HOST = import.meta.env.VITE_POSTHOG_HOST as string | undefined;
-
-/** PostHog's own endpoints. A self-hosted instance is never one of these. */
-const SAAS_DOMAIN = 'posthog.com';
-
-/**
- * Whether this host is somewhere we are willing to send.
- *
- * Matched on the domain rather than a list of known endpoints: PostHog can add
- * a region tomorrow, and a list of hostnames is the failure mode this project
- * calls "the keyed list that rots". `posthog.example.com` is self-hosted and
- * passes; `us.i.posthog.com` is not and does not.
- */
-export function isSelfHosted(host: string | undefined): boolean {
-  const cleaned = (host ?? '').trim().toLowerCase();
-  if (!cleaned) return false;
-
-  const withoutScheme = cleaned.split('://').pop() ?? '';
-  const hostname = (withoutScheme.split('/')[0].split('@').pop() ?? '').split(':')[0];
-  if (!hostname) return false;
-
-  return hostname !== SAAS_DOMAIN && !hostname.endsWith(`.${SAAS_DOMAIN}`);
-}
 
 /**
  * Property names that carry what somebody typed, or what a document is called.
@@ -104,21 +87,11 @@ export const INIT_OPTIONS = {
 let started = false;
 
 export function isConfigured(): boolean {
-  return Boolean(KEY && isSelfHosted(HOST));
+  return Boolean(KEY && HOST);
 }
 
 export function startAnalytics(): void {
   if (started) return;
-
-  if (KEY && HOST && !isSelfHosted(HOST)) {
-    // Loud, not silent: somebody pointed this at PostHog's cloud and needs to
-    // know it was refused rather than working.
-    console.error(
-      `[analytics] VITE_POSTHOG_HOST=${HOST} is a PostHog-hosted endpoint. ` +
-      'This product\'s telemetry is self-hosted only, so analytics are disabled.',
-    );
-  }
-
   if (!isConfigured()) return;
   started = true;
 

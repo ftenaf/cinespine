@@ -5,6 +5,11 @@ This app renders unreleased footage, crew names, and source documents carrying
 phone numbers and email addresses. So the tests that matter here are not that
 events are sent -- they are about what is refused, and about the app not
 depending on the endpoint being up.
+
+The destination is no longer restricted: self-hosted and PostHog's cloud are
+both allowed, so every filter below carries more weight than it used to. What
+leaves is which production, which day, which department, which surface, and a
+role token for who -- and these tests are what keeps that list from growing.
 """
 import pytest
 
@@ -38,7 +43,7 @@ class FakePosthog:
 def sent(monkeypatch):
     """A configured analytics client whose sends are captured, not posted."""
     monkeypatch.setenv("POSTHOG_API_KEY", "phc_test")
-    monkeypatch.setenv("POSTHOG_HOST", "http://localhost:8000")
+    monkeypatch.setenv("POSTHOG_HOST", "http://localhost:8010")
     analytics.reset()
     fake = FakePosthog()
     monkeypatch.setattr(analytics, "_client", fake)
@@ -56,61 +61,27 @@ def test_nothing_is_sent_when_nothing_is_configured():
 
 
 @pytest.mark.parametrize("host", [
-    "http://localhost:8000",
+    "http://localhost:8010",
     "https://posthog.example.com",
-    "http://10.0.0.5:8000",
-])
-def test_a_host_on_our_own_domain_is_accepted(host):
-    assert analytics.is_self_hosted(host) is True
-
-
-@pytest.mark.parametrize("host", [
     "https://us.i.posthog.com",
-    "https://eu.i.posthog.com",
-    "https://app.posthog.com",
-    "posthog.com",
-    "https://POSTHOG.COM/ingest",
-    # A region added tomorrow, refused without anyone updating a list.
-    "https://ap-southeast-3.i.posthog.com",
 ])
-def test_posthogs_own_endpoint_is_refused(host):
+def test_either_destination_is_allowed(host, monkeypatch):
     """
-    "Self-hosted only" that nothing checks is a comment. This product's
-    telemetry says which surfaces are used on which production.
-    """
-    assert analytics.is_self_hosted(host) is False
-
-
-def test_a_lookalike_domain_is_not_mistaken_for_posthog():
-    assert analytics.is_self_hosted("https://notposthog.com") is True
-    assert analytics.is_self_hosted("https://posthog.com.example.org") is True
-
-
-def test_a_cloud_host_leaves_analytics_disabled(monkeypatch):
-    monkeypatch.setenv("POSTHOG_API_KEY", "phc_test")
-    monkeypatch.setenv("POSTHOG_HOST", "https://us.i.posthog.com")
-    analytics.reset()
-    assert analytics.is_configured() is False
-    assert analytics.capture("@ana", "requirement_raised", {}) is False
-
-
-def test_the_refusal_says_why_rather_than_failing_quietly(monkeypatch, caplog):
-    """
-    Somebody deliberately pointed this at the cloud and needs to know it was
-    refused, not that it silently did nothing.
+    Self-hosted or PostHog's cloud. The host check that used to refuse the
+    latter was removed deliberately on 2026-08-30; what keeps this safe is not
+    where it goes but what is put in it, which is the rest of this file.
     """
     monkeypatch.setenv("POSTHOG_API_KEY", "phc_test")
-    monkeypatch.setenv("POSTHOG_HOST", "https://eu.i.posthog.com")
+    monkeypatch.setenv("POSTHOG_HOST", host)
     analytics.reset()
-    with caplog.at_level("ERROR"):
-        analytics.start()
-    assert "self-hosted only" in caplog.text
+    assert analytics.is_configured() is True
 
 
 def test_a_key_without_a_host_is_not_configured(monkeypatch):
     """
-    Both, or neither. A key alone would default to PostHog's cloud, and this
-    product's telemetry must not leave the machine it is deployed on.
+    Both, or neither. A key alone would fall back to the library's default
+    endpoint, and where telemetry goes should be written down rather than
+    inherited.
     """
     monkeypatch.setenv("POSTHOG_API_KEY", "phc_test")
     analytics.reset()
@@ -118,7 +89,7 @@ def test_a_key_without_a_host_is_not_configured(monkeypatch):
 
 
 def test_a_host_without_a_key_is_not_configured(monkeypatch):
-    monkeypatch.setenv("POSTHOG_HOST", "http://localhost:8000")
+    monkeypatch.setenv("POSTHOG_HOST", "http://localhost:8010")
     analytics.reset()
     assert analytics.is_configured() is False
 
