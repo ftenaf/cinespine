@@ -8,7 +8,7 @@ onto the spine topic.
 import logging
 from typing import Dict, Any
 from backend.app.streaming.models import EventEnvelope, DocumentType
-from backend.app.streaming.bus import EventBus
+from backend.app.streaming.bus import EventBus, EventHandlerError
 from backend.app.parsers.sound_ale import parse_sound_ale
 from backend.app.parsers.camera_csv import parse_camera_csv
 from backend.app.parsers.silverstack_xml import parse_silverstack_xml
@@ -94,6 +94,12 @@ class IngestionDispatcher:
                 self.bus.publish("production.events.spine", spine_event)
         except ParserFailureError as e:
             self._emit_dlq(envelope, "PARSER_FAILURE", str(e))
+        except EventHandlerError:
+            # The spine write failed, not the document. A DLQ entry would say
+            # this paperwork was rejected, which is a different thing entirely
+            # and would send someone to check a report that was fine. Let it
+            # reach the caller, which has to answer for the ingest.
+            raise
         except Exception as e:
             self._emit_dlq(envelope, "SYSTEM_ERROR", str(e))
 
@@ -145,6 +151,12 @@ class IngestionDispatcher:
                 self.bus.publish("production.events.spine", spine_event)
         except ParserFailureError as e:
             self._emit_dlq(envelope, "PARSER_FAILURE", str(e))
+        except EventHandlerError:
+            # The spine write failed, not the document. A DLQ entry would say
+            # this paperwork was rejected, which is a different thing entirely
+            # and would send someone to check a report that was fine. Let it
+            # reach the caller, which has to answer for the ingest.
+            raise
         except Exception as e:
             self._emit_dlq(envelope, "SYSTEM_ERROR", str(e))
 
@@ -215,6 +227,12 @@ class IngestionDispatcher:
                 self.bus.publish("production.events.spine", spine_event)
         except ParserFailureError as e:
             self._emit_dlq(envelope, "PARSER_FAILURE", str(e))
+        except EventHandlerError:
+            # The spine write failed, not the document. A DLQ entry would say
+            # this paperwork was rejected, which is a different thing entirely
+            # and would send someone to check a report that was fine. Let it
+            # reach the caller, which has to answer for the ingest.
+            raise
         except Exception as e:
             self._emit_dlq(envelope, "SYSTEM_ERROR", str(e))
 
@@ -280,6 +298,12 @@ class IngestionDispatcher:
 
         except ParserFailureError as e:
             self._emit_dlq(envelope, "PARSER_FAILURE", str(e))
+        except EventHandlerError:
+            # The spine write failed, not the document. A DLQ entry would say
+            # this paperwork was rejected, which is a different thing entirely
+            # and would send someone to check a report that was fine. Let it
+            # reach the caller, which has to answer for the ingest.
+            raise
         except Exception as e:
             self._emit_dlq(envelope, "SYSTEM_ERROR", str(e))
 
@@ -370,6 +394,12 @@ class IngestionDispatcher:
                     self.bus.publish("production.events.spine", take_event)
         except ParserFailureError as e:
             self._emit_dlq(envelope, "PARSER_FAILURE", str(e))
+        except EventHandlerError:
+            # The spine write failed, not the document. A DLQ entry would say
+            # this paperwork was rejected, which is a different thing entirely
+            # and would send someone to check a report that was fine. Let it
+            # reach the caller, which has to answer for the ingest.
+            raise
         except Exception as e:
             self._emit_dlq(envelope, "SYSTEM_ERROR", str(e))
 

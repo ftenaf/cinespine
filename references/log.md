@@ -11,6 +11,24 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**Acknowledging after the write.** The hole found while removing Kafka is closed: `EventBus.publish`
+now runs every handler and then raises `EventHandlerError` carrying all the failures, so handlers stay
+isolated from each other while a failure becomes impossible to absorb. `/api/upload` and
+`/api/upload/file` answer 500 and name the doc_id; `/api/seed` counts failures separately from skips,
+because in bulk the old behaviour reported every file as ingested while each produced nothing. A failed
+spine write is deliberately *not* a DLQ entry: the DLQ means the paperwork was refused, which sends
+someone to check a report that was fine.
+
+Falsified rather than assumed -- with the swallowing put back, 10 of the 13 new tests fail, and the
+three that pass are the negative controls (a healthy upload, a legitimately rejected document, a publish
+where nothing fails).
+
+**Two things this turned up.** `/api/upload/file`'s failure branch named a variable not in its scope, so
+it would have raised NameError instead of the error it was reporting -- untested, which is why it was
+wrong. And `monkeypatch.undo()` is unsafe in this suite: the autouse fixtures in `backend/tests/conftest.py`
+take the same function-scoped monkeypatch, so undoing a patch also reverts `CINESPINE_DB_PATH` and the
+test then reads a different database than the one it wrote to.
+
 **Kafka was never running, and has been removed rather than wired.** `EventBus` carried a Confluent
 producer that could not execute -- the only construction passed `in_memory=True`, which short-circuits
 the branch that builds it -- and `docker-compose.yml` started a Redpanda container that this app never

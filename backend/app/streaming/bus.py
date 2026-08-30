@@ -29,11 +29,43 @@ Real work goes through here. Ingestion reaches the spine writer via
 `production.events.spine`, and rejected documents reach telemetry via
 `production.events.dlq`. Removing the bus would break ingestion; only the
 broker went.
+
+# Failure is reported, not swallowed
+
+`publish` used to log a handler exception and return, so a spine write that
+failed still produced a 200 INGESTED -- the confident nothing, in the ingest
+path. It now raises `EventHandlerError` after running the handlers, which
+keeps them isolated from each other while making the failure impossible to
+miss.
 """
 import logging
-from typing import Callable, Dict, List, Any
+from typing import Callable, Dict, List, Any, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+class EventHandlerError(Exception):
+    """
+    One or more subscribers on a topic failed.
+
+    Raised after every handler has run, so it says what went wrong without
+    having decided on the caller's behalf that the rest should be skipped.
+
+    This is not a rejected document. A document the parsers refuse is a
+    legitimate outcome and goes to the DLQ; this means the machinery underneath
+    failed -- the spine write did not land, most likely -- and whoever uploaded
+    must not be told INGESTED.
+    """
+
+    def __init__(self, topic: str, failures: List[Tuple[Callable[[Any], None], Exception]]):
+        self.topic = topic
+        self.failures = failures
+        reasons = "; ".join(f"{type(e).__name__}: {e}" for _, e in failures)
+        super().__init__(f"{len(failures)} handler(s) failed on '{topic}': {reasons}")
+
+    @property
+    def reasons(self) -> List[str]:
+        return [f"{type(e).__name__}: {e}" for _, e in self.failures]
 
 
 class EventBus:
@@ -66,12 +98,29 @@ class EventBus:
         return sorted(self._subscribers)
 
     def publish(self, topic: str, event: Any) -> None:
-        # A handler that raises is logged and swallowed, so the caller still
-        # sees success. That is a real hole in the ingest path -- a spine
-        # write that fails returns 200 -- and the fix is to acknowledge after
-        # the write, not to put a queue in front of it.
+        """
+        Runs every handler on the topic, then reports what failed.
+
+        Two things have to be true at once, and they pull in opposite
+        directions. One department's parser blowing up must not stop another
+        department's document from being ingested -- so every handler runs,
+        and one raising does not skip the rest. But a handler that failed
+        means work that did not happen, and the caller has to be able to know
+        that, or it will acknowledge an ingest that never landed.
+
+        So: isolate, then raise. Failures are collected while the handlers run
+        and reported together afterwards as `EventHandlerError`. A caller that
+        wants the old behaviour has to catch it deliberately, which is the
+        point -- silence should be a decision somebody made, not the default.
+        """
+        failures: List[Tuple[Callable[[Any], None], Exception]] = []
+
         for handler in self._subscribers.get(topic, []):
             try:
                 handler(event)
             except Exception as e:
                 logger.error(f"Error in subscriber handler for topic {topic}: {e}")
+                failures.append((handler, e))
+
+        if failures:
+            raise EventHandlerError(topic, failures)
