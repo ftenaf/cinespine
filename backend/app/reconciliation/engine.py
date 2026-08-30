@@ -1,7 +1,39 @@
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from backend.app.reconciliation.models import Discrepancy, DiscrepancyType, Severity
 from backend.app.reconciliation.timecode import calculate_frame_drift
+
+
+# A slate is a scene and a shot: `27/7`, `64A/1`, `49/WT`. Only the shot half
+# is compared against a range, and only when it is a number.
+_SLATE_SPLIT = re.compile(r"^(?P<scene>.+?)[/_ -](?P<shot>[^/_ -]+)$")
+
+
+def _scene_and_shot(slate: Optional[str]) -> Tuple[Optional[str], Optional[int]]:
+    """
+    The scene and the shot number, or Nones where either cannot be read.
+
+    A wild track (`49/WT`) has a scene and no shot number, and that is a real
+    answer rather than a parse failure: it is not on the number line a range
+    runs along.
+    """
+    match = _SLATE_SPLIT.match(str(slate or "").strip())
+    if not match:
+        return None, None
+    scene = match.group("scene").strip()
+    shot = match.group("shot").strip()
+    digits = re.match(r"^(\d+)", shot)
+    return (scene or None), (int(digits.group(1)) if digits else None)
+
+
+def _shot_number(slate: Optional[str]) -> Optional[int]:
+    """The shot half of a range endpoint, which may be written `27/8` or `8`."""
+    raw = str(slate or "").strip()
+    if not raw:
+        return None
+    if re.fullmatch(r"\d+", raw):
+        return int(raw)
+    return _scene_and_shot(raw)[1]
 
 
 class ReconciliationEngine:
@@ -268,6 +300,75 @@ class ReconciliationEngine:
                 severity=Severity.INFO,
                 description=f"Scene {scene} was shot on day {shoot_day} without being scheduled.",
                 witnesses=[{"department": "office", "claim": "shot_not_scheduled", "scene": scene}],
+            ))
+
+        return discrepancies
+
+    def reconcile_slate_ranges(
+        self,
+        production_id: str,
+        shoot_day: str,
+        slate_ranges: List[Dict[str, Any]],
+        logged_slates: List[str],
+    ) -> List["Discrepancy"]:
+        """
+        Slates somebody recorded that Office's own ranges do not cover.
+
+        The daily production report states `Slates: 27/7 - 8, 49/1 - 9,
+        117/1 - 5`. That is Office saying which slates the day produced, and it
+        is the only completeness check the day contains: nothing else states an
+        expected extent, so nothing else can notice a slate that should not
+        exist.
+
+        Three things are deliberately *not* reported, because in each case the
+        page is silent rather than denying:
+
+        * A scene with no stated range at all. Office not writing a range for
+          scene 64 says nothing whatever about scene 64's slates, and treating
+          it as "no slates expected" would turn silence into denial.
+        * A slate whose shot part is not a number -- `49/WT`, a wild track.
+          A range runs between two numbers and a wild track is not on that
+          line, so it cannot be inside or outside one.
+        * Anything at all when no ranges were parsed. A report whose Slates
+          field was missing or unreadable must not make every slate a finding.
+        """
+        discrepancies: List[Discrepancy] = []
+
+        stated: Dict[str, Tuple[int, int]] = {}
+        for entry in slate_ranges or []:
+            scene = str(entry.get("scene") or "").strip()
+            first = _shot_number(entry.get("first"))
+            last = _shot_number(entry.get("last"))
+            if scene and first is not None and last is not None:
+                low, high = sorted((first, last))
+                stated[scene] = (low, high)
+
+        if not stated:
+            return discrepancies
+
+        for slate in sorted(set(logged_slates)):
+            scene, shot = _scene_and_shot(slate)
+            if scene not in stated or shot is None:
+                continue
+            low, high = stated[scene]
+            if low <= shot <= high:
+                continue
+            discrepancies.append(Discrepancy(
+                production_id=production_id,
+                shoot_day=shoot_day,
+                entity_type="shot",
+                entity_id=slate,
+                discrepancy_type=DiscrepancyType.SLATE_OUTSIDE_STATED_RANGE,
+                severity=Severity.WARNING,
+                description=(
+                    f"Slate {slate} was recorded on day {shoot_day}, and Office states scene "
+                    f"{scene} ran {low} to {high}. Either the slate is wrong or the range is short."
+                ),
+                witnesses=[
+                    {"department": "office", "claim": "slate_range",
+                     "scene": scene, "first": low, "last": high},
+                    {"department": "set", "claim": "slate_recorded", "slate": slate},
+                ],
             ))
 
         return discrepancies

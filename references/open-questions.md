@@ -15,20 +15,28 @@ was a decision, what was done with it is noted below.
 
 ## Still open
 
-**Are the slate ranges usable as a completeness check?** The daily production report states
-`Slates: 27/7 - 8, 49/1 - 9, 117/1 - 5`. `dept-office.md` says a slate outside every stated range was
-never scheduled, which is a check nothing else in the day provides. The ranges are parsed and on the
-spine; nothing uses them yet.
-
-**Sync lag has a baseline and no consumer.** The intent axis supplies the wrap time; nothing computes the
-lag from it. Wrap is a time of day and an ingest is a timestamp, so the report's own date is needed before
-the subtraction means anything.
-
-**Two Grafana gauges have no callers.** `cinespine_department_sync_lag_seconds` and
-`cinespine_active_discrepancies` are declared and never set, so a metric that can never fill looks like a
-production with nothing happening.
+**What is the date of a shoot day?** This is the one thing standing between the spine and a department
+sync lag. A daily production report states wrap as a time of day -- `18:55` -- and the only other
+timestamp available is when the document reached this system, which for day 31 is months after it was
+shot. Subtracting one from the other invents a number neither witness supports. A shoot day is a number,
+not a date, and nothing parsed so far carries the mapping. The reports themselves almost certainly print
+a date somewhere; what is not known is under which label, and that needs a real report to answer rather
+than a guess. Until then `cinespine_department_sync_lag_seconds` is removed rather than left permanently
+empty, because a flat zero on a dashboard reads as "no lag" rather than "not known".
 
 ## Answered, and what came of it
+
+**The slate ranges are usable as a completeness check, and the first thing they caught was ours.**
+Implemented 2026-08-30 as `SLATE_OUTSIDE_STATED_RANGE`. Run against the real day it produced one finding:
+slate `27/27`, which no department ever wrote. It came from all three Silverstack parsers building
+`scene + "/" + shot` when Silverstack's `Shot` field is already the whole slate -- so every clip in a
+thumbnail report reached the spine under a slate that did not exist, and DIT disagreed with camera about
+every take while the board showed nothing, because the two witnesses never met on a common key. With the
+parsers fixed the check is silent on that day, which is the right answer.
+
+Three things it deliberately does not report, because the page is silent rather than denying: a scene with
+no stated range, a slate whose shot half is not a number (`49/WT`), and anything at all when no ranges
+parsed.
 
 **The editorial vocabulary did need the rest of the chain, and adding it migrated nothing.** Francisco,
 2026-08-30. `picture_lock`, `colour_sound_vfx`, `conformed` and `dcp` now follow `finished`, whose label

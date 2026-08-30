@@ -35,19 +35,20 @@
       }
     },
     {
-      "title": "Department Sync Lag Matrix",
+      "title": "Paperwork Filed, by Department",
+      "description": "Was a lag from wrap. A daily production report states wrap as a time of day with no date on it, and the only other timestamp is when the document reached this system, so the subtraction would have invented a number neither witness supports. This shows what is actually known: who has filed, and how much.",
       "type": "bargauge",
       "gridPos": { "h": 8, "w": 16, "x": 8, "y": 0 },
       "targets": [
         {
-          "expr": "cinespine_department_sync_lag_seconds",
-          "legendFormat": "{{department}} (Day {{shoot_day}})",
+          "expr": "sum by (department) (cinespine_ingested_events_total)",
+          "legendFormat": "{{department}}",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
+          "unit": "short",
           "color": { "mode": "palette-classic" }
         }
       }

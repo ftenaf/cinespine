@@ -15,6 +15,16 @@ does not; the shapes are named in
 
 ## Ingestion and parsing
 
+**Every Silverstack clip reached the spine under a slate nobody wrote.** A thumbnail report states
+`Scene 27` and `Shot 27/7`, and the `Shot` field is already the whole slate. All three Silverstack parsers
+built `f"{scene}/{shot}"` anyway, giving `27/27/7`, which normalised to `27/27`. So DIT disagreed with
+camera about every take of the day, and the board showed no conflict at all -- the two witnesses never met
+on a common key, so there was nothing to compare. The same line appeared in the volume, clips and
+thumbnail parsers; the other two take scene and shot from filenames, where the shot half is always bare,
+so only the thumbnail path was wrong in practice. Found by the slate-range check on its first run against
+real data. Reproduce with `Scene 27` / `Shot 27/7` through `parse_silverstack_thumbnail_text`.
+
+
 **A compound slate reported three cards as a conflict.** `119/5` on card A046, `41+122A/4` on A068 and
 `97+121/4` on A080 came back as "Camera A roll mismatch on 119/5". The slate pattern did not admit
 compound scenes, so three separate setups folded into one.
