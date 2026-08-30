@@ -15,12 +15,13 @@
     },
     {
       "type": "timeseries",
-      "title": "Department Sync Lag (Seconds)",
+      "title": "Active Discrepancies by Kind",
+      "description": "Was a lag from wrap, which cannot be computed: the report states wrap as a time of day with no date. This breakdown is what the gauge gained instead, now that it carries production, day, severity and kind.",
       "gridPos": { "h": 6, "w": 16, "x": 8, "y": 0 },
       "targets": [
         {
-          "expr": "cinespine_department_sync_lag_seconds",
-          "legendFormat": "{{department}} ({{shoot_day}})"
+          "expr": "sum by (discrepancy_type) (cinespine_active_discrepancies)",
+          "legendFormat": "{{discrepancy_type}}"
         }
       ]
     },

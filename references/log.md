@@ -11,6 +11,33 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**The two dead gauges are closed: one filled, one removed.** `cinespine_active_discrepancies` was declared
+and never set, so it could only ever render as a flat zero -- absence rendered as presence, on a board
+whose whole job is to say whether a day is clean. It is now written wherever discrepancies are computed,
+and gained `production_id` and `shoot_day` labels: without them the second day somebody opened would
+overwrite the first while still looking like a total. Every severity and kind is written on each
+observation, zeros included, because a gauge keeps its last value and setting only what occurred would
+leave a resolved discrepancy showing its old count. A day nobody has opened stays absent rather than zero,
+which are different facts.
+
+Observed where the discrepancies are computed rather than at scrape time. Reconciling every day of a shoot
+on every Prometheus scrape would cost far more than the number is worth, so the gauge covers the days
+somebody has looked at.
+
+`cinespine_department_sync_lag_seconds` went the other way. It cannot be computed: wrap is stated as a
+time of day with no date, and the only other timestamp is when the document reached this system. It is now
+an open question that names the missing input -- the report's own date -- rather than a gauge that can
+never fill. Both Grafana dashboards pointed at it, so both panels were repointed: one to paperwork filed
+per department, which is the half of a sync matrix that is actually known, and one to discrepancies broken
+down by kind, which the new labels made possible.
+
+**The editorial vocabulary now runs to the end of the chain**, and adding it migrated nothing. See the
+entry in [findings/spec-drift.md](findings/spec-drift.md) and
+[domain/completion.md](domain/completion.md), which had recorded the change as needing a migration and was
+wrong about that: the defect was in `finished`'s label and description, which are vocabulary metadata and
+are never stored on a tag. A rename would have needed one -- and would have meant rewriting an append-only
+trail, falsifying what people recorded at the time.
+
 **The analytical mirror can now live somewhere other than this machine.** The connector hardcoded plain
 HTTP on 8123, so a hosted ClickHouse was unreachable by construction. `CLICKHOUSE_SECURE` now selects
 TLS and the default port follows it to 8443, because the two are not independent: a managed instance

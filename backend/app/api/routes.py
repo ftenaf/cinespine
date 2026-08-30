@@ -1340,7 +1340,13 @@ def get_takes(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
 
 @router.get("/discrepancies")
 def get_discrepancies(production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
-    return mcp_server.query_production_discrepancies(production_id=production_id, shoot_day=shoot_day)
+    found = mcp_server.query_production_discrepancies(production_id=production_id, shoot_day=shoot_day)
+    # Observed where they are computed rather than on the metrics scrape:
+    # reconciling every day of a shoot on every scrape would cost far more than
+    # the number is worth. So the gauge covers the days somebody has opened,
+    # which is what "how is the day looking" means in practice.
+    TelemetryExporter.record_discrepancies(production_id, shoot_day, found)
+    return found
 
 
 @router.post("/discrepancies/{discrepancy_id}/resolve")
