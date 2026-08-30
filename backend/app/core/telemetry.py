@@ -56,17 +56,22 @@ ACTIVE_DISCREPANCIES = Gauge(
     ["production_id", "shoot_day", "severity", "discrepancy_type"],
 )
 
-# cinespine_department_sync_lag_seconds was declared here and never set, and it
-# has been removed rather than wired up. The lag is measured from wrap, and a
-# daily production report states wrap as a time of day -- "18:55" -- with no
-# date on it. What the spine has to subtract from is the moment the document
-# was uploaded to this system, which for day 31 is months after the day was
-# shot. The subtraction would invent a number neither witness supports.
+# Back, and computable now. It was removed on 2026-08-30 because wrap is stated
+# as a time of day with no date beside it, so there was no moment to subtract
+# from -- and a gauge that can never fill renders as a flat zero, which reads
+# as "no lag" rather than "not known". The date is on the spine since the same
+# afternoon, so the subtraction is real.
 #
-# A gauge that can never fill is worse than no gauge: it renders as a flat zero
-# on a dashboard, which reads as "no lag" rather than "not known" -- absence
-# rendered as presence. Recorded in references/open-questions.md, where it now
-# names what is missing: the report's own date.
+# `measurement` is the label that keeps it honest. Paperwork loaded months
+# after the shoot has a correct lag that says nothing about the night it was
+# filed, and 780 hours in a matrix a reader expects to be hours would tell them
+# something false in a form that looks true. A dashboard can show handovers and
+# backfills; it must not show them as one number.
+DEPARTMENT_SYNC_LAG = Gauge(
+    "cinespine_department_sync_lag_seconds",
+    "Seconds between wrap and a department's first filing for that shoot day",
+    ["production_id", "shoot_day", "department", "measurement"],
+)
 
 
 class TelemetryExporter:
@@ -111,6 +116,27 @@ class TelemetryExporter:
                 production_id=production_id, shoot_day=shoot_day,
                 severity=severity, discrepancy_type=kind,
             ).set(count)
+
+    @staticmethod
+    def record_sync_lag(production_id: str, rows: Iterable[Dict[str, Any]]) -> None:
+        """
+        Publishes the department sync matrix.
+
+        Only rows that could be measured. A day whose paperwork states no wrap
+        or no date has no baseline, and writing zero for it would claim the
+        department filed at the moment of a wrap nobody recorded.
+        """
+        for row in rows or []:
+            seconds = row.get("lag_seconds")
+            measurement = row.get("measurement")
+            if seconds is None or not measurement:
+                continue
+            DEPARTMENT_SYNC_LAG.labels(
+                production_id=production_id,
+                shoot_day=str(row.get("shoot_day", "")),
+                department=str(row.get("department", "")),
+                measurement=measurement,
+            ).set(seconds)
 
     @staticmethod
     def get_metrics_payload() -> bytes:

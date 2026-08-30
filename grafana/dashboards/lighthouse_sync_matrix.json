@@ -35,20 +35,20 @@
       }
     },
     {
-      "title": "Paperwork Filed, by Department",
-      "description": "Was a lag from wrap. A daily production report states wrap as a time of day with no date on it, and the only other timestamp is when the document reached this system, so the subtraction would have invented a number neither witness supports. This shows what is actually known: who has filed, and how much.",
+      "title": "Department Sync Lag",
+      "description": "Seconds between wrap and a department’s first filing. Computable since the shoot day gained a calendar date. Split by measurement: a backfill is paperwork imported long after the shoot, whose lag is correct and describes nothing about the night it was filed — do not read the two as one number.",
       "type": "bargauge",
       "gridPos": { "h": 8, "w": 16, "x": 8, "y": 0 },
       "targets": [
         {
-          "expr": "sum by (department) (cinespine_ingested_events_total)",
-          "legendFormat": "{{department}}",
+          "expr": "sum by (department, measurement) (cinespine_department_sync_lag_seconds)",
+          "legendFormat": "{{department}} ({{measurement}})",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "s",
           "color": { "mode": "palette-classic" }
         }
       }

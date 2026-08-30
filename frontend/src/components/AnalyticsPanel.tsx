@@ -141,6 +141,38 @@ export function AnalyticsPanel({ productionId, reloadKey }: {
           no date on it. These answer the same question from something the
           product records itself: who saw what, and when they took it on. */}
       <Section
+        title="How long after wrap each department filed"
+        subtitle="The sync matrix. A backfill is paperwork imported long after the shoot — its lag is correct and describes nothing about the night, so it is labelled rather than averaged in."
+      >
+        <Rows
+          rows={data.sync_matrix}
+          empty="No filings with a wrap time and a date to measure from."
+          render={(row, i) => (
+            <div key={i} className="flex items-center justify-between text-[11px] py-1 border-b border-slate-800/60 last:border-0">
+              <span className="text-gray-200">
+                Day {row.shoot_day}
+                <span className="text-gray-500"> · {row.department}</span>
+              </span>
+              {row.measurable ? (
+                <span className="text-gray-400 tabular-nums">
+                  {row.lag_hours! < 48
+                    ? `${row.lag_hours}h after wrap`
+                    : `${Math.round(row.lag_hours! / 24)} days after wrap`}
+                  <span className={row.measurement === 'backfill' ? 'text-amber-300' : 'text-emerald-300'}>
+                    {' '}· {row.measurement}
+                  </span>
+                </span>
+              ) : (
+                // Not zero, and not absent. The department filed; the day's
+                // paperwork does not state the wrap or the date to measure from.
+                <span className="text-gray-500">no wrap or date recorded for this day</span>
+              )}
+            </div>
+          )}
+        />
+      </Section>
+
+      <Section
         title="How long until somebody takes it on"
         subtitle="Measured from the thing being raised to somebody saying they have it. About where a handover stalls, not who is slow — the actor is a role, not a person."
       >

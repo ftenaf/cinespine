@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+from backend.app.core import sync_lag
 from backend.app.spine.clickhouse import database
 
 
@@ -221,6 +222,99 @@ def requirement_ageing(client: Any, production_id: str) -> Optional[List[Dict[st
         )
         GROUP BY category
         ORDER BY requirements DESC
+    """, {"production_id": production_id})
+
+
+def sync_matrix(client: Any, production_id: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    The department sync matrix, with the lag computed and classified.
+
+    `department_sync_lag` fetches the three facts the subtraction needs -- when
+    the day wrapped, what date that was, when each department first filed --
+    and this turns them into a number. The arithmetic is in `core.sync_lag`
+    rather than in SQL so the handover window lives in one configurable place
+    and can be tested without a database.
+
+    A row whose day states no wrap or no date keeps a null lag rather than
+    disappearing. The department filed; what is missing is the baseline, and a
+    day that looks emptier than it is would be the wrong answer to that.
+    """
+    rows = department_sync_lag(client, production_id)
+    if rows is None:
+        return None
+
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        wrapped = sync_lag.wrap_moment(row.get("shoot_date"), row.get("wrap_time"))
+        seconds = sync_lag.lag_seconds(wrapped, row.get("first_filed"))
+        out.append({
+            **row,
+            "wrapped_at": wrapped.isoformat() if wrapped else None,
+            "lag_seconds": seconds,
+            "lag_hours": round(seconds / 3600, 2) if seconds is not None else None,
+            # Says which measurement this is, so a reader cannot take a
+            # backfill for a slow department.
+            "measurement": sync_lag.classify(seconds),
+            "measurable": seconds is not None,
+        })
+    return out
+
+
+def department_sync_lag(client: Any, production_id: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    How long after wrap each department's paperwork arrived, per shoot day.
+
+    The department sync matrix REQ-10 asks for. It could not be computed until
+    the shoot day was bound to a calendar date, because wrap is stated as a
+    time of day and there was no moment to subtract from.
+
+    Every row says whether it measures a handover or a backfill, and that
+    distinction is not decoration. Paperwork loaded months after the shoot has
+    a correct lag that describes nothing about the night it was shot; reporting
+    it as a sync lag would put a false number in a matrix a reader expects to
+    be hours. Classified in Python by `core.sync_lag`, so the window lives in
+    one place and is configurable.
+
+    Rows where wrap or the date is missing come back with a null lag rather
+    than being dropped. A department that filed on a day whose paperwork does
+    not state its own wrap has still filed, and losing the row would make the
+    day look emptier than it is.
+    """
+    return _rows(client, """
+        WITH
+            wrap_times AS (
+                SELECT shoot_day,
+                       argMax(JSONExtractString(JSONExtractRaw(payload_json, 'times'), 'wrap'),
+                              created_at) AS wrap_time
+                FROM {db}.production_events
+                WHERE production_id = {production_id:String} AND entity_type = 'shoot_day'
+                GROUP BY shoot_day
+            ),
+            dates AS (
+                SELECT shoot_day,
+                       argMin(JSONExtractString(payload_json, 'date'), created_at) AS shoot_date
+                FROM {db}.production_events
+                WHERE production_id = {production_id:String} AND entity_type = 'shoot_date'
+                GROUP BY shoot_day
+            ),
+            filings AS (
+                SELECT shoot_day, department,
+                       min(created_at) AS first_filed,
+                       count() AS events
+                FROM {db}.production_events
+                WHERE production_id = {production_id:String}
+                GROUP BY shoot_day, department
+            )
+        SELECT f.shoot_day AS shoot_day,
+               f.department AS department,
+               f.events AS events,
+               f.first_filed AS first_filed,
+               d.shoot_date AS shoot_date,
+               w.wrap_time AS wrap_time
+        FROM filings AS f
+        LEFT JOIN dates AS d ON d.shoot_day = f.shoot_day
+        LEFT JOIN wrap_times AS w ON w.shoot_day = f.shoot_day
+        ORDER BY f.shoot_day, f.first_filed
     """, {"production_id": production_id})
 
 

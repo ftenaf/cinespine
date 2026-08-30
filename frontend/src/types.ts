@@ -546,6 +546,15 @@ export interface ProductionAnalytics {
      a gauge that could never fill, because the only baseline available was a
      wrap time with no date on it. These answer the same question from
      something the product records: who saw what, and when they took it on. */
+  /** The department sync matrix. `measurement` says whether a row describes a
+   *  handover or a backfill — paperwork imported long after the shoot has a
+   *  correct lag that says nothing about the night it was filed. */
+  sync_matrix?: AnalyticsRows<{
+    shoot_day: string; department: string; events: number;
+    first_filed: string; shoot_date: string; wrap_time: string;
+    wrapped_at: string | null; lag_seconds: number | null; lag_hours: number | null;
+    measurement: 'handover' | 'backfill' | null; measurable: boolean;
+  }>;
   time_to_acknowledge?: AnalyticsRows<{
     department: string; target_type: string; acknowledged: number;
     avg_minutes: number; median_minutes: number; slowest_minutes: number;
