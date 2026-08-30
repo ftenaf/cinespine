@@ -14,6 +14,7 @@ from backend.app.streaming.bus import EventBus
 from backend.app.streaming.dispatcher import IngestionDispatcher
 from backend.app.streaming.broker import event_broker, SpineLiveEvent
 from backend.app.spine.writer import SpineWriter
+from backend.app.spine import analytics as spine_analytics
 from backend.app.spine import production_store
 from backend.app.spine import requirement_store
 from backend.app.spine import breakdown_store
@@ -2145,6 +2146,43 @@ def explain_take(req: AskAssistantRequest):
         take_id=req.take_id,
     )
     return {"explanation": explanation}
+
+
+@router.get("/analytics")
+def get_production_analytics(production_id: str):
+    """
+    The questions the analytical spine is for.
+
+    Every day of a production at once, grouped and counted -- the kind of
+    question whose answer is a scan. The row store answers "this take, this
+    day" and is the right shape for that; this is the other kind.
+
+    `available` is false when there is no ClickHouse, and the client says so
+    rather than drawing an empty chart. A panel that cannot fill looks exactly
+    like a production with nothing in it.
+    """
+    client = spine_writer.client
+    if client is None or not spine_writer.mirror_available():
+        return {
+            "production_id": production_id,
+            "available": False,
+            "reason": (
+                "No analytical spine is connected. Set CLICKHOUSE_HOST to enable it; "
+                "everything else in the app works without it."
+            ),
+        }
+
+    return {
+        "production_id": production_id,
+        "available": True,
+        "shape": spine_analytics.production_shape(client, production_id),
+        "arrivals": spine_analytics.department_arrivals(client, production_id),
+        "roll_disagreements": spine_analytics.roll_disagreements(client, production_id),
+        "scene_coverage": spine_analytics.scene_coverage(client, production_id),
+        "editorial_state": spine_analytics.editorial_state(client, production_id),
+        "requirement_ageing": spine_analytics.requirement_ageing(client, production_id),
+        "tables": spine_analytics.table_sizes(client),
+    }
 
 
 @router.get("/metrics")

@@ -10,6 +10,7 @@ import {
 } from '../api';
 import { summarizeRequirements } from '../requirementsBoard';
 import { ProductionDashboardPanel } from './ProductionDashboard';
+import { AnalyticsPanel } from './AnalyticsPanel';
 import { RequirementsBoard } from './RequirementsBoard';
 
 /**
@@ -537,6 +538,17 @@ export function ProductionsHub({
             currentUserHandle={currentUserHandle}
             reloadKey={tagRevision + requirementRevision}
             onChanged={() => setRequirementRevision(v => v + 1)}
+          />
+
+          <div className="flex items-baseline gap-2 pt-2">
+            <h3 className="text-sm font-bold text-white">Across the whole production</h3>
+            <span className="text-xs text-gray-400">
+              Questions no single shoot day can answer
+            </span>
+          </div>
+          <AnalyticsPanel
+            productionId={selected.production_id}
+            reloadKey={tagRevision + requirementRevision}
           />
         </div>
       )}
