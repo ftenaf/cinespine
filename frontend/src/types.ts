@@ -535,3 +535,37 @@ export interface LinkedScript {
   author?: string | null;
   filename?: string | null;
 }
+
+
+// ==========================================
+// The analytical spine
+// ==========================================
+
+/** A query answers null when there is no ClickHouse; [] when there is nothing. */
+export type AnalyticsRows<T> = T[] | null;
+
+export interface ProductionAnalytics {
+  production_id: string;
+  available: boolean;
+  /** Why not, when it is not. Shown instead of an empty chart. */
+  reason?: string;
+  shape?: AnalyticsRows<{ axis: string; department: string; events: number; days: number }>;
+  arrivals?: AnalyticsRows<{
+    shoot_day: string; department: string; events: number;
+    first_filed: string; last_filed: string;
+  }>;
+  roll_disagreements?: AnalyticsRows<{
+    shoot_day: string; slate: string; take_id: string; camera: string;
+    rolls: string[]; witnesses: string[];
+  }>;
+  scene_coverage?: AnalyticsRows<{
+    scene: string; days: number; shoot_days: string[];
+    slates: number; takes: number; departments: string[];
+  }>;
+  editorial_state?: AnalyticsRows<{ status: string; targets: number }>;
+  requirement_ageing?: AnalyticsRows<{
+    category: string; requirements: number;
+    avg_hours_open: number; longest_hours_open: number; ever_blocked: number;
+  }>;
+  tables?: AnalyticsRows<{ table: string; rows: number }>;
+}

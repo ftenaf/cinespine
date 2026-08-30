@@ -485,3 +485,13 @@ export async function linkScriptToProduction(
   if (!res.ok) throw await apiError(res, 'Failed to attach the script to this production');
   return res.json();
 }
+
+
+export async function fetchProductionAnalytics(
+  productionId: string,
+): Promise<import('./types').ProductionAnalytics> {
+  const q = new URLSearchParams({ production_id: productionId });
+  const res = await fetch(`${API_BASE}/analytics?${q.toString()}`);
+  if (!res.ok) throw await apiError(res, 'Failed to read the analytical spine');
+  return res.json();
+}
