@@ -25,9 +25,10 @@ question is analytical ("what moved this week") rather than transactional.
 """
 import logging
 import os
+import re
 from typing import Any, Optional
 
-from backend.app.spine.schema import CLICKHOUSE_SCHEMA_DDL
+from backend.app.spine.schema import schema_ddl
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,30 @@ def port() -> int:
     return DEFAULT_SECURE_PORT if use_tls() else DEFAULT_PORT
 
 
+# Where the mirror's tables live. Configurable for one reason: the test suite
+# must not write into the database a demo reads from. When CLICKHOUSE_HOST was
+# set, running the suite put 5355 rows of fixtures -- CHTEST, HEAVY, BATCH1,
+# INTENT_DISAGREE -- into the same tables as the production's 475, so the
+# analytics panel was 92% test data and nobody could tell by looking.
+DEFAULT_DATABASE = "cinespine"
+
+# Interpolated into SQL, so it is checked rather than trusted. The value comes
+# from the environment and not from a request, but a name that cannot be a name
+# should fail here rather than somewhere further in.
+_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def database() -> str:
+    """The database the tables live in. `cinespine` unless told otherwise."""
+    name = os.environ.get("CLICKHOUSE_DATABASE", "").strip() or DEFAULT_DATABASE
+    if not _NAME.match(name):
+        raise ValueError(
+            f"CLICKHOUSE_DATABASE={name!r} is not a usable database name; "
+            "letters, digits and underscores only."
+        )
+    return name
+
+
 def is_configured() -> bool:
     """
     Connecting takes an explicit CLICKHOUSE_HOST.
@@ -131,7 +156,7 @@ def connect() -> Optional[Any]:
         )
         # Applied on every connect. The statements are all IF NOT EXISTS, so this
         # is how a fresh container gets its tables without a migration step.
-        for statement in CLICKHOUSE_SCHEMA_DDL.split(";"):
+        for statement in schema_ddl(database()).split(";"):
             if statement.strip():
                 client.command(statement)
         logger.info(

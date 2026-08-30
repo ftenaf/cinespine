@@ -11,6 +11,35 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**The test suite was writing into the mirror a demo reads from, and now is not.** With CLICKHOUSE_HOST
+set, a suite run put fixtures -- CHTEST, HEAVY, BATCH1, INTENT_DISAGREE -- into the same tables as the
+production's rows: 5355 of 5830 were test data, so the analytics panel was 92% fixtures and nothing about
+it looked wrong, because the rows have the same shape as real ones. The same failure as the compose files
+sharing a project name, one layer down: two things that should have been separate were separated only by
+nobody having run them together.
+
+`CLICKHOUSE_DATABASE` now selects the database, defaulting to `cinespine`, and the tests use
+`cinespine_test`. It is set at conftest *import* rather than in a fixture, because `backend.app.main`
+builds its writer at import time and that is when the schema is created -- a fixture runs later, so the
+app would have made its tables in one database while writes resolved to another and every insert failed
+into a database with no tables. That is exactly what happened on the first attempt.
+
+Falsified by running the whole suite twice against a live ClickHouse: `cinespine` stayed at 5830 rows
+throughout, and 325 rows landed in `cinespine_test`. Before the change that run would have added to the
+production database.
+
+**The mirror was wiped and rebuilt from the spine**, by `scripts/rebuild_mirror.py`, which exists rather
+than being a one-off because the mirror had drifted twice in a day: test residue, and 84 rows under a
+slate no department ever wrote from the Silverstack defect. It went from 5830 rows to 41 -- the true
+contents of the dev spine -- and the analytics queries now return two scenes with four and three
+departments, no test productions, and no disagreements. The script refuses to run when
+CLICKHOUSE_DATABASE is anything but the default, since rebuilding the test database from the real spine
+would be the mistake in the other direction.
+
+The rebuild reuses the app's own `_clickhouse_datetime` rather than converting timestamps a second way,
+so rebuilt rows carry the times the live path would have written -- including the fix for naive datetimes
+landing an hour early.
+
 **The slate ranges are a completeness check now, and the first thing they caught was ours.** Office states
 `Slates: 27/7 - 8, 49/1 - 9, 117/1 - 5` and nothing read it, though it is the only expected extent the day
 carries -- so nothing could notice a slate that should not exist. Run against the real day the new check

@@ -1,7 +1,36 @@
 """
 Shared pytest fixtures.
 """
+import os
+
 import pytest
+
+# Set before anything imports the app, not in a fixture.
+#
+# `backend.app.main` builds its SpineWriter at import time, and that is when
+# the mirror connects and creates its tables. A fixture runs per test, which is
+# after that -- so the app would have created its schema in one database while
+# later writes resolved to another, and every insert would fail into a database
+# with no tables. Setting it here means there is never a moment where the two
+# disagree.
+os.environ.setdefault("CLICKHOUSE_DATABASE", "cinespine_test")
+
+
+@pytest.fixture(autouse=True)
+def isolated_clickhouse_database(monkeypatch):
+    """
+    Points the analytical mirror at its own database for every test.
+
+    Without this a suite run writes into the database a demo reads from. It
+    already had: 5355 rows of fixtures -- CHTEST, HEAVY, BATCH1,
+    INTENT_DISAGREE -- sat in the same tables as the production's 475, so the
+    analytics panel was 92% test data and nothing about it looked wrong.
+
+    Only matters when CLICKHOUSE_HOST is set. Unconfigured, the mirror is a
+    no-op and this changes nothing.
+    """
+    monkeypatch.setenv("CLICKHOUSE_DATABASE", "cinespine_test")
+    yield
 
 
 @pytest.fixture(autouse=True)

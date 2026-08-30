@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from backend.app.main import app
 from backend.app.spine import tag_store
 from backend.app.spine.tag_store import UnknownTagValue
+from backend.app.spine.clickhouse import database
 
 client = TestClient(app)
 
@@ -457,7 +458,7 @@ def test_a_tag_change_is_mirrored_to_the_analytical_spine():
     )
     assert len(fake.rows) == 1
     table, rows, columns = fake.rows[0]
-    assert table == "cinespine.editorial_tag_events"
+    assert table == f"{database()}.editorial_tag_events"
     assert dict(zip(columns, rows[0]))["status"] == "mounted"
     assert dict(zip(columns, rows[0]))["action"] == "set"
 
@@ -794,7 +795,7 @@ def test_the_latest_event_for_a_row_wins():
     writer.append_event(_take_event("27/7", "1", "A120", timecode_in="10:00:00:00"))
     assert writer.project_takes("IDX", "31") == 1
     table, rows, columns = fake.rows[-1]
-    assert table == "cinespine.takes_meta"
+    assert table == f"{database()}.takes_meta"
     assert dict(zip(columns, rows[0]))["timecode_in"] == "10:00:00:00"
 
 
@@ -843,7 +844,7 @@ def test_discrepancies_are_indexed_as_they_stand():
     }])
     assert written == 1
     table, rows, columns = fake.rows[-1]
-    assert table == "cinespine.audit_discrepancies"
+    assert table == f"{database()}.audit_discrepancies"
     row = dict(zip(columns, rows[0]))
     assert row["entity_id"] == "49/1 Take 1" and row["is_resolved"] == 0
     assert json.loads(row["witnesses_json"]) == [{"a": 1}]
