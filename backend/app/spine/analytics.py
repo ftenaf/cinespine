@@ -224,6 +224,108 @@ def requirement_ageing(client: Any, production_id: str) -> Optional[List[Dict[st
     """, {"production_id": production_id})
 
 
+def time_to_acknowledge(client: Any, production_id: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    How long a department takes to take something on, once it is raised.
+
+    REQ-10 asks for a department sync matrix. It was a gauge that could never
+    fill, because the only baseline available was a wrap time with no date on
+    it. This answers the same question from a fact the product now records:
+    the gap between a thing existing and somebody saying they have it.
+
+    About the handover, not the person. Grouped by department because that is
+    where a handover stalls; the actor is a role token either way.
+    """
+    return _rows(client, """
+        SELECT department,
+               target_type,
+               count() AS acknowledged,
+               round(avg(seconds_since_target_created) / 60, 1) AS avg_minutes,
+               round(quantile(0.5)(seconds_since_target_created) / 60, 1) AS median_minutes,
+               round(max(seconds_since_target_created) / 60, 1) AS slowest_minutes
+        FROM {db}.user_activity
+        WHERE production_id = {production_id:String}
+          AND action = 'acknowledged'
+          AND seconds_since_target_created IS NOT NULL
+        GROUP BY department, target_type
+        ORDER BY avg_minutes DESC
+    """, {"production_id": production_id})
+
+
+def unacknowledged_requirements(client: Any, production_id: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    Requirements nobody has taken on, and whether anybody has even looked.
+
+    Two different silences, kept apart. Opened and not acknowledged is somebody
+    deciding not to; never opened at all is a blocker that has not reached
+    anyone, which is the failure handoffs.md is about.
+    """
+    return _rows(client, """
+        SELECT r.requirement_id AS requirement_id,
+               argMax(r.status, r.created_at) AS status,
+               argMax(r.priority, r.created_at) AS priority,
+               argMax(r.assigned_to, r.created_at) AS assigned_to,
+               min(r.created_at) AS raised_at,
+               countIf(a.action = 'viewed') AS views,
+               countIf(a.action = 'acknowledged') AS acknowledgements
+        FROM {db}.requirement_events AS r
+        LEFT JOIN {db}.user_activity AS a
+          ON a.target_id = r.requirement_id
+         AND a.target_type = 'requirement'
+         AND a.production_id = r.production_id
+        WHERE r.production_id = {production_id:String}
+        GROUP BY r.requirement_id
+        HAVING acknowledgements = 0
+        ORDER BY raised_at
+    """, {"production_id": production_id})
+
+
+def unreviewed_days(client: Any, production_id: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    Days with material on the spine that nobody has opened.
+
+    A day nobody has looked at is not a day with nothing wrong -- it is a day
+    with no witness, and those must not render the same way. The same
+    distinction the offload gate makes, one level up.
+    """
+    return _rows(client, """
+        SELECT e.shoot_day AS shoot_day,
+               count(DISTINCT e.event_id) AS spine_events,
+               countIf(a.action = 'viewed') AS views,
+               countIf(a.action = 'acknowledged') AS acknowledgements,
+               groupUniqArray(a.actor) AS seen_by
+        FROM {db}.production_events AS e
+        LEFT JOIN {db}.user_activity AS a
+          ON a.shoot_day = e.shoot_day
+         AND a.production_id = e.production_id
+        WHERE e.production_id = {production_id:String}
+        GROUP BY e.shoot_day
+        ORDER BY views ASC, shoot_day
+    """, {"production_id": production_id})
+
+
+def department_attention(client: Any, production_id: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    Which departments are looking, and at what.
+
+    The honest version of "engagement": it counts entities reached, not
+    sessions or pageviews, because the question is coverage of the work rather
+    than time spent in the app.
+    """
+    return _rows(client, """
+        SELECT department,
+               actor,
+               countIf(action = 'viewed') AS views,
+               countIf(action = 'acknowledged') AS acknowledgements,
+               uniqExact(target_id) AS distinct_targets,
+               max(created_at) AS last_seen
+        FROM {db}.user_activity
+        WHERE production_id = {production_id:String}
+        GROUP BY department, actor
+        ORDER BY acknowledgements DESC, views DESC
+    """, {"production_id": production_id})
+
+
 def table_sizes(client: Any) -> Optional[List[Dict[str, Any]]]:
     """
     How much is in the analytical spine. Shown so the numbers above have a

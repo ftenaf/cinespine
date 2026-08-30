@@ -3,11 +3,12 @@ import {
   AlertTriangle, Ban, Check, ChevronDown, ChevronRight, History, Loader2, Search,
   Trash2, UserRound,
 } from 'lucide-react';
-import { Requirement, RequirementEvent, RequirementStatus, UserProfile } from '../types';
+import { EntityActivity, Requirement, RequirementEvent, RequirementStatus, UserProfile } from '../types';
 import {
   deleteRequirement, fetchRequirementHistory, fetchRequirements, resolveRequirement,
   updateRequirement,
 } from '../api';
+import { fetchActivity, recordActivity } from '../api';
 import { elapsed, isOutstanding, sortByUrgency, summarizeRequirements } from '../requirementsBoard';
 
 /**
@@ -164,6 +165,43 @@ export function RequirementRow({ requirement, team, currentUserHandle, onChanged
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showTrail, setShowTrail] = useState(false);
+  const [activity, setActivity] = useState<EntityActivity | null>(null);
+
+  // Expanding a requirement is the moment somebody actually reads it, so that
+  // is where a view is recorded -- not on render. A row scrolling past in a
+  // list is not somebody looking at it, and counting it would make "opened"
+  // mean nothing.
+  useEffect(() => {
+    if (!isExpanded) return;
+    recordActivity({
+      production_id: requirement.production_id,
+      actor: currentUserHandle,
+      action: 'viewed',
+      target_type: 'requirement',
+      target_id: requirement.requirement_id,
+      shoot_day: requirement.shoot_day,
+      target_label: requirement.target_label,
+    });
+    fetchActivity(requirement.production_id, 'requirement', requirement.requirement_id)
+      .then(setActivity)
+      .catch(() => undefined);
+  }, [isExpanded, requirement.requirement_id]);
+
+  const acknowledge = async () => {
+    await recordActivity({
+      production_id: requirement.production_id,
+      actor: currentUserHandle,
+      action: 'acknowledged',
+      target_type: 'requirement',
+      target_id: requirement.requirement_id,
+      shoot_day: requirement.shoot_day,
+      target_label: requirement.target_label,
+    });
+    setActivity(
+      await fetchActivity(requirement.production_id, 'requirement', requirement.requirement_id)
+        .catch(() => null),
+    );
+  };
 
   const run = async (work: () => Promise<unknown>) => {
     setIsBusy(true);
@@ -210,6 +248,31 @@ export function RequirementRow({ requirement, team, currentUserHandle, onChanged
             <span className="text-[10px] font-mono text-gray-300">{requirement.target_label}</span>
             <span className="text-[10px] text-gray-500">Day {requirement.shoot_day}</span>
           </div>
+
+          {/* Who has taken this on. `handoffs.md`: "No acknowledgement is
+              recorded anywhere." A blocker goes out and nothing can say
+              whether the person it was for ever saw it. */}
+          {isExpanded && (
+            <div className="flex items-center gap-2 text-[10px]">
+              {activity?.acknowledged_by ? (
+                <span className="px-1.5 py-0.5 rounded bg-emerald-900/40 text-emerald-300 border border-emerald-800/60">
+                  taken on by {activity.acknowledged_by}
+                </span>
+              ) : (
+                <button
+                  onClick={acknowledge}
+                  className="px-2 py-0.5 rounded bg-slate-800 text-gray-200 hover:bg-slate-700 border border-slate-700"
+                >
+                  I have this
+                </button>
+              )}
+              {activity && activity.viewed_by.length > 0 && (
+                <span className="text-gray-500">
+                  seen by {activity.viewed_by.join(', ')}
+                </span>
+              )}
+            </div>
+          )}
 
           <p className={`text-sm ${done ? 'text-gray-500 line-through' : 'text-white'}`}>
             {requirement.title}

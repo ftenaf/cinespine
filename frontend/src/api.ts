@@ -513,3 +513,44 @@ export async function fetchCharacterLines(
   if (!res.ok) throw new Error(`Could not load lines for ${characterName}`);
   return res.json();
 }
+
+/**
+ * Records that somebody saw something, or took it on.
+ *
+ * `viewed` is passive; `acknowledged` is a claim the person made. Only the
+ * second can carry an obligation, so the caller has to choose deliberately.
+ * Never fatal: an acknowledgement that fails to record must not stop the
+ * action the person was taking.
+ */
+export async function recordActivity(input: {
+  production_id: string;
+  actor: string;
+  action: 'viewed' | 'acknowledged';
+  target_type: string;
+  target_id: string;
+  shoot_day?: string;
+  department?: string;
+  target_label?: string;
+}): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/activity`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+  } catch (e) {
+    console.error('Could not record activity', e);
+  }
+}
+
+/** Everything anybody did to one thing, and whether it was taken on. */
+export async function fetchActivity(
+  productionId: string, targetType: string, targetId: string,
+): Promise<import('./types').EntityActivity> {
+  const params = new URLSearchParams({
+    production_id: productionId, target_type: targetType, target_id: targetId,
+  });
+  const res = await fetch(`${API_BASE}/activity?${params}`);
+  if (!res.ok) throw new Error('Could not load activity');
+  return res.json();
+}

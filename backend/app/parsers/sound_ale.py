@@ -8,7 +8,20 @@ from typing import List, Optional
 from backend.app.parsers.base import ParsedSoundRecord, ParserFailureError
 from backend.app.normalizers.rolls import normalize_sound_roll
 from backend.app.normalizers.slates import normalize_slate
+from backend.app.parsers.camera_csv import looks_like_a_take
 from backend.app.normalizers.takes import normalize_take
+
+
+# The containers a sound file arrives in. Only these: stripping anything after
+# a dot would take the tail off a slate that legitimately contains one.
+_MEDIA_EXTENSION = re.compile(r"\.(wav|bwf|aif|aiff|mp3|mov|mxf)$", re.IGNORECASE)
+
+
+def _without_media_extension(value: Optional[str]) -> Optional[str]:
+    """`49WTT01.WAV` -> `49WTT01`, so the slate normaliser can read it."""
+    if not value:
+        return value
+    return _MEDIA_EXTENSION.sub("", value.strip())
 
 
 def parse_sound_ale(content: str) -> List[ParsedSoundRecord]:
@@ -99,6 +112,7 @@ def parse_sound_ale(content: str) -> List[ParsedSoundRecord]:
                         return val
         return None
 
+    skipped_rows: List[str] = []
     for row in data_rows:
         if len(row) < 2 or not any(row):
             continue
@@ -124,7 +138,12 @@ def parse_sound_ale(content: str) -> List[ParsedSoundRecord]:
         if active_tracks:
             combined_tracks = ", ".join(active_tracks)
 
-        norm_slate = normalize_slate(raw_slate)
+        # A sound report often names the slate only through the file: the SCENE
+        # column is blank and NAME holds `49WTT01.WAV`. normalize_slate keeps
+        # the extension, so that produced the slate `49WTT01.WAV` -- truthy, so
+        # the filename fallback further down never ran, and the junk stood.
+        # Stripping the extension first lets it resolve properly: 49/WT.
+        norm_slate = normalize_slate(_without_media_extension(raw_slate))
         take_info = normalize_take(raw_take)
         norm_sr = normalize_sound_roll(raw_sr)
 
@@ -154,6 +173,26 @@ def parse_sound_ale(content: str) -> List[ParsedSoundRecord]:
                     norm_slate = f"{m_fn.group(1)}/{m_fn.group(2)}"
                     if not take_info.take_id:
                         take_info = normalize_take(m_fn.group(3))
+
+        # A row that is not a take at all.
+        #
+        # Sound reports carry the same footers, contact blocks and totals that
+        # camera reports do, and normalize_slate canonicalises whatever it is
+        # handed: a line reading "Contact: someone@example.com Tel: 600 123
+        # 456" became a slate here, exactly as it did in parse_camera_csv
+        # before that was fixed. It reached the spine and the analytical
+        # mirror, which now leaves the machine.
+        #
+        # Checked here rather than on the raw column, because a legitimate row
+        # may state no slate at all and have it recovered from the filename
+        # just above -- guarding earlier would reject those.
+        #
+        # Skipped rather than rejected: one junk row does not make a report
+        # unparseable, and the empty-result guard below still catches a
+        # document that is entirely junk.
+        if not looks_like_a_take(norm_slate):
+            skipped_rows.append(raw_slate or file_name or "(blank)")
+            continue
 
         # Extract scene number from slate (e.g. 27/7 -> scene 27, 49/WT -> scene 49)
         scene = norm_slate.split("/")[0] if norm_slate and "/" in norm_slate else norm_slate

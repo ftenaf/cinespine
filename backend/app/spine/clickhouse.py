@@ -28,7 +28,7 @@ import os
 import re
 from typing import Any, Optional
 
-from backend.app.spine.schema import schema_ddl
+from backend.app.spine.schema import schema_ddl, statements
 
 logger = logging.getLogger(__name__)
 
@@ -156,9 +156,8 @@ def connect() -> Optional[Any]:
         )
         # Applied on every connect. The statements are all IF NOT EXISTS, so this
         # is how a fresh container gets its tables without a migration step.
-        for statement in schema_ddl(database()).split(";"):
-            if statement.strip():
-                client.command(statement)
+        for statement in statements(database()):
+            client.command(statement)
         logger.info(
             "ClickHouse connected at %s:%s (%s); the analytical spine is live",
             host, chosen_port, "TLS" if secure else "plain HTTP",

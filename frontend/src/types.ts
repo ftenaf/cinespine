@@ -542,6 +542,26 @@ export interface ProductionAnalytics {
     shoot_day: string; slate: string; take_id: string; camera: string;
     rolls: string[]; witnesses: string[];
   }>;
+  /* The acknowledgement axis. REQ-10 asks for a department sync matrix; it was
+     a gauge that could never fill, because the only baseline available was a
+     wrap time with no date on it. These answer the same question from
+     something the product records: who saw what, and when they took it on. */
+  time_to_acknowledge?: AnalyticsRows<{
+    department: string; target_type: string; acknowledged: number;
+    avg_minutes: number; median_minutes: number; slowest_minutes: number;
+  }>;
+  unacknowledged_requirements?: AnalyticsRows<{
+    requirement_id: string; status: string; priority: string;
+    assigned_to: string; raised_at: string; views: number; acknowledgements: number;
+  }>;
+  unreviewed_days?: AnalyticsRows<{
+    shoot_day: string; spine_events: number; views: number;
+    acknowledgements: number; seen_by: string[];
+  }>;
+  department_attention?: AnalyticsRows<{
+    department: string; actor: string; views: number;
+    acknowledgements: number; distinct_targets: number; last_seen: string;
+  }>;
   scene_coverage?: AnalyticsRows<{
     scene: string; days: number; shoot_days: string[];
     slates: number; takes: number; departments: string[];
@@ -667,4 +687,20 @@ export interface ShotProposal {
   cameras: CameraAngleProposal[];
   active_camera: string;
   storyboard: StoryboardFrame;
+}
+
+/** Who saw one thing, and who took it on. */
+export interface EntityActivity {
+  production_id: string;
+  target_type: string;
+  target_id: string;
+  events: {
+    event_id: string; actor: string; action: string;
+    department: string; created_at: string;
+  }[];
+  viewed_by: string[];
+  /** Null when nobody has. Null rather than false: "not acknowledged" and
+   *  "needs no acknowledgement" are different, and a boolean conflates them. */
+  acknowledged_by: string | null;
+  acknowledged_at: string | null;
 }
