@@ -100,6 +100,33 @@ def refusal_detail(document: Dict[str, Any]) -> str:
     )
 
 
+def is_contact_information(text: str) -> bool:
+    """
+    Whether a line is somebody's contact details rather than production content.
+
+    Used to decide what must not be *attributed* to a take, which is a
+    different question from what must be redacted. A script supervisor's note
+    is free text and legitimately carries names, and rewriting it would be the
+    failure mode this project calls the helpful correction -- a witness
+    statement quietly altered.
+
+    This is narrower: the timecode parsers append any line they do not
+    recognise to the previous take's note, so a report footer became something
+    the script supervisor supposedly wrote about that take. Refusing to attach
+    it leaves the note as what somebody actually said.
+
+    Same two patterns `redact` uses, so there is one definition of what counts
+    as contact information in this codebase.
+    """
+    if not text:
+        return False
+    return bool(
+        _EMAIL.search(text)
+        or _PHONE_LABELLED.search(text)
+        or _PHONE_INTERNATIONAL.search(text)
+    )
+
+
 def redact(text: str) -> str:
     """
     Removes contact details from document text, and nothing else.

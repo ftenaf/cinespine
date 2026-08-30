@@ -15,6 +15,27 @@ does not; the shapes are named in
 
 ## Ingestion and parsing
 
+**The same defect in four parsers, found four separate times.** A contact block in a document became a
+production fact, wearing a different field each time, and each was found only because somebody looked:
+
+  * `camera_csv` -- a footer became a slate, reached the spine and the analytical mirror, and came back
+    as the scene an analytics result was grouped under. Fixed with a slate-shape guard.
+  * `sound_ale` -- the same thing in the sound report, still live after the first fix because only the
+    parser that had failed was checked. Fixing it exposed a second defect underneath: `normalize_slate`
+    keeps the `.WAV` on a filename, so a row taking its slate from the NAME column became the slate
+    `49WTT01.WAV` -- truthy enough that the filename fallback below it never ran.
+  * `silverstack_thumbnail` -- clip blocks are split on lines beginning `Name `, so a contact block
+    written that way became an entire clip, with the address in `file_name`. A slate-shaped guard would
+    never have caught it, because `file_name` is not a slate.
+  * `scripte_tclog` -- every unrecognised line is appended to the previous take's note, so a footer
+    became something the script supervisor supposedly wrote about that take. Refused rather than
+    redacted: rewriting a note quietly alters what somebody said.
+
+The lesson is in the count. Three fixes were applied believing each was the last, and the fourth was
+found only by widening the field list on a sweep. `backend/tests/test_parser_pii_sweep.py` now runs the
+same document through every parser at once, so a parser added later that skips the guard fails there.
+
+
 **Every Silverstack clip reached the spine under a slate nobody wrote.** A thumbnail report states
 `Scene 27` and `Shot 27/7`, and the `Shot` field is already the whole slate. All three Silverstack parsers
 built `f"{scene}/{shot}"` anyway, giving `27/27/7`, which normalised to `27/27`. So DIT disagreed with
