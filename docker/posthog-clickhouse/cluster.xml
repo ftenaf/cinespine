@@ -1,0 +1,58 @@
+<!--
+  The single-node ClickHouse cluster PostHog's migrations expect.
+
+  Its schema is built with ON CLUSTER and Replicated* engines, so a stock
+  clickhouse-server fails migrating with "Requested cluster 'posthog' not
+  found". PostHog's own deployment mounts a config.xml from their repository
+  that defines this; the equivalent minimum is below.
+
+  One shard, one replica, and clickhouse-keeper embedded in the same node
+  instead of a separate ZooKeeper container. Replicated engines need a
+  coordinator even when there is nothing to coordinate with.
+-->
+<clickhouse>
+  <remote_servers>
+    <posthog>
+      <shard>
+        <internal_replication>true</internal_replication>
+        <replica>
+          <host>posthog-clickhouse</host>
+          <port>9000</port>
+          <user>default</user>
+          <password>posthog</password>
+        </replica>
+      </shard>
+    </posthog>
+  </remote_servers>
+
+  <macros>
+    <shard>01</shard>
+    <replica>01</replica>
+    <cluster>posthog</cluster>
+  </macros>
+
+  <keeper_server>
+    <tcp_port>9181</tcp_port>
+    <server_id>1</server_id>
+    <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+    <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+    <coordination_settings>
+      <operation_timeout_ms>10000</operation_timeout_ms>
+      <session_timeout_ms>30000</session_timeout_ms>
+    </coordination_settings>
+    <raft_configuration>
+      <server>
+        <id>1</id>
+        <hostname>posthog-clickhouse</hostname>
+        <port>9234</port>
+      </server>
+    </raft_configuration>
+  </keeper_server>
+
+  <zookeeper>
+    <node>
+      <host>posthog-clickhouse</host>
+      <port>9181</port>
+    </node>
+  </zookeeper>
+</clickhouse>
