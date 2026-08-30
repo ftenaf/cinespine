@@ -20,11 +20,6 @@ was a decision, what was done with it is noted below.
 never scheduled, which is a check nothing else in the day provides. The ranges are parsed and on the
 spine; nothing uses them yet.
 
-**Does the editorial vocabulary need the rest of the chain?** "Complete" runs to seven stages and the tag
-statuses cover three of them; `finished` currently claims "no further work expected" when four stages
-follow it. See [domain/completion.md](domain/completion.md). Adding picture lock, conforming and DCP is a
-migration of stored tags, not a rename, so it needs deciding rather than doing.
-
 **Sync lag has a baseline and no consumer.** The intent axis supplies the wrap time; nothing computes the
 lag from it. Wrap is a time of day and an ingest is a timestamp, so the report's own date is needed before
 the subtraction means anything.
@@ -34,6 +29,13 @@ the subtraction means anything.
 production with nothing happening.
 
 ## Answered, and what came of it
+
+**The editorial vocabulary did need the rest of the chain, and adding it migrated nothing.** Francisco,
+2026-08-30. `picture_lock`, `colour_sound_vfx`, `conformed` and `dcp` now follow `finished`, whose label
+and description were corrected -- it claimed "No further work expected" while holding the highest ordinal.
+Listed here as a migration when it was first written down; it was not. A rename would have been, and would
+also have meant rewriting an append-only trail. Keys are untouched, so every stored tag and every trail
+row still validates. See [domain/completion.md](domain/completion.md).
 
 **`pt` on a scene token means *part*: the script notes it was not fully shot.** Francisco, 2026-08-30.
 Recorded in [domain/scene-tokens.md](domain/scene-tokens.md). The parser already kept the token verbatim,

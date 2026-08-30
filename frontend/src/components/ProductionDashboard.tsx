@@ -16,12 +16,19 @@ import { collapseFeed } from '../tagFeed';
  * number on the board that nobody asserted.
  */
 
+// Matches EditorialTagBar: cool through the cutting room, warm after picture
+// lock. Both maps fall back to slate for a key they do not know, so a status
+// added to the vocabulary renders rather than disappearing.
 const STATUS_BAR: Record<string, string> = {
   finished_shooting: 'bg-slate-500',
   covered_per_script: 'bg-indigo-500',
   ready_to_edit: 'bg-blue-500',
   mounted: 'bg-emerald-600',
   finished: 'bg-emerald-400',
+  picture_lock: 'bg-amber-500',
+  colour_sound_vfx: 'bg-orange-500',
+  conformed: 'bg-fuchsia-600',
+  dcp: 'bg-violet-600',
 };
 
 const NEED_ICONS: Record<string, string> = { sfx: '🔊', subtitles: '💬', translation: '🌐' };

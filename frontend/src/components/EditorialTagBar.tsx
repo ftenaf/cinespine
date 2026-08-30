@@ -14,12 +14,20 @@ import { fetchTagHistory } from '../api';
  * something the reader has to work out.
  */
 
+// Two runs of colour, because the chain has two halves. Shooting and the
+// cutting room cool through slate/indigo/blue to green; everything after
+// picture lock warms through amber to violet. A scene that is "finished" is
+// visibly not at the end of the row any more, which is the point of the change.
 const STATUS_STYLES: Record<string, string> = {
   finished_shooting: 'bg-slate-600/90 text-white',
   covered_per_script: 'bg-indigo-600/90 text-white',
   ready_to_edit: 'bg-blue-600/90 text-white',
   mounted: 'bg-emerald-600/90 text-white',
   finished: 'bg-emerald-400/90 text-black',
+  picture_lock: 'bg-amber-500/90 text-black',
+  colour_sound_vfx: 'bg-orange-500/90 text-white',
+  conformed: 'bg-fuchsia-600/90 text-white',
+  dcp: 'bg-violet-600/90 text-white',
 };
 
 const NEED_ICONS: Record<string, string> = {
