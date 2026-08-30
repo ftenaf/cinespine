@@ -354,7 +354,33 @@ class SpineWriter:
         self._in_memory_spine = [
             e for e in self._in_memory_spine if e.get("metadata", {}).get("doc_id") != doc_id
         ]
+        self._purge_mirrored_document(doc_id)
         return True
+
+    def _purge_mirrored_document(self, doc_id: str) -> None:
+        """
+        Removes a deleted document's events from the analytical mirror too.
+
+        The mirror is append-only and this is the one thing that is allowed to
+        delete from it. Leaving it out meant a document removed from the
+        operational store lived on in ClickHouse -- and a row that should never
+        have been ingested, a mis-parsed line carrying contact details among
+        them, could not be got rid of at all.
+
+        A mutation rather than a delete, because that is what ClickHouse
+        offers. Never fatal: the document is already gone from the store the
+        app reads, so a mirror that is down costs the tidying and nothing else.
+        """
+        if not self.mirror_available():
+            return
+        try:
+            self.client.command(
+                "ALTER TABLE cinespine.production_events DELETE "
+                "WHERE JSONExtractString(metadata_json, 'doc_id') = %(doc_id)s",
+                parameters={"doc_id": doc_id},
+            )
+        except Exception as e:
+            logger.warning("Could not purge document %s from the analytical mirror: %s", doc_id, e)
 
     def list_documents(self, production_id: Optional[str] = None, shoot_day: Optional[str] = None) -> List[Dict[str, Any]]:
         return event_store.list_documents(production_id=production_id, shoot_day=shoot_day)

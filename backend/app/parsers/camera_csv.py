@@ -2,12 +2,39 @@
 Deterministic Parser for Camera CSV Reports.
 """
 import csv
+import re
 import io
 from typing import List, Optional
 from backend.app.parsers.base import ParsedCameraRecord, ParserFailureError
 from backend.app.normalizers.rolls import normalize_camera_roll
 from backend.app.normalizers.slates import normalize_slate
 from backend.app.normalizers.takes import normalize_take
+
+
+# A slate is a scene and a shot: `27/7`, `64A/1`, `49WT`, `6WT`. It begins with
+# a digit, because a scene number does, and it is short -- the longest real one
+# on the productions seen here is a compound like `41+122A/4`.
+_SLATE_SHAPE = re.compile(r"^\+?\d+[A-Za-z]{0,3}(?:[+-]\d+[A-Za-z]{0,3})*\s*[-/_ ]?\s*(?:\d+[A-Za-z]?|WT|WILD)?(?:T\d+)?$", re.IGNORECASE)
+
+
+def looks_like_a_take(raw_slate: Optional[str]) -> bool:
+    """
+    Whether this row is a take at all.
+
+    Camera reports are not only takes. They carry headers, footers, totals and
+    contact blocks, and `normalize_slate` canonicalises whatever it is given --
+    so a line reading "Contact: someone@example.com Tel: 600 123 456" became a
+    slate, reached the spine and the analytical mirror, and surfaced in an
+    analytics result as a scene.
+
+    The test is the shape of a slate rather than a list of things to exclude.
+    A blocklist of junk lines is the failure mode this project calls the keyed
+    list that rots: the next report has a footer nobody thought of.
+    """
+    candidate = (raw_slate or "").strip()
+    if not candidate or len(candidate) > 20:
+        return False
+    return bool(_SLATE_SHAPE.match(candidate))
 
 
 def parse_camera_csv(content: str) -> List[ParsedCameraRecord]:
@@ -27,6 +54,7 @@ def parse_camera_csv(content: str) -> List[ParsedCameraRecord]:
     col_map = {h: idx for idx, h in enumerate(headers)}
 
     records: List[ParsedCameraRecord] = []
+    skipped_rows: List[str] = []
 
     # Takes the row as an argument rather than closing over the loop variable:
     # a closure defined inside the loop reads whatever `row` holds when it is
@@ -53,6 +81,20 @@ def parse_camera_csv(content: str) -> List[ParsedCameraRecord]:
         raw_fps = get_col(row, "FPS", "FRAME RATE")
         raw_iso = get_col(row, "ISO", "EI/ISO", "EI")
         shutter = get_col(row, "SHUTTER", "ANGLE")
+
+        if not looks_like_a_take(raw_slate):
+            # A row that is not a take at all. Camera reports carry footers,
+            # contact blocks and totals, and normalize_slate will happily
+            # canonicalise any of them into something that looks like a slate:
+            # a contact line once reached the spine, the analytical mirror and
+            # an analytics result as the "scene" it was grouped under.
+            #
+            # Skipped rather than rejected, because one junk row does not make
+            # the document unparseable and refusing the whole report over a
+            # footer would lose the takes above it. The empty-result guard
+            # below still catches a document that is *entirely* junk.
+            skipped_rows.append(raw_slate or "(blank)")
+            continue
 
         norm_slate = normalize_slate(raw_slate)
         take_info = normalize_take(raw_take)

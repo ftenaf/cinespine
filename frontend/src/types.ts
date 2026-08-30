@@ -209,7 +209,7 @@ export interface UserProfile {
 export type RequirementPriority = 'low' | 'medium' | 'high' | 'critical';
 export type RequirementCategory = 'sound' | 'vfx' | 'edit' | 'color' | 'reshoot' | 'legal' | 'general';
 export type RequirementStatus = 'open' | 'in_progress' | 'resolved' | 'blocked';
-export type RequirementTargetType = 'scene' | 'shot' | 'take';
+export type RequirementTargetType = 'production' | 'scene' | 'shot' | 'take';
 
 export interface Requirement {
   requirement_id: string;

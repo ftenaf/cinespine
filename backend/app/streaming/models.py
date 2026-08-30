@@ -94,6 +94,10 @@ class RequirementStatus(str, Enum):
 
 
 class RequirementTargetType(str, Enum):
+    # Four levels, coarsest first. A requirement can be about the whole
+    # production -- a delivery obligation, a legal clearance, a format
+    # decision -- and not about any one scene in it.
+    PRODUCTION = "production"
     SCENE = "scene"
     SHOT = "shot"
     TAKE = "take"

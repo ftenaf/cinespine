@@ -38,7 +38,7 @@ DEFAULT_DB_PATH = "spine.db"
 STATUSES = ("open", "in_progress", "blocked", "resolved")
 PRIORITIES = ("low", "medium", "high", "critical")
 CATEGORIES = ("sound", "vfx", "edit", "color", "reshoot", "legal", "general")
-TARGET_TYPES = ("scene", "shot", "take")
+TARGET_TYPES = ("production", "scene", "shot", "take")
 
 # What the trail can say happened. Named for what a reader wants to find rather
 # than for the SQL that did it: "reassigned" and "status_changed" are separate
