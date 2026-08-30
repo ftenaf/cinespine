@@ -1,33 +1,17 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import {
-  Film,
-  Camera,
-  Sparkles,
-  Sliders,
-  RotateCw,
-  Maximize2,
-  FileText,
-  Upload,
-  CheckCircle2,
-  Users,
-  ShieldCheck,
-  Save,
-  Loader2,
-  Aperture,
-  Crosshair,
-  
-  
-  Plus,
-  Pencil,
-  Trash2,
-  Link2,
-  Check,
-  X
-} from 'lucide-react';
+import { Film, Camera, Sparkles, Sliders, RotateCw, Maximize2, FileText, Upload, CheckCircle2, Users, ShieldCheck, Loader2, Aperture, Crosshair, Plus, Pencil, Trash2, Link2, Check, X } from 'lucide-react';
 import { CharacterProfileCard } from './CharacterProfileCard';
-import type { PersonalityAxes } from '../types';
-import { PersonalityPolygon } from './PersonalityPolygon';
-import { CharacterLinesPanel } from './CharacterLinesPanel';
+// Every screenplay type now lives in types.ts and is re-exported here, because
+// this module used to declare its own copies and other files import some of
+// them from this path.
+export type {
+  DialogueLine, CharacterRelationship, CharacterProfile, ScreenplayScene,
+  DoPSpecification, CameraAngleProposal, StoryboardFrame, ShotProposal,
+} from '../types';
+import type {
+  CharacterProfile, ScreenplayScene,
+  DoPSpecification, CameraAngleProposal, ShotProposal,
+} from '../types';
 import {
   
   DEFAULT_SENSOR_ID,
@@ -53,109 +37,6 @@ import {
   saveDeletedPresets,
   mergeActivePresets
 } from '../presets';
-
-export interface DialogueLine {
-  character: string;
-  parenthetical?: string;
-  line: string;
-}
-
-export interface CharacterRelationship {
-  target_character: string;
-  relationship_type: string;
-  dynamic_description: string;
-  shared_scenes: string[];
-  interaction_count: number;
-}
-
-// NOTE: this duplicates CharacterProfile in types.ts, which is where the rest
-// of the app reads it from. Both were extended with personality_axes. The
-// duplication predates this change and is worth collapsing on its own, not in
-// the same pass as a feature -- but until it is, a field added to one and not
-// the other type-errors in exactly one place and is easy to miss.
-export interface CharacterProfile {
-  id: string;
-  name: string;
-  role: string;
-  actor_reference: string;
-  look_and_costume: string;
-  facial_features: string;
-  personality_traits: string[];
-  personality_axes?: PersonalityAxes | null;
-  relationships?: CharacterRelationship[];
-  dialogue_count: number;
-  scenes_present: string[];
-  avatar_url?: string;
-  portrait_prompt?: string;
-}
-
-export interface ScreenplayScene {
-  scene_number: string;
-  heading: string;
-  environment: string;
-  location: string;
-  time_of_day: string;
-  action_blocks: string[];
-  dialogues: DialogueLine[];
-  characters?: string[];
-  raw_content?: string;
-}
-
-export interface DoPSpecification {
-  dop_preset: string;
-  focal_length: number;
-  lens_type: string;
-  aperture: string;
-  sensor_format: string;
-  camera_body: string;
-  fps: number;
-  lighting_style: string;
-  lighting_ratio: string;
-  color_temperature_k: number;
-  color_palette: string;
-  lut_emulation: string;
-  mood_notes: string;
-}
-
-export interface CameraAngleProposal {
-  id: string;
-  camera_letter: string; // "A", "B", "C"
-  camera_role: string;
-  shot_size: string;
-  focal_length: number;
-  aperture: string;
-  camera_angle: string;
-  camera_movement: string;
-  coverage_description: string;
-  prompt: string;
-  image_url?: string;
-  status: 'pending' | 'generating' | 'generated' | 'failed';
-  dop_spec?: any;
-}
-
-export interface StoryboardFrame {
-  image_url?: string;
-  prompt: string;
-  aspect_ratio: string;
-  status: 'pending' | 'generating' | 'generated' | 'failed';
-}
-
-export interface ShotProposal {
-  id: string;
-  scene_number: string;
-  shot_number: string;
-  shot_name: string;
-  shot_size: string;
-  camera_angle: string;
-  camera_movement: string;
-  dramatic_beat: string;
-  subject_description: string;
-  characters?: string[];
-  dop_spec: DoPSpecification;
-  cameras: CameraAngleProposal[];
-  active_camera: string;
-  storyboard: StoryboardFrame;
-}
 
 const DEMO_FOUNTAIN_SCRIPT = `Title: LA CATHÉDRALE
 Author: Francisco
@@ -1527,320 +1408,26 @@ export const ScriptStudio: React.FC = () => {
           {/* Right Column: Character Visual Polish Console */}
           <div className="col-span-8 bg-[#090D16] flex flex-col overflow-y-auto p-6">
             {selectedCharacter ? (
-              <div className="max-w-3xl space-y-6">
-                {/* Header Profile Bar */}
-                <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr bg-spine-800 via-indigo-600 to-pink-500 flex items-center justify-center font-black text-xl text-white shadow-xl shadow-purple-600/30">
-                      {selectedCharacter.name.charAt(0)}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-lg font-black text-white tracking-wider">{selectedCharacter.name}</h2>
-                        <span className="px-2 py-0.5 text-[10px] font-extrabold bg-spine-success/20 text-spine-success border border-spine-success/30 rounded-full flex items-center gap-1">
-                          <ShieldCheck className="w-3 h-3 text-spine-success" />
-                          Visual Consistency Locked
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-300 mt-0.5">
-                        Dialogue Cues: <strong className="text-spine-accent">{selectedCharacter.dialogue_count}</strong> • Scenes Present: <strong className="text-spine-accent">{selectedCharacter.scenes_present.join(', ') || '1'}</strong>
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => handleUpdateCharacter(selectedCharacter)}
-                    disabled={savingCharId === selectedCharacter.id}
-                    className="px-4 py-2 text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg shadow-lg shadow-emerald-600/20 transition flex items-center gap-2"
-                  >
-                    <Save className="w-4 h-4" />
-                    {savingCharId === selectedCharacter.id ? 'Saving...' : 'Save & Lock Appearance'}
-                  </button>
-                </div>
-
-                {charSaveSuccess && (
-                  <div className="p-3 bg-spine-success/60 border border-spine-success/40 rounded-lg flex items-center gap-2 text-xs text-spine-success">
-                    <CheckCircle2 className="w-4 h-4 text-spine-success" />
-                    Saved. This look is stored against the screenplay and reused in every Gen-AI render featuring this character.
-                  </div>
-                )}
-
-                {charSaveError && (
-                  <div className="p-3 bg-spine-critical/60 border border-spine-critical/40 rounded-lg flex items-center gap-2 text-xs text-spine-critical">
-                    <X className="w-4 h-4 text-spine-critical shrink-0" />
-                    {charSaveError}
-                  </div>
-                )}
-
-                {/* Portrait Showcase Card & Generation */}
-                <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-2xl flex items-center justify-between gap-6 shadow-xl">
-                  <div className="flex items-center gap-5">
-                    <div className="relative w-28 h-28 rounded-xl overflow-hidden border-2 border-spine-accent/50 bg-black shrink-0 shadow-lg group">
-                      {selectedCharacter.avatar_url ? (
-                        <img
-                          src={selectedCharacter.avatar_url}
-                          alt={selectedCharacter.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-spine-800 font-black text-3xl text-spine-accent">
-                          {selectedCharacter.name.charAt(0)}
-                        </div>
-                      )}
-                      {selectedCharacter.avatar_url && (
-                        <button
-                          onClick={() =>
-                            setEnlargedImage({
-                              url: selectedCharacter.avatar_url!,
-                              prompt: selectedCharacter.portrait_prompt || `Photorealistic portrait of ${selectedCharacter.name}`,
-                              title: `${selectedCharacter.name} - 35mm Master Headshot`
-                            })
-                          }
-                          className="absolute top-1.5 right-1.5 p-1 bg-black/80 hover:bg-black text-white rounded opacity-0 group-hover:opacity-100 transition"
-                        >
-                          <Maximize2 className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 bg-spine-accent/20 text-spine-accent border border-spine-accent/30 rounded-full">
-                        35mm Cinematic Character Still
-                      </span>
-                      <h3 className="text-sm font-bold text-white mt-1.5">Photorealistic Portrait &amp; Lookbook Headshot</h3>
-                      <p className="text-xs text-gray-300 mt-0.5">
-                        Generates a dedicated 85mm T1.4 portrait frame locking the actor's facial likeness and wardrobe for all camera coverage.
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => handleGenerateCharacterPortrait(selectedCharacter)}
-                    disabled={generatingPortraitMap[selectedCharacter.id]}
-                    className="px-4 py-2.5 text-xs font-bold bg-gradient-to-r bg-spine-800 via-indigo-600 to-pink-600 hover:bg-spine-800 hover:to-pink-500 text-white rounded-xl shadow-lg shadow-purple-600/30 transition flex items-center gap-2 shrink-0 disabled:opacity-50"
-                  >
-                    {generatingPortraitMap[selectedCharacter.id] ? (
-                      <>
-                        <RotateCw className="w-4 h-4 animate-spin" />
-                        Rendering 35mm Portrait...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        Generate AI Portrait Still
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {/* Form Fields */}
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-200 mb-1">Role / Narrative Archetype</label>
-                    <input
-                      type="text"
-                      value={selectedCharacter.role}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, role: val } : c)));
-                      }}
-                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-spine-accent"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-bold text-gray-200">Actor Screen Reference &amp; Physical Appearance</label>
-                      <span className="text-[10px] font-medium text-spine-accent">Gender, Age &amp; Build</span>
-                    </div>
-                    <textarea
-                      rows={2}
-                      value={selectedCharacter.actor_reference}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, actor_reference: val } : c)));
-                      }}
-                      placeholder="e.g. Early 30s woman, 5'7&quot; wiry athletic build, dark cropped hair, resolute bearing, intense gaze..."
-                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-spine-accent font-sans"
-                    />
-                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                      <span className="text-[10px] font-bold text-gray-300 uppercase tracking-wider">Quick Traits:</span>
-                      {[
-                        'Woman',
-                        'Man',
-                        'Non-Binary',
-                        '20s',
-                        '30s',
-                        '40s',
-                        '50s+',
-                        'Athletic build',
-                        'Wiry frame',
-                        'Tall & commanding',
-                        'Broad shoulders'
-                      ].map(tag => (
-                        <button
-                          key={tag}
-                          type="button"
-                          onClick={() => {
-                            const current = (selectedCharacter.actor_reference || '').trim();
-                            const updated = current ? `${current}, ${tag.toLowerCase()}` : `${tag}, `;
-                            setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, actor_reference: updated } : c)));
-                          }}
-                          className="px-2 py-0.5 text-[10px] font-semibold bg-slate-800 hover:bg-spine-900/60 hover:text-spine-accent text-gray-200 border border-slate-700 hover:border-spine-accent/40 rounded-md transition"
-                        >
-                          + {tag}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="text-[10px] text-gray-300 mt-1">Defines actor gender presentation (e.g. woman, man, non-binary), age, physique, build, hair, and baseline screen presence.</p>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-200 mb-1">Costume, Wardrobe &amp; Props</label>
-                    <textarea
-                      rows={2}
-                      value={selectedCharacter.look_and_costume}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, look_and_costume: val } : c)));
-                      }}
-                      placeholder="e.g. Drenched dark linen shirt with rolled-up sleeves, charcoal wool vest, silver pocket watch..."
-                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-spine-accent font-sans"
-                    />
-                    <p className="text-[10px] text-gray-300 mt-1">Wardrobe textures, fabrics, tailoring, distress level, and accessories.</p>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-200 mb-1">Facial Features &amp; Catchlights</label>
-                    <textarea
-                      rows={2}
-                      value={selectedCharacter.facial_features}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, facial_features: val } : c)));
-                      }}
-                      placeholder="e.g. Sharp cheekbones, subtle 5 o'clock shadow, piercing hazel eyes filled with obsessive fervor..."
-                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-spine-accent font-sans"
-                    />
-                    <p className="text-[10px] text-gray-300 mt-1">Eyes, cheekbones, complexion, expressions, and key facial lighting marks.</p>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-200 mb-1">Personality Traits (Comma-separated)</label>
-                    <input
-                      type="text"
-                      value={selectedCharacter.personality_traits.join(', ')}
-                      onChange={e => {
-                        const traits = e.target.value.split(',').map(t => t.trim()).filter(Boolean);
-                        setCharacters(prev => prev.map(c => (c.id === selectedCharacter.id ? { ...c, personality_traits: traits } : c)));
-                      }}
-                      placeholder="e.g. Obsessive, Perfectionist, Haunted, Virtuoso"
-                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-spine-accent"
-                    />
-                  </div>
-                </div>
-
-                {/* Personality, and the lines it was read from.
-                    Kept side by side deliberately: the polygon is a reading
-                    and the lines are its evidence. A reading nobody can check
-                    against the script is an assertion with a chart around it.
-
-                    NOTE: this whole cast detail is duplicated in
-                    CharacterProfileCard.tsx, which renders in the popup. Both
-                    were changed. The duplication predates this and is worth
-                    collapsing, but not in the same pass as a feature. */}
-                <div className="pt-6 border-t border-slate-800 grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  <PersonalityPolygon
-                    axes={selectedCharacter.personality_axes}
-                    name={selectedCharacter.name}
-                  />
-                  {scriptId ? (
-                    <CharacterLinesPanel
-                      scriptId={scriptId}
-                      characterName={selectedCharacter.name}
-                      // Selecting a line moves the studio to that scene, so the
-                      // breakdown beside it is about the line being read.
-                      onGoToScene={(sceneNumber: string) => {
-                        const idx = parsedScenes.findIndex(
-                          sc => String(sc.scene_number) === String(sceneNumber),
-                        );
-                        if (idx >= 0) setSelectedSceneIndex(idx);
-                      }}
-                    />
-                  ) : (
-                    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-xs text-gray-500">
-                      Lines appear once the screenplay has been stored.
-                    </div>
-                  )}
-                </div>
-
-                {/* Character Relationship Network Section */}
-                <div className="pt-6 border-t border-slate-800 space-y-3.5">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        <Users className="w-4 h-4 text-spine-accent" />
-                        Dramatic Relationships &amp; Co-Occurrences ({selectedCharacter.relationships?.length || 0})
-                      </h3>
-                      <p className="text-xs text-gray-300">
-                        Tracks co-present scene blocks, dialogue interaction turns, and dramatic relational dynamics.
-                      </p>
-                    </div>
-                  </div>
-
-                  {selectedCharacter.relationships && selectedCharacter.relationships.length > 0 ? (
-                    <div className="grid grid-cols-2 gap-3">
-                      {selectedCharacter.relationships.map((rel, rIdx) => {
-                        const targetObj = characters.find(c => c.name === rel.target_character);
-                        return (
-                          <div
-                            key={rIdx}
-                            className="p-3.5 bg-slate-900/70 border border-slate-800 rounded-xl space-y-2 hover:border-spine-accent/50 transition"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 rounded-full bg-spine-900 border border-spine-accent/40 flex items-center justify-center font-bold text-xs text-spine-accent">
-                                  {rel.target_character.charAt(0)}
-                                </div>
-                                <h4 className="text-xs font-bold text-white">{rel.target_character}</h4>
-                              </div>
-                              {targetObj && (
-                                <button
-                                  onClick={() => setSelectedCharId(targetObj.id)}
-                                  className="text-[10px] font-bold text-spine-accent hover:text-spine-accent transition"
-                                >
-                                  Inspect →
-                                </button>
-                              )}
-                            </div>
-
-                            <div className="flex flex-wrap gap-1">
-                              <span className="px-1.5 py-0.5 text-[9px] font-extrabold bg-spine-accent/20 text-spine-accent rounded border border-spine-accent/30">
-                                {rel.relationship_type}
-                              </span>
-                              <span className="px-1.5 py-0.5 text-[9px] font-bold bg-slate-800 text-gray-200 rounded border border-slate-700">
-                                {rel.shared_scenes.length > 0 ? `Scenes: ${rel.shared_scenes.join(', ')}` : 'Shared Scene'}
-                              </span>
-                              {rel.interaction_count > 0 && (
-                                <button onClick={() => setPopupCharacter(characters.find(char => char.name === rel.target_character) || null)} className="px-1.5 py-0.5 text-[9px] font-bold bg-spine-success/20 text-spine-success rounded border border-spine-success/30 hover:bg-spine-success/30 transition">
-                                  {rel.interaction_count} Dialogue Turns
-                                </button>
-                              )}
-                            </div>
-
-                            <p className="text-[11px] text-gray-200 line-clamp-2 leading-relaxed">
-                              {rel.dynamic_description}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="p-4 bg-slate-900/40 border border-slate-800 rounded-xl text-center text-xs text-gray-300">
-                      No direct multi-character interactions detected in script for {selectedCharacter.name}.
-                    </div>
-                  )}
-                </div>
-              </div>
+              <CharacterProfileCard
+                selectedCharacter={selectedCharacter}
+                characters={characters}
+                setCharacters={setCharacters}
+                savingCharId={savingCharId}
+                charSaveSuccess={charSaveSuccess}
+                charSaveError={charSaveError}
+                handleUpdateCharacter={handleUpdateCharacter}
+                generatingPortraitMap={generatingPortraitMap}
+                handleGenerateCharacterPortrait={handleGenerateCharacterPortrait}
+                setEnlargedImage={setEnlargedImage}
+                setSelectedCharId={setSelectedCharId}
+                scriptId={scriptId ?? undefined}
+                onGoToScene={(sceneNumber: string) => {
+                  const idx = parsedScenes.findIndex(
+                    sc => String(sc.scene_number) === String(sceneNumber),
+                  );
+                  if (idx >= 0) setSelectedSceneIndex(idx);
+                }}
+              />
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-gray-300">
                 <Users className="w-12 h-12 text-slate-600 mb-3" />

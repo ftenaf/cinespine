@@ -271,20 +271,6 @@ export interface NotificationResponse {
 }
 
 
-export interface DialogueLine {
-  character: string;
-  parenthetical?: string;
-  line: string;
-}
-
-export interface CharacterRelationship {
-  target_character: string;
-  relationship_type: string;
-  dynamic_description: string;
-  shared_scenes: string[];
-  interaction_count: number;
-}
-
 /**
  * One axis of a character's personality, read from the screenplay.
  *
@@ -327,53 +313,6 @@ export interface CharacterLines {
   scenes_present: string[];
   line_count: number;
   lines: CharacterLine[];
-}
-
-export interface CharacterProfile {
-  id: string;
-  name: string;
-  role: string;
-  actor_reference: string;
-  look_and_costume: string;
-  facial_features: string;
-  personality_traits: string[];
-  personality_axes?: PersonalityAxes | null;
-  avatar_url?: string;
-  portrait_prompt?: string;
-  dialogue_count: number;
-  scenes_present: string[];
-  relationships?: CharacterRelationship[];
-}
-
-export interface ScreenplayScene {
-  scene_number: string;
-  heading: string;
-  raw_content: string;
-  characters?: string[];
-  action_blocks: string[];
-  dialogue?: DialogueLine[];
-}
-
-export interface ShotProposal {
-  id: string;
-  scene_number: string;
-  shot_name: string;
-  subject_description: string;
-  lighting_mood: string;
-  characters?: string[];
-  cameras: CameraSetup[];
-}
-
-export interface CameraSetup {
-  camera_letter: string;
-  shot_size: string;
-  focal_length: number;
-  aperture: number;
-  angle: string;
-  movement: string;
-  image_url?: string;
-  image_prompt?: string;
-  focus_distance?: number;
 }
 
 /** One take read off a script supervisor's lined page. */
@@ -613,4 +552,119 @@ export interface ProductionAnalytics {
     avg_hours_open: number; longest_hours_open: number; ever_blocked: number;
   }>;
   tables?: AnalyticsRows<{ table: string; rows: number }>;
+}
+
+
+/* ---------------------------------------------------------------------------
+ * The screenplay and its breakdown.
+ *
+ * These lived in ScriptStudio.tsx and here at the same time. Three were byte
+ * for byte the same; two were NOT -- `ScreenplayScene` had `dialogues` in one
+ * file and `dialogue?` in the other, and `ShotProposal` disagreed about what a
+ * camera is. Two types with one name and different shapes is a worse problem
+ * than a duplicate: the compiler is happy either way and the mismatch only
+ * shows up at runtime.
+ *
+ * The versions below are the ones that were actually in use. The copies here
+ * were dead -- nothing imported them, in this file or out of it -- and went,
+ * taking `CameraSetup` with them, which existed only to serve the dead
+ * `ShotProposal`.
+ * ------------------------------------------------------------------------ */
+
+export interface DialogueLine {
+  character: string;
+  parenthetical?: string;
+  line: string;
+}
+
+export interface CharacterRelationship {
+  target_character: string;
+  relationship_type: string;
+  dynamic_description: string;
+  shared_scenes: string[];
+  interaction_count: number;
+}
+
+export interface CharacterProfile {
+  id: string;
+  name: string;
+  role: string;
+  actor_reference: string;
+  look_and_costume: string;
+  facial_features: string;
+  personality_traits: string[];
+  personality_axes?: PersonalityAxes | null;
+  relationships?: CharacterRelationship[];
+  dialogue_count: number;
+  scenes_present: string[];
+  avatar_url?: string;
+  portrait_prompt?: string;
+}
+
+export interface ScreenplayScene {
+  scene_number: string;
+  heading: string;
+  environment: string;
+  location: string;
+  time_of_day: string;
+  action_blocks: string[];
+  dialogues: DialogueLine[];
+  characters?: string[];
+  raw_content?: string;
+}
+
+export interface DoPSpecification {
+  dop_preset: string;
+  focal_length: number;
+  lens_type: string;
+  aperture: string;
+  sensor_format: string;
+  camera_body: string;
+  fps: number;
+  lighting_style: string;
+  lighting_ratio: string;
+  color_temperature_k: number;
+  color_palette: string;
+  lut_emulation: string;
+  mood_notes: string;
+}
+
+export interface CameraAngleProposal {
+  id: string;
+  camera_letter: string; // "A", "B", "C"
+  camera_role: string;
+  shot_size: string;
+  focal_length: number;
+  aperture: string;
+  camera_angle: string;
+  camera_movement: string;
+  coverage_description: string;
+  prompt: string;
+  image_url?: string;
+  status: 'pending' | 'generating' | 'generated' | 'failed';
+  dop_spec?: any;
+}
+
+export interface StoryboardFrame {
+  image_url?: string;
+  prompt: string;
+  aspect_ratio: string;
+  status: 'pending' | 'generating' | 'generated' | 'failed';
+}
+
+export interface ShotProposal {
+  id: string;
+  scene_number: string;
+  shot_number: string;
+  shot_name: string;
+  shot_size: string;
+  camera_angle: string;
+  camera_movement: string;
+  dramatic_beat: string;
+  subject_description: string;
+  characters?: string[];
+  dop_spec: DoPSpecification;
+  cameras: CameraAngleProposal[];
+  active_camera: string;
+  storyboard: StoryboardFrame;
 }
