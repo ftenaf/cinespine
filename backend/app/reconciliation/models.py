@@ -28,6 +28,10 @@ class DiscrepancyType(str, Enum):
     # whether the material exists is unknown. Not the same as missing, and the
     # two need opposite responses: this one is chased with DIT.
     AWAITING_OFFLOAD = "AWAITING_OFFLOAD"
+    # A slate some department recorded that falls outside every range Office
+    # stated for that scene. Either the slate is wrong or Office's list is
+    # short, and both are worth someone looking at.
+    SLATE_OUTSIDE_STATED_RANGE = "SLATE_OUTSIDE_STATED_RANGE"
 
 
 class Severity(str, Enum):

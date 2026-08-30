@@ -1002,7 +1002,21 @@ def parse_silverstack_volume_text(text: str) -> List[ParsedSilverstackClip]:
                             take_info = normalize_take(raw_take)
                             take_id = take_info.take_id or raw_take
 
-            norm_slate = normalize_slate(f"{scene}/{shot}" if shot else scene) if scene else None
+            # Silverstack writes both `Scene 27` and `Shot 27/7`, and the Shot
+            # field is already the whole slate rather than the shot half of one.
+            # Prefixing the scene made `27/27/7`, which normalised to `27/27`, so
+            # every clip in the report reached the spine under a slate nobody
+            # wrote and DIT silently disagreed with camera about every take.
+            #
+            # A shot carrying `/` or `-` is a full slate; a bare `9` still
+            # needs its scene in front of it. Both shapes occur in real reports.
+            if shot and re.search(r"[/-]", shot):
+                slate_source = shot
+            elif shot and scene:
+                slate_source = f"{scene}/{shot}"
+            else:
+                slate_source = scene or shot
+            norm_slate = normalize_slate(slate_source) if slate_source else None
             if norm_slate:
                 if "/" in norm_slate:
                     scene = norm_slate.split("/")[0]
@@ -1164,7 +1178,21 @@ def parse_silverstack_clips_text(text: str, thumbnails_map: Optional[Dict[str, s
                         take_info = normalize_take(raw_take)
                         take_id = take_info.take_id or raw_take
 
-            norm_slate = normalize_slate(f"{scene}/{shot}" if shot else scene) if scene else None
+            # Silverstack writes both `Scene 27` and `Shot 27/7`, and the Shot
+            # field is already the whole slate rather than the shot half of one.
+            # Prefixing the scene made `27/27/7`, which normalised to `27/27`, so
+            # every clip in the report reached the spine under a slate nobody
+            # wrote and DIT silently disagreed with camera about every take.
+            #
+            # A shot carrying `/` or `-` is a full slate; a bare `9` still
+            # needs its scene in front of it. Both shapes occur in real reports.
+            if shot and re.search(r"[/-]", shot):
+                slate_source = shot
+            elif shot and scene:
+                slate_source = f"{scene}/{shot}"
+            else:
+                slate_source = scene or shot
+            norm_slate = normalize_slate(slate_source) if slate_source else None
             if norm_slate:
                 if "/" in norm_slate:
                     scene = norm_slate.split("/")[0]
@@ -1399,7 +1427,21 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
         if take_info.is_vfx:
             is_vfx = True
 
-        norm_slate = normalize_slate(f"{scene}/{shot}" if shot else scene) if scene else None
+        # Silverstack writes both `Scene 27` and `Shot 27/7`, and the Shot
+        # field is already the whole slate rather than the shot half of one.
+        # Prefixing the scene made `27/27/7`, which normalised to `27/27`, so
+        # every clip in the report reached the spine under a slate nobody
+        # wrote and DIT silently disagreed with camera about every take.
+        #
+        # A shot carrying `/` or `-` is a full slate; a bare `9` still
+        # needs its scene in front of it. Both shapes occur in real reports.
+        if shot and re.search(r"[/-]", shot):
+            slate_source = shot
+        elif shot and scene:
+            slate_source = f"{scene}/{shot}"
+        else:
+            slate_source = scene or shot
+        norm_slate = normalize_slate(slate_source) if slate_source else None
         if norm_slate:
             if "/" in norm_slate:
                 scene = norm_slate.split("/")[0]

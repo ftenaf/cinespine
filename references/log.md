@@ -11,6 +11,18 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**The slate ranges are a completeness check now, and the first thing they caught was ours.** Office states
+`Slates: 27/7 - 8, 49/1 - 9, 117/1 - 5` and nothing read it, though it is the only expected extent the day
+carries -- so nothing could notice a slate that should not exist. Run against the real day the new check
+produced exactly one finding, `27/27`, a slate no department ever wrote: all three Silverstack parsers
+were building `scene + "/" + shot` when Silverstack's `Shot` field is already the whole slate. DIT had
+been disagreeing with camera about every take of the day while the board showed nothing, because the two
+never met on a common key. With the parsers fixed the check is silent on that day.
+
+The check stays quiet in three cases where the page is silent rather than denying: a scene with no stated
+range, a slate whose shot half is not a number, and a report where no ranges parsed at all. Turning any of
+those into a finding would be absence rendered as presence.
+
 **The two dead gauges are closed: one filled, one removed.** `cinespine_active_discrepancies` was declared
 and never set, so it could only ever render as a flat zero -- absence rendered as presence, on a board
 whose whole job is to say whether a day is clean. It is now written wherever discrepancies are computed,

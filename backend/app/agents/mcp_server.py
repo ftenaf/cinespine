@@ -118,6 +118,28 @@ class ClickHouseMCPServer:
             ):
                 all_discrepancies.append(d.model_dump())
 
+        # 3b. Office's stated slate ranges against the slates anyone recorded.
+        #     The day's own completeness check: nothing else states an expected
+        #     extent, so nothing else can notice a slate that should not exist.
+        #     Comes off the shoot_day event rather than the scene events, which
+        #     is why it is not folded into the block above.
+        slate_ranges: List[Dict[str, Any]] = []
+        for evt in events:
+            if evt.get("entity_type") == "shoot_day":
+                slate_ranges.extend((evt.get("payload") or {}).get("slate_ranges") or [])
+        if slate_ranges:
+            logged_slates = [
+                str(w.get("slate")) for witnesses in takes_map.values()
+                for w in witnesses if w.get("slate")
+            ]
+            for d in self.reconciler.reconcile_slate_ranges(
+                production_id=production_id,
+                shoot_day=shoot_day,
+                slate_ranges=slate_ranges,
+                logged_slates=logged_slates,
+            ):
+                all_discrepancies.append(d.model_dump())
+
         # 4. Apply stored resolutions
         resolutions = self.spine_writer.get_discrepancy_resolutions(production_id=production_id, shoot_day=shoot_day)
         for d in all_discrepancies:

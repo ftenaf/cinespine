@@ -15,11 +15,6 @@ was a decision, what was done with it is noted below.
 
 ## Still open
 
-**Are the slate ranges usable as a completeness check?** The daily production report states
-`Slates: 27/7 - 8, 49/1 - 9, 117/1 - 5`. `dept-office.md` says a slate outside every stated range was
-never scheduled, which is a check nothing else in the day provides. The ranges are parsed and on the
-spine; nothing uses them yet.
-
 **What is the date of a shoot day?** This is the one thing standing between the spine and a department
 sync lag. A daily production report states wrap as a time of day -- `18:55` -- and the only other
 timestamp available is when the document reached this system, which for day 31 is months after it was
@@ -30,6 +25,18 @@ than a guess. Until then `cinespine_department_sync_lag_seconds` is removed rath
 empty, because a flat zero on a dashboard reads as "no lag" rather than "not known".
 
 ## Answered, and what came of it
+
+**The slate ranges are usable as a completeness check, and the first thing they caught was ours.**
+Implemented 2026-08-30 as `SLATE_OUTSIDE_STATED_RANGE`. Run against the real day it produced one finding:
+slate `27/27`, which no department ever wrote. It came from all three Silverstack parsers building
+`scene + "/" + shot` when Silverstack's `Shot` field is already the whole slate -- so every clip in a
+thumbnail report reached the spine under a slate that did not exist, and DIT disagreed with camera about
+every take while the board showed nothing, because the two witnesses never met on a common key. With the
+parsers fixed the check is silent on that day, which is the right answer.
+
+Three things it deliberately does not report, because the page is silent rather than denying: a scene with
+no stated range, a slate whose shot half is not a number (`49/WT`), and anything at all when no ranges
+parsed.
 
 **The editorial vocabulary did need the rest of the chain, and adding it migrated nothing.** Francisco,
 2026-08-30. `picture_lock`, `colour_sound_vfx`, `conformed` and `dcp` now follow `finished`, whose label
