@@ -105,7 +105,12 @@ def test_api_metrics_endpoint(client):
     assert b"cinespine_sse_active_connections" in response.content
 
 
-def test_api_document_raw_pdf_streaming(client):
+def test_api_document_raw_pdf_streaming(client, monkeypatch):
+    # Serving the material is gated by default; this test is about the
+    # streaming itself, so it opens the gate deliberately. The gate has its
+    # own tests in test_privacy_gate.py.
+    monkeypatch.setenv("CINESPINE_SERVE_SOURCE_DOCUMENTS", "1")
+
     # Upload a dummy PDF file
     dummy_pdf_bytes = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF"
     files = {"file": ("DemoProduction_CAM_A.pdf", dummy_pdf_bytes, "application/pdf")}

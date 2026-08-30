@@ -562,7 +562,10 @@ export default function App() {
         }
       }
     } catch (e: any) {
-      alert(`Could not load document preview: ${e.message}`);
+      // The server says why when it refuses: source documents are not served
+      // by default because they carry crew contact details and unreleased
+      // material. Showing that beats a generic failure.
+      alert(e?.detail ?? e?.message ?? 'Could not load document preview');
     }
   };
 

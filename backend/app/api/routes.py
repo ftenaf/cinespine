@@ -29,6 +29,7 @@ from backend.app.normalizers.slates import normalize_slate
 from backend.app.script.scene_lookup import build_scene_context, scene_numbers_for_target
 from backend.app.core.telemetry import TelemetryExporter
 from backend.app.core import analytics
+from backend.app.core import privacy
 
 logger = logging.getLogger(__name__)
 
@@ -324,7 +325,13 @@ def get_document_content(doc_id: str):
     doc = spine_writer.get_document(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    
+
+    # The page, not the facts read off it. It carries what the parsers were
+    # written to leave behind: crew contact details, cast names, unreleased
+    # material. Refused unless somebody deployed this having decided otherwise.
+    if not privacy.may_serve(doc):
+        raise HTTPException(status_code=403, detail=privacy.refusal_detail(doc))
+
     filename = doc.get("filename", "")
     is_pdf = filename.lower().endswith(".pdf") or doc.get("doc_type") == "pdf"
 
@@ -335,7 +342,10 @@ def get_document_content(doc_id: str):
         "filename": filename,
         "doc_type": doc["doc_type"],
         "department": doc["department"],
-        "content": doc.get("content", ""),
+        # Narrow redaction on top of the gate. Only an email, or a number the
+        # document labels as a phone -- never a bare run of digits, which is
+        # how a camera card and its shoot date became a redacted phone number.
+        "content": privacy.redact(doc.get("content", "")),
         "checksum": doc.get("checksum"),
         "size_bytes": doc.get("size_bytes", 0),
         "uploaded_at": doc.get("uploaded_at"),
@@ -353,24 +363,22 @@ def get_document_raw(doc_id: str):
     doc = spine_writer.get_document(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    
+
+    # The original file: a PDF cannot be redacted without re-rendering it, so
+    # this is the strictest thing the API serves and the gate is the only
+    # control over it.
+    if not privacy.may_serve(doc):
+        raise HTTPException(status_code=403, detail=privacy.refusal_detail(doc))
+
     raw_bytes = doc.get("raw_bytes")
     filename = doc.get("filename", "document")
-    
-    # If raw_bytes wasn't in memory (e.g. initial demo load), resolve from local example directory
+
+    # No disk fallback. It used to read CINESPINE_EXAMPLES_DIR/<filename> when
+    # the stored bytes were absent, which reached the real paperwork by name
+    # and would have walked straight around the gate above. Documents are
+    # stored with their bytes now, so the fallback answered nothing anyway.
     if not raw_bytes:
-        examples_path = os.path.join(
-            os.environ.get("CINESPINE_EXAMPLES_DIR", "data/examples"), filename
-        )
-        if os.path.exists(examples_path):
-            try:
-                with open(examples_path, "rb") as f:
-                    raw_bytes = f.read()
-            except OSError as exc:
-                logger.debug("Example file %s unreadable: %s", examples_path, exc)
-    
-    if not raw_bytes:
-        raw_bytes = doc.get("content", "").encode("utf-8")
+        raw_bytes = privacy.redact(doc.get("content", "")).encode("utf-8")
     
     is_pdf = filename.lower().endswith(".pdf") or doc.get("doc_type") == "pdf"
     media_type = "application/pdf" if is_pdf else "text/plain; charset=utf-8"
@@ -944,7 +952,7 @@ def seed_real_day_data(req: SeedRequest):
                 content=txt,
                 checksum=checksum,
                 raw_bytes=content_bytes,
-                metadata={"file_size": len(content_bytes)},
+                metadata={"file_size": len(content_bytes), "synthetic": True},
             )
 
             envelope = EventEnvelope(

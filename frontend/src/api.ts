@@ -100,7 +100,10 @@ export async function fetchDocuments(productionId: string, shootDay: string): Pr
 
 export async function fetchDocumentContent(docId: string): Promise<SourceDocument> {
   const res = await fetch(`${API_BASE}/documents/${docId}`);
-  if (!res.ok) throw new Error('Failed to fetch document content');
+  // The server's own explanation, not a generic failure. Serving source
+  // documents is refused by default, and a reader who sees only "could not
+  // load" cannot tell a refusal from a broken endpoint.
+  if (!res.ok) throw await apiError(res, 'Failed to fetch document content');
   return res.json();
 }
 
