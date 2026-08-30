@@ -54,6 +54,18 @@ overwrites, so "who parked this" could not be answered five minutes later.
 **Deleting a document did not reach the mirror.** By design -- it is append-only -- but it means anything
 that gets in stays in.
 
+**Two of the four required detections were computed and thrown away.** `reconcile_existence` was called,
+its result assigned to a local, and never read. `PAPERWORK_WITHOUT_MEDIA` and `MEDIA_WITHOUT_PAPERWORK`
+had therefore never reached the API. Found 2026-08-30 while adding `AWAITING_OFFLOAD`, because the same
+block held both mistakes.
+
+**The clip matcher failed on a file extension.** The camera report writes `A120_C001_260728` and the
+offload manifest writes `A120_C001_260728.MOV`; the comparison was raw, and its Silverstack-style fallback
+expected `A_0120C001`, a different arrangement of underscores. Collecting the discarded results without
+this fix would have reported nine clips as missing that were sitting in the manifest -- the false gap the
+offload gate exists to prevent, arriving through a different door. With it fixed, six genuine findings
+remain: the demo's manifest covers three clips and the camera reports log nine.
+
 ## Surfaces
 
 **An editorial tag control looked like a display.** It had been interactive since it was built and

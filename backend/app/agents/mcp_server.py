@@ -70,18 +70,29 @@ class ClickHouseMCPServer:
             for d in discs:
                 all_discrepancies.append(d.model_dump())
 
-        # 2. Check Set Belief vs Post/DIT Existence
+        # 2. Check Set Belief vs Post/DIT Existence.
+        #
+        # Called whichever way the gate falls: with an offload report a logged
+        # take with no file is a real gap, and without one the day is awaiting
+        # offload, which is a different thing that also has to be said. The
+        # engine decides which; this used to skip the call entirely when there
+        # was no report, so the day rendered as clean.
+        #
+        # Its results are now used. They were assigned to a local and dropped,
+        # so two of the four detections REQ-08 asks for -- paperwork without
+        # media, and media without paperwork -- were computed on every request
+        # and never reached anybody.
         media_files = [evt.get("payload", {}) for evt in events if evt.get("entity_type") == "media_file"]
         has_offload_report = len(media_files) > 0
-        if has_offload_report:
-            flat_takes = [w for witnesses in takes_map.values() for w in witnesses if w.get("axis") == "belief"]
-            exist_discs = self.reconciler.reconcile_existence(
-                production_id=production_id,
-                shoot_day=shoot_day,
-                logged_takes=flat_takes,
-                media_files=media_files,
-                has_offload_report=has_offload_report,
-            )
+        flat_takes = [w for witnesses in takes_map.values() for w in witnesses if w.get("axis") == "belief"]
+        for d in self.reconciler.reconcile_existence(
+            production_id=production_id,
+            shoot_day=shoot_day,
+            logged_takes=flat_takes,
+            media_files=media_files,
+            has_offload_report=has_offload_report,
+        ):
+            all_discrepancies.append(d.model_dump())
         # 3. Office's plan and belief against what every other department filed.
         #    Scene events come off the DPR; material is anything the other axes
         #    said about a scene, whatever shape it arrived in.

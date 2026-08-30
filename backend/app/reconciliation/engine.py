@@ -159,10 +159,23 @@ class ReconciliationEngine:
 
         return discrepancies
 
+    @staticmethod
+    def _clip_stem(name: str) -> str:
+        """
+        A clip name without its container extension.
+
+        The camera report writes `A120_C001_260728` and the offload manifest
+        writes `A120_C001_260728.MOV`. They are the same clip, and comparing
+        them raw reports every clip on the day as missing -- the false gap the
+        offload gate exists to prevent, arriving through a different door.
+        """
+        return re.sub(r"\.(mov|mxf|mp4|braw|ari|dng|r3d|wav)$", "", (name or "").strip(), flags=re.IGNORECASE)
+
     def is_clip_matched(self, logged_clip: str, media_files: List[Dict[str, Any]]) -> bool:
+        logged_stem = self._clip_stem(logged_clip)
         for mf in media_files:
             fn = mf.get("file_name", "")
-            if logged_clip == fn:
+            if logged_clip == fn or logged_stem.upper() == self._clip_stem(fn).upper():
                 return True
             m = re.match(r"^([A-Za-z])(\d{3,4})_C(\d{3,4})", logged_clip)
             if m:
@@ -269,9 +282,48 @@ class ReconciliationEngine:
     ) -> List[Discrepancy]:
         """
         Reconciles Set belief (logged takes) with Post/DIT existence (media files).
-        Gated strictly on whether an offload report exists for the shoot day.
+
+        Gated strictly on whether an offload report exists for the day, and the
+        gate has two sides. With a report, a take with no file is a real gap.
+        Without one, nobody has looked yet -- and that day must not render as a
+        clean day either, which is what suppressing everything used to do.
+
+        "Absence of a report is not absence of material." A day nobody has
+        offloaded and a day with material missing need opposite responses: one
+        is chased with DIT, the other is searched for on a shelf.
         """
         discrepancies: List[Discrepancy] = []
+
+        if not has_offload_report:
+            # One finding for the day, not one per take. Per take it would fire
+            # on every take of every day not yet offloaded, which is most of a
+            # shoot -- and a notice that appears three hundred times is a
+            # notice people filter out, which puts the day back where it
+            # started with extra steps.
+            if logged_takes:
+                slates = sorted({str(t.get("slate")) for t in logged_takes if t.get("slate")})
+                discrepancies.append(
+                    Discrepancy(
+                        production_id=production_id,
+                        shoot_day=shoot_day,
+                        entity_type="shoot_day",
+                        entity_id=shoot_day,
+                        discrepancy_type=DiscrepancyType.AWAITING_OFFLOAD,
+                        severity=Severity.INFO,
+                        description=(
+                            f"{len(logged_takes)} takes were logged on day {shoot_day} and no offload "
+                            "report has arrived. Whether the material exists is unknown, which is not "
+                            "the same as missing: this is chased with DIT, not searched for."
+                        ),
+                        witnesses=[{
+                            "department": "set",
+                            "claim": "takes_logged_without_offload",
+                            "takes": len(logged_takes),
+                            "slates": slates[:20],
+                        }],
+                    )
+                )
+            return discrepancies
 
         if has_offload_report:
             # Case A: Paperwork without media
