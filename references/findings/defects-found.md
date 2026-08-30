@@ -36,6 +36,28 @@ a scene to start with a digit, but the parser is where it should be caught. See
 
 ## The spine and its stores
 
+**An upload whose spine write failed returned 200 INGESTED.** `EventBus.publish` caught every handler
+exception, logged it, and returned -- so `spine_writer.append_event` raising left the day holding a
+stored document with no events in it, which is indistinguishable from a day that went fine. Found while
+removing the Kafka producer that sat in the same method. Fixed by acknowledging after the write:
+`publish` runs every handler, then raises `EventHandlerError` with all of them. Reproduce by patching
+`append_event` to raise and posting to `/api/upload` -- it now answers 500 and names the doc_id so the
+document can be retried or deleted.
+
+The document itself is kept rather than rolled back. It is the evidence, and discarding it would mean
+asking whoever sent it to send it again.
+
+**A spine failure would have been filed as a rejected document.** The first cut let `EventHandlerError`
+reach the dispatcher's broad `except Exception`, which emits a DLQ entry. The DLQ means "this paperwork
+was refused", which sends someone to check a report that was fine; a disk error means the machinery
+failed. Two different responses, so the dispatcher now re-raises rather than filing it.
+
+**The failure path of `/api/upload/file` raised NameError.** Its handler named a variable that does not
+exist in that function's scope, so the branch reporting the error would have failed with a different
+error. It had no test -- the untested refusal, and the reason the falsification for this fix runs all
+four call sites rather than one.
+
+
 **Every event was inserted to ClickHouse separately.** A 72-event document went from 0.8s to 7.4s; a
 1,991-event volume took minutes. Batching returned them to 0.86s and 2.0s.
 

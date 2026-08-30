@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from backend.app.parsers import classifier
-from backend.app.streaming.bus import EventBus
+from backend.app.streaming.bus import EventBus, EventHandlerError
 from backend.app.streaming.dispatcher import IngestionDispatcher
 from backend.app.streaming.models import DepartmentType
 
@@ -78,12 +78,14 @@ def test_the_event_arrives_as_it_was_sent():
 def test_one_failing_handler_does_not_stop_the_others():
     """
     One department's parser raising must not take down the ingest of another's.
+    The failure is still reported afterwards -- see test_ack_after_write.py.
     """
     bus = EventBus()
     seen = []
     bus.subscribe("t", lambda e: (_ for _ in ()).throw(ValueError("parser blew up")))
     bus.subscribe("t", seen.append)
-    bus.publish("t", {"x": 1})
+    with pytest.raises(EventHandlerError):
+        bus.publish("t", {"x": 1})
     assert seen == [{"x": 1}]
 
 

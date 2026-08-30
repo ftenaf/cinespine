@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Response, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from backend.app.streaming.models import EventEnvelope, AxisType, DepartmentType, DocumentType
-from backend.app.streaming.bus import EventBus
+from backend.app.streaming.bus import EventBus, EventHandlerError
 from backend.app.streaming.dispatcher import IngestionDispatcher
 from backend.app.streaming.broker import event_broker, SpineLiveEvent
 from backend.app.spine.writer import SpineWriter
@@ -420,6 +420,27 @@ def delete_document(doc_id: str):
     return {"status": "DELETED", "doc_id": doc_id}
 
 
+def _ingest_failed(exc: EventHandlerError, doc_id: str, filename: str) -> HTTPException:
+    """
+    The spine write did not land, so the upload must not claim it did.
+
+    The raw document is already stored and is kept: it is the evidence, and
+    losing it would mean asking whoever sent it to send it again. What is
+    missing is everything derived from it, which is why this cannot be
+    reported as INGESTED -- a day that silently holds a document with no
+    events in it looks exactly like a day that went fine.
+    """
+    logger.error("Ingest of %s (%s) failed: %s", filename, doc_id, exc)
+    return HTTPException(
+        status_code=500,
+        detail=(
+            f"'{filename}' was stored but its events did not reach the spine, so nothing "
+            f"was ingested from it. The document is kept as doc_id {doc_id}: upload it "
+            f"again once the cause is fixed, or delete it. Cause: {'; '.join(exc.reasons)}"
+        ),
+    )
+
+
 @router.post("/upload")
 def upload_document(req: UploadRequest):
     """
@@ -474,7 +495,10 @@ def upload_document(req: UploadRequest):
     )
 
     topic = f"production.raw.{department.value}"
-    event_bus.publish(topic, envelope)
+    try:
+        event_bus.publish(topic, envelope)
+    except EventHandlerError as exc:
+        raise _ingest_failed(exc, doc_id, filename)
     # The document is ingested; send its events on together rather than
     # leaving them buffered until the next upload.
     spine_writer.flush_events()
@@ -619,7 +643,10 @@ async def upload_document_file(
     })
 
     topic = f"production.raw.{classification.department.value}"
-    event_bus.publish(topic, envelope)
+    try:
+        event_bus.publish(topic, envelope)
+    except EventHandlerError as exc:
+        raise _ingest_failed(exc, doc_id, filename)
     # The document is ingested; send its events on together rather than
     # leaving them buffered until the next upload.
     spine_writer.flush_events()
@@ -856,6 +883,9 @@ def seed_real_day_data(req: SeedRequest):
     examples_dir = os.environ.get("CINESPINE_EXAMPLES_DIR", "data/examples")
     ingested_files = []
     skipped_files: List[str] = []
+    # Files whose events did not reach the spine. Distinct from skipped, which
+    # means "already here": these are failures, and they need chasing.
+    failed_files: List[str] = []
 
     if os.path.exists(examples_dir):
         files = sorted(os.listdir(examples_dir))
@@ -912,7 +942,16 @@ def seed_real_day_data(req: SeedRequest):
                 metadata={"doc_id": doc_id, "checksum": checksum, "thumbnails": t_map},
             )
             topic = f"production.raw.{classification.department.value}"
-            event_bus.publish(topic, envelope)
+            try:
+                event_bus.publish(topic, envelope)
+            except EventHandlerError as exc:
+                # One file failing does not abandon the rest of the seed, but
+                # it is never counted as ingested: a seed that reports every
+                # file while half of them produced no events is the same lie
+                # the upload route used to tell, in bulk.
+                logger.error("Seed of %s failed: %s", fn, exc)
+                failed_files.append(fn)
+                continue
             # The document is ingested; send its events on together rather than
             # leaving them buffered until the next upload.
             spine_writer.flush_events()
@@ -967,7 +1006,16 @@ def seed_real_day_data(req: SeedRequest):
                 metadata={"doc_id": doc_id, "checksum": checksum, "thumbnails": t_map},
             )
             topic = f"production.raw.{classification.department.value}"
-            event_bus.publish(topic, envelope)
+            try:
+                event_bus.publish(topic, envelope)
+            except EventHandlerError as exc:
+                # One file failing does not abandon the rest of the seed, but
+                # it is never counted as ingested: a seed that reports every
+                # file while half of them produced no events is the same lie
+                # the upload route used to tell, in bulk.
+                logger.error("Seed of %s failed: %s", fn, exc)
+                failed_files.append(fn)
+                continue
             # The document is ingested; send its events on together rather than
             # leaving them buffered until the next upload.
             spine_writer.flush_events()
@@ -994,6 +1042,10 @@ def seed_real_day_data(req: SeedRequest):
         # say so, not look identical to the first.
         "skipped_count": len(skipped_files),
         "skipped_files": skipped_files,
+        # A seed that reported only what worked would look identical to a
+        # clean one. These produced no events and need chasing.
+        "failed_count": len(failed_files),
+        "failed_files": failed_files,
     }
 
 
