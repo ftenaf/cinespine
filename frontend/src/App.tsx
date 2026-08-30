@@ -138,6 +138,10 @@ export default function App() {
   const [tagRevision, setTagRevision] = useState(0);
   const [masterLayout, setMasterLayout] = useState<'grid' | 'slate'>('grid');
   const [focusTakeIndex, setFocusTakeIndex] = useState<number>(0);
+  // The take a deep link asked for, kept until the reader expresses a new
+  // intent. It stays reachable in the navigator even when their filters
+  // exclude it: the jump has to land, and their search query is theirs.
+  const [jumpedTakeKey, setJumpedTakeKey] = useState<string | null>(null);
   const [selectedSceneFilter, setSelectedSceneFilter] = useState<string>('ALL');
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [selectedCameraAngle, setSelectedCameraAngle] = useState<Record<string, string>>({});
@@ -349,15 +353,19 @@ export default function App() {
     });
   }, [currentPillar, activeTab, masterLayout]);
 
+  /** How a take is named when one list has to point at another. */
+  const takeKey = (take: TakeRecord) => `${take.slate}_${take.take_id}`;
+
   const jumpToTarget = (targetType: string, targetId: string) => {
     // 1. Close drawers and modals
     setIsNotifDrawerOpen(false);
     setViewingReqsList(null);
     setSelectedReqForResolve(null);
 
-    // 2. Clear search and reset scene filter so all takes are accessible in Slate Navigator
-    setSearchQuery('');
-    setSelectedSceneFilter('ALL');
+    // 2. The reader's search query and scene filter are left exactly as they
+    //    are. Clearing them was the crude way to guarantee the target was
+    //    reachable; pinning it below does that without throwing away what
+    //    somebody typed.
 
     // 3. Switch to Set & Editorial Spine Pillar & Master View
     setCurrentPillar('spine');
@@ -410,7 +418,12 @@ export default function App() {
     }
 
     if (matchIndex !== -1) {
-      setFocusTakeIndex(matchIndex);
+      // Pinned by identity, not by index. matchIndex is a position in `takes`
+      // and the navigator reads `filteredTakes`, so setting it directly landed
+      // on whatever happened to sit at that position once anything was
+      // filtered -- which only looked correct because the filters had just
+      // been cleared. The effect below positions on the take itself.
+      setJumpedTakeKey(takeKey(takes[matchIndex]));
       setInspectedTake(takes[matchIndex]);
     } else {
       console.warn(`Target not found in current takes list: type=${targetType}, id=${targetId}`);
@@ -825,7 +838,34 @@ export default function App() {
     return { total, open, assignedToMe, criticalOrHigh, resolved };
   }, [allRequirements, currentUser.handle]);
 
-  const currentFocusTake = filteredTakes[focusTakeIndex] || filteredTakes[0] || null;
+  /**
+   * The take a deep link pinned, when the reader's own filters exclude it.
+   *
+   * Shown rather than silently dropped: a jump that lands on nothing is worse
+   * than the cleared search box it replaced. Named separately so the navigator
+   * can say why this one is here.
+   */
+  const pinnedOutsideFilter = useMemo(() => {
+    if (!jumpedTakeKey) return null;
+    if (filteredTakes.some(t => takeKey(t) === jumpedTakeKey)) return null;
+    return takes.find(t => takeKey(t) === jumpedTakeKey) ?? null;
+  }, [jumpedTakeKey, filteredTakes, takes]);
+
+  const navigableTakes = useMemo(
+    () => (pinnedOutsideFilter ? [pinnedOutsideFilter, ...filteredTakes] : filteredTakes),
+    [pinnedOutsideFilter, filteredTakes],
+  );
+
+  // Position on the pinned take once the list it lives in has settled. Doing
+  // this in an effect rather than in the jump is what lets the target be found
+  // in the filtered list instead of guessed at by index.
+  useEffect(() => {
+    if (!jumpedTakeKey) return;
+    const index = navigableTakes.findIndex(t => takeKey(t) === jumpedTakeKey);
+    if (index >= 0) setFocusTakeIndex(index);
+  }, [jumpedTakeKey, navigableTakes]);
+
+  const currentFocusTake = navigableTakes[focusTakeIndex] || navigableTakes[0] || null;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -1267,7 +1307,12 @@ export default function App() {
                   type="text"
                   placeholder="Search scene, slate, card (A120), clip..."
                   value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
+                  onChange={e => {
+                    setSearchQuery(e.target.value);
+                    // A new query is a new intent, so the deep link stops
+                    // pinning its take above the results.
+                    setJumpedTakeKey(null);
+                  }}
                   className="bg-slate-900 border border-slate-700 text-xs pl-8 pr-3 py-1.5 rounded-lg text-white font-mono w-64 focus:outline-none focus:border-blue-500"
                 />
               </div>
@@ -1816,6 +1861,20 @@ export default function App() {
 
               return (
                 <div className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl space-y-4 p-6">
+                  {/* A take reached by a deep link that the reader's own
+                      filters exclude. Said out loud rather than quietly shown:
+                      otherwise it looks like the filter is broken. */}
+                  {pinnedOutsideFilter && currentFocusTake
+                    && takeKey(currentFocusTake) === takeKey(pinnedOutsideFilter) && (
+                    <p className="flex items-start gap-2 text-[11px] text-amber-300/90 bg-amber-950/20 border border-amber-900/50 rounded-lg p-2">
+                      <ExternalLink className="w-3.5 h-3.5 mt-px shrink-0" aria-hidden />
+                      <span>
+                        Shown because you followed a link to it. Your current search and filters
+                        exclude this take, and they have been left as they were.
+                      </span>
+                    </p>
+                  )}
+
                   {/* Take Switcher Header Bar */}
                   <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
                     <div className="flex items-center gap-2">
@@ -1835,18 +1894,18 @@ export default function App() {
                           onChange={e => setFocusTakeIndex(parseInt(e.target.value))}
                           className="bg-transparent text-xs font-mono font-bold text-white focus:outline-none cursor-pointer"
                         >
-                          {filteredTakes.map((ft, i) => (
+                          {navigableTakes.map((ft, i) => (
                             <option key={i} value={i} className="bg-slate-900 text-white">
                               {i + 1}. Sc {ft.scene} — {ft.slate} T{ft.take_id} {ft.is_starred ? '⭐' : ''} {ft.is_wild_track ? '🎙️' : ''} {ft.is_vfx ? '✨' : ''}
                             </option>
                           ))}
                         </select>
-                        <span className="text-xs text-gray-400 font-mono">of {filteredTakes.length}</span>
+                        <span className="text-xs text-gray-400 font-mono">of {navigableTakes.length}</span>
                       </div>
 
                       <button
-                        disabled={focusTakeIndex >= filteredTakes.length - 1}
-                        onClick={() => setFocusTakeIndex(Math.min(filteredTakes.length - 1, focusTakeIndex + 1))}
+                        disabled={focusTakeIndex >= navigableTakes.length - 1}
+                        onClick={() => setFocusTakeIndex(Math.min(navigableTakes.length - 1, focusTakeIndex + 1))}
                         className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white text-xs font-semibold transition flex items-center gap-1"
                       >
                         Next Take

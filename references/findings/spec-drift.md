@@ -23,12 +23,14 @@ shot on day 31 and no other department has filed anything for either.
 **REQ-12, the privacy gate.** Both document endpoints served the original paperwork ungated. Closed
 2026-08-30; see [constraints/privacy.md](../constraints/privacy.md).
 
-## Open
+**REQ-15, deep-linking cleared the reader's search box.** `jumpToTarget` called `setSearchQuery('')`,
+with a comment reasoning its way to the opposite of the requirement's negative. Closed 2026-08-30 -- and
+the clearing was hiding a second defect: the jump found an index into `takes` while the navigator reads
+`filteredTakes`, so it only landed correctly *because* the filters had just been emptied. The target is
+now pinned by identity and stays reachable when the reader's filters exclude it, with the exception said
+out loud rather than shown silently.
 
-**REQ-15, deep-linking clears the user's search box.** The requirement's negative says this explicitly.
-`jumpToTarget` calls `setSearchQuery('')` with a comment reasoning its way to the opposite conclusion.
-Falsified live: the box held `dialogue` before the jump and was empty after. The tension is real -- a
-filter can hide the take you jumped to -- and the fix is to reach the take without mutating the input.
+## Open
 
 **REQ-08.4, `AWAITING_OFFLOAD`.** The gating works: a missing offload never renders as missing media. But
 the requirement wants an explicit state and the code emits *nothing*, so an un-offloaded day looks
