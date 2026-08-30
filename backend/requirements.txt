@@ -208,3 +208,4 @@ websockets==16.1.1
     # via
     #   google-genai
     #   uvicorn
+posthog==7.44.2

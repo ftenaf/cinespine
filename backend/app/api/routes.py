@@ -28,6 +28,7 @@ from backend.app.normalizers.takes import normalize_take
 from backend.app.normalizers.slates import normalize_slate
 from backend.app.script.scene_lookup import build_scene_context, scene_numbers_for_target
 from backend.app.core.telemetry import TelemetryExporter
+from backend.app.core import analytics
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,31 @@ spine_writer = SpineWriter()
 reconciler = ReconciliationEngine()
 mcp_server = ClickHouseMCPServer(spine_writer=spine_writer, reconciler=reconciler)
 assistant = GeminiDiscrepancyAssistant(mcp_server=mcp_server)
+
+def _hours_between(started: Optional[str], ended: Optional[str]) -> Optional[float]:
+    """
+    Hours from one ISO timestamp to another, or to now when the second is None.
+
+    Rounded to one decimal: the question is "did this sit for a day or a week",
+    and a full float would imply a precision the timestamps do not have.
+    """
+    from datetime import datetime, timezone
+
+    if not started:
+        return None
+    try:
+        begin = datetime.fromisoformat(started)
+        if begin.tzinfo is None:
+            begin = begin.replace(tzinfo=timezone.utc)
+        finish = datetime.now(timezone.utc)
+        if ended:
+            finish = datetime.fromisoformat(ended)
+            if finish.tzinfo is None:
+                finish = finish.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return round(max(0.0, (finish - begin).total_seconds() / 3600), 1)
+
 
 def _project_analytics(production_id: str, shoot_day: str) -> None:
     """
@@ -572,6 +598,16 @@ async def upload_document_file(
             "handwritten_rows": handwritten_rows,
         },
     )
+
+    # Which departments file, and when. No filename: it carries the production's
+    # name. The doc type says what arrived without saying whose it is.
+    analytics.capture("@upload", "document_ingested", {
+        "production_id": final_prod,
+        "shoot_day": final_day,
+        "department": classification.department.value,
+        "doc_type": classification.doc_type.value,
+        "axis": classification.axis.value,
+    })
 
     topic = f"production.raw.{classification.department.value}"
     event_bus.publish(topic, envelope)
@@ -1597,6 +1633,16 @@ def create_requirement(req: CreateRequirementRequest):
             "target_label": created["target_label"],
         })
 
+    analytics.capture(created["created_by"], "requirement_raised", {
+        "production_id": created["production_id"],
+        "shoot_day": created["shoot_day"],
+        "target_type": created["target_type"],
+        "target_id": created["target_id"],
+        "category": created["category"],
+        "priority": created["priority"],
+        "assigned_to": created["assigned_to"],
+    })
+
     event_broker.publish_sync(SpineLiveEvent(
         event_type="REQUIREMENT_CREATED",
         production_id=created["production_id"],
@@ -1725,6 +1771,20 @@ def update_requirement(requirement_id: str, updates: UpdateRequirementRequest):
             f"{actor} moved this from {was_status} to {now_status}: {updated['title']}",
         )
 
+    if now_assigned_to != was_assigned_to or now_status != was_status:
+        analytics.capture(actor, "requirement_moved", {
+            "production_id": updated["production_id"],
+            "shoot_day": updated["shoot_day"],
+            "target_type": updated["target_type"],
+            "target_id": updated["target_id"],
+            "category": updated["category"],
+            "priority": updated["priority"],
+            "from_status": was_status,
+            "to_status": now_status,
+            "handed_over": now_assigned_to != was_assigned_to,
+            "assigned_to": now_assigned_to,
+        })
+
     event_broker.publish_sync(SpineLiveEvent(
         event_type="REQUIREMENT_UPDATED",
         production_id=updated["production_id"],
@@ -1787,6 +1847,17 @@ def resolve_requirement(requirement_id: str, body: ResolveRequirementRequest):
             "target_id": resolved["target_id"],
             "target_label": resolved["target_label"],
         })
+
+    analytics.capture(resolved["resolved_by"], "requirement_resolved", {
+        "production_id": resolved["production_id"],
+        "shoot_day": resolved["shoot_day"],
+        "target_type": resolved["target_type"],
+        "target_id": resolved["target_id"],
+        "category": resolved["category"],
+        "priority": resolved["priority"],
+        "raised_by": resolved.get("created_by"),
+        "hours_owed": _hours_between(resolved.get("created_at"), resolved.get("resolved_at")),
+    })
 
     event_broker.publish_sync(SpineLiveEvent(
         event_type="REQUIREMENT_RESOLVED",
@@ -1961,6 +2032,17 @@ def set_tag(request: SetEditorialTagRequest):
     except tag_store.UnknownTagValue as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    # Editorial progress: how a production moves through the stages, and who
+    # moves it. The note somebody typed on the tag is not sent.
+    analytics.capture(tag.get("updated_by"), "editorial_tag_set", {
+        "production_id": tag["production_id"],
+        "target_type": tag["target_type"],
+        "target_id": tag["target_id"],
+        "status": tag.get("status"),
+        "needs_count": len(tag.get("needs") or []),
+        "descriptor_count": len(tag.get("descriptors") or []),
+    })
+
     event_broker.publish_sync(SpineLiveEvent(
         event_type="EDITORIAL_TAG_SET",
         production_id=request.production_id,
@@ -2023,8 +2105,20 @@ def get_notifications(user_handle: str, unread_only: bool = False):
 
 @router.post("/notifications/{notification_id}/read")
 def mark_notification_read(notification_id: str):
-    if not spine_writer.mark_notification_read(notification_id):
+    existing = spine_writer.get_notification(notification_id)
+    if not existing or not spine_writer.mark_notification_read(notification_id):
         raise HTTPException(status_code=404, detail="Notification not found")
+
+    # How long an alert sat before anybody opened it. handoffs.md: "No
+    # acknowledgement is recorded anywhere." This is that record.
+    analytics.capture(existing["recipient_handle"], "alert_acknowledged", {
+        "production_id": existing["production_id"],
+        "notification_type": existing["notification_type"],
+        "target_type": existing["target_type"],
+        "target_id": existing["target_id"],
+        "raised_by": existing["actor_handle"],
+        "hours_unread": _hours_between(existing.get("created_at"), None),
+    })
     return {"status": "READ", "notification_id": notification_id, "success": True}
 
 
