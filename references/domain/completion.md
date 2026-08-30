@@ -32,27 +32,45 @@ scene and sometimes for all of them, so it cannot be modelled as a date the prod
 
 ## What the code represents
 
-The editorial tag vocabulary in `tag_store.py` covers the first three steps and stops:
+The editorial tag vocabulary in `tag_store.py` now covers the whole chain. It stopped at the third step
+until 2026-08-30:
 
-| Francisco's step | Tag status |
-|---|---|
-| script says fully shot | `finished_shooting`, `covered_per_script` |
-| assistant mounted it | `ready_to_edit`, `mounted` |
-| editor finished editing | `finished` |
-| **picture lock** | not represented |
-| **sent to colour / sound / VFX** | partly: `needs` carries `sfx`, as a need rather than a stage |
-| **conforming** | not represented |
-| **DCP** | not represented |
+| Francisco's step | Tag status | Ordinal |
+|---|---|---|
+| script says fully shot | `finished_shooting`, `covered_per_script` | 1, 2 |
+| assistant mounted it | `ready_to_edit`, `mounted` | 3, 4 |
+| editor finished editing | `finished` | 5 |
+| picture lock | `picture_lock` | 6 |
+| sent to colour / sound / VFX | `colour_sound_vfx` | 7 |
+| conforming | `conformed` | 8 |
+| DCP | `dcp` | 9 |
 
-## The problem this exposes
+`needs` still carries `sfx` separately, and that is not a duplicate: the stage says where the coverage has
+got to, the need says what is still owed on it. A scene can be at `colour_sound_vfx` and the interesting
+question is which of the three has come back.
 
-`finished` is described in the code as "No further work expected." Under the chain above that is false: it
-names the end of *editorial* as the end of everything, and four stages follow it. A board that says a
-scene is finished, when what is meant is that the editor has stopped, tells a colourist something untrue.
+## What was wrong, and what it cost to fix
 
-Changing the vocabulary is not free -- statuses are stored on tags and mirrored to the trail, so renaming
-`finished` or adding stages after it is a migration and a decision, not a rename. Recorded here so the
-decision is made deliberately rather than discovered by someone reading a board.
+`finished` was described as "No further work expected", and it held the highest ordinal -- so a progress
+bar showed a scene as complete with four stages still to come. It named the end of *editorial* as the end
+of everything, which tells a colourist something untrue.
+
+**The fix was additive, and this document previously said it would not be.** The earlier note reasoned
+that statuses are stored on tags and mirrored to the trail, so changing the vocabulary meant a migration.
+That was true of a *rename* and false of the actual problem. What was wrong with `finished` was never its
+key: it was the label and the description, and those are vocabulary metadata that are never stored on a
+tag. Correcting them and appending four stages after it changed no stored row.
+
+Renaming would also have been wrong rather than merely expensive. `editorial_tag_events` is append-only,
+so rewriting a status there would falsify what somebody recorded at the time -- and leaving the trail
+alone while migrating the tags would leave the two copies disagreeing.
+
+## What is still not represented
+
+Picture lock is per coverage here, which matches "sometimes in specific scenes". What the model does not
+carry is the *back and forth*: `colour_sound_vfx` is one stage, and colour, sound and VFX return
+separately. If that distinction turns out to matter, three needs would express it better than three
+statuses, because they are independent of each other and of how far along the coverage is.
 
 ## Related
 

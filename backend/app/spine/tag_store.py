@@ -35,6 +35,18 @@ TARGET_TYPES: Tuple[str, ...] = ("scene", "shot")
 
 # The progression, in order. Ordinal is what a progress bar sorts on, so it is
 # stored with the vocabulary rather than inferred from the list's order later.
+#
+# "Complete" is a chain of seven stages rather than a state, and this list used
+# to stop at the third of them while calling it the end. See
+# references/domain/completion.md. The four stages after the cutting room are
+# below.
+#
+# `finished` keeps its key deliberately. Renaming it would mean rewriting the
+# status on stored tags *and* on editorial_tag_events -- and that trail is
+# append-only, so rewriting it would falsify what people actually recorded at
+# the time. What was wrong with `finished` was never the key: it was the label
+# and the description, which are vocabulary metadata and are never stored on a
+# tag. Correcting those removes the falsehood and migrates nothing.
 STATUSES: Tuple[Dict[str, Any], ...] = (
     {"key": "finished_shooting", "label": "Finished shooting", "ordinal": 1,
      "description": "Nothing further is planned on the floor for this coverage."},
@@ -43,9 +55,24 @@ STATUSES: Tuple[Dict[str, Any], ...] = (
     {"key": "ready_to_edit", "label": "Ready to edit", "ordinal": 3,
      "description": "Synced, marked and handed to the cutting room."},
     {"key": "mounted", "label": "Mounted", "ordinal": 4,
-     "description": "Assembled into the cut."},
-    {"key": "finished", "label": "Finished", "ordinal": 5,
-     "description": "No further work expected."},
+     "description": "Assembled into the cut by the editor's assistant."},
+    # Was labelled "Finished", described as "No further work expected". Four
+    # stages follow it, so that told a colourist something untrue.
+    {"key": "finished", "label": "Editing finished", "ordinal": 5,
+     "description": "The editor has finished the cut. Picture lock, colour/sound/VFX, "
+                    "conforming and DCP still follow."},
+    # Not a date the production passes through: the Director decides when, and
+    # may decide it for one scene while the rest are still being cut. That is
+    # why it is a status on a scene rather than a milestone on a production.
+    {"key": "picture_lock", "label": "Picture lock", "ordinal": 6,
+     "description": "The Director and Editor have settled the cut for this coverage."},
+    {"key": "colour_sound_vfx", "label": "Colour, sound & VFX", "ordinal": 7,
+     "description": "Sent out for colour, sound (including SFX) and VFX, which come back "
+                    "and forth until they are done."},
+    {"key": "conformed", "label": "Conformed", "ordinal": 8,
+     "description": "The conforming process is complete."},
+    {"key": "dcp", "label": "DCP", "ordinal": 9,
+     "description": "The Digital Cinema Package is prepared. The end of the chain."},
 )
 
 # Work still owed on this coverage. Independent of each other and of the status:

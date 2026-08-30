@@ -126,11 +126,17 @@ def test_no_status_at_all_is_allowed():
 
 
 def test_the_vocabulary_is_served_with_its_labels_and_order():
+    """
+    The whole chain, in the order work happens. This pinned five statuses until
+    2026-08-30 and caught the change that added the four after the cutting room
+    -- see test_completion_chain.py for what they mean.
+    """
     vocab = tag_store.vocabulary()
     assert [s["key"] for s in vocab["statuses"]] == [
         "finished_shooting", "covered_per_script", "ready_to_edit", "mounted", "finished",
+        "picture_lock", "colour_sound_vfx", "conformed", "dcp",
     ]
-    assert [s["ordinal"] for s in vocab["statuses"]] == [1, 2, 3, 4, 5]
+    assert [s["ordinal"] for s in vocab["statuses"]] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
     assert {n["key"] for n in vocab["needs"]} == {"sfx", "subtitles", "translation"}
 
 
