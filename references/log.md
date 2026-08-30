@@ -11,6 +11,11 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**Clearing the search box was hiding a wrong-array bug.** Deep-linking emptied the reader's query, which
+the requirement forbids -- and the emptying was load-bearing: the jump computed an index into `takes` and
+the navigator reads `filteredTakes`, so it only ever landed correctly because the filters had just been
+cleared. Fixed by pinning the target by identity.
+
 **The analytical mirror was write-only.** Every `SELECT` in the codebase went to SQLite while 5,090 events
 sat in ClickHouse unread. The cost of writing was paid and none of the use taken. Fixed by
 [the read path](architecture/analytical-mirror.md).
