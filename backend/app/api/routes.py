@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 # Singletons for service components
-event_bus = EventBus(in_memory=True)
+event_bus = EventBus()
 dispatcher = IngestionDispatcher(bus=event_bus)
 spine_writer = SpineWriter()
 reconciler = ReconciliationEngine()

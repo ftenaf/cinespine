@@ -42,8 +42,9 @@ out loud rather than shown silently.
 callers. The falsification -- simulate a four-hour DIT delay, assert the matrix goes amber -- cannot pass.
 The intent axis has since supplied the wrap time this needs.
 
-**REQ-14, target levels.** The requirement names four (`production`, `scene`, `shot`, `take`);
-`RequirementTargetType` has three, with no `production`. Editorial tags have two.
+**REQ-14, target levels.** Closed on 2026-08-30. `RequirementTargetType` now has all four
+(`production`, `scene`, `shot`, `take`). Editorial tags still have two, which is a narrower gap
+than the one recorded here originally.
 
 **REQ-13, `NOTIFICATION_ADDED`** is specified and never emitted. The other four event types are.
 
@@ -51,10 +52,41 @@ The intent axis has since supplied the wrap time this needs.
 nor MCP: there is no protocol and no `query_clickhouse` tool. Its negative holds by construction, since
 there is no SQL surface at all, but the name misleads.
 
-**REQ-01, Kafka.** `EventBus` has a Confluent path and is only ever constructed `in_memory=True`.
-Redpanda is in `docker-compose.yml` and unused.
-
 ## Deliberate divergences, not drift
+
+**REQ-01 asks for Kafka. There is no broker, and this is now a choice.**
+Removed on 2026-08-30 along with the Redpanda container. It had been drift --
+`EventBus` carried a Confluent producer that was unreachable, because the bus
+was only ever constructed `in_memory=True`, and the container in
+`docker-compose.yml` accepted no connections from this app. Wiring it up was
+the obvious fix until the ingest path was traced end to end:
+
+    POST /api/upload -> publish "production.raw.camera"
+                     -> dispatcher handler parses, inline
+                     -> publish "production.events.spine"
+                     -> spine_writer.append_event -> SQLite + ClickHouse
+                     -> 200
+
+One synchronous call stack in one process. A broker would have sat between two
+functions in it. None of the usual arguments survive contact with that shape:
+there is one consumer process, the upload response carries the parse result
+back to the caller, and a shoot day is a few hundred documents rather than a
+throughput problem. The durability argument inverts -- the spine *is* an
+append-only log, in SQLite, and the analytical mirror already rebuilds from it,
+so Kafka would have been a second log with weaker retention guarding the log of
+record.
+
+**The gap this leaves.** A reader of the requirements will find no broker, no
+partitioning, and no replay from a topic. If REQ-01 is read as "the system must
+be able to fan out to independent consumers," that capability is absent and
+adding it later means a real change, not a config flag. The judgement made here
+is that a container nothing connects to is a worse answer to REQ-01 than an
+honest absence, because it makes the architecture diagram claim something the
+running system does not do.
+
+**What was kept.** `EventBus` itself, which is load-bearing: ingestion reaches
+the spine writer through it and rejected documents reach telemetry through it.
+Only the broker went.
 
 **REQ-07 says the spine is ClickHouse.** It is SQLite with ClickHouse mirrored. Reasoned and recorded in
 [architecture/analytical-mirror.md](../architecture/analytical-mirror.md). The append-only invariant
