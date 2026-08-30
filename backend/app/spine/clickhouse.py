@@ -6,6 +6,12 @@ the environment variables -- except the line that connects. SpineWriter was
 always built with clickhouse_client=None, so the insert in append_event had
 never run once.
 
+Local or hosted. `CLICKHOUSE_SECURE` chooses the protocol and the port follows
+it -- 8443 for TLS, 8123 for plain -- so a managed instance needs a host, a
+password and one flag. The protocol is stated rather than guessed from the
+hostname, because guessing means keeping a list of what managed endpoints look
+like and that list is wrong the day a provider adds a domain.
+
 Connecting is opt-in and never fatal. CineSpine has to keep working on a laptop
 with no Docker running, so a ClickHouse that is absent, unreachable or broken
 degrades to exactly the behaviour there was before: the in-memory spine serves
@@ -24,6 +30,58 @@ from typing import Any, Optional
 from backend.app.spine.schema import CLICKHOUSE_SCHEMA_DDL
 
 logger = logging.getLogger(__name__)
+
+
+# Plain HTTP and TLS listen on different ports, and getting that pairing wrong
+# is the whole failure mode this module has to avoid: a managed instance only
+# ever answers on the TLS one, so a secure connection aimed at 8123 does not
+# fail with "wrong protocol" -- it fails as unreachable, which reads like the
+# host being down.
+DEFAULT_PORT = 8123
+DEFAULT_SECURE_PORT = 8443
+
+_TRUE = frozenset({"1", "true", "yes", "on"})
+
+
+def _flag(name: str, default: bool = False) -> bool:
+    """
+    An environment variable read as a boolean.
+
+    Anything unrecognised is the default rather than an error: a connection
+    setting is not worth refusing to start over, and the connection itself is
+    already optional.
+    """
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in _TRUE
+
+
+def use_tls() -> bool:
+    """
+    Whether to speak TLS. Off unless asked.
+
+    Stated, never inferred from the hostname. Guessing would mean a list of
+    what managed endpoints look like, and that list is wrong the day a provider
+    adds a domain -- the failure mode this project calls the keyed list that
+    rots. A local container wants plain HTTP and a hosted instance wants TLS,
+    and only the person deploying it knows which they have.
+    """
+    return _flag("CLICKHOUSE_SECURE")
+
+
+def port() -> int:
+    """
+    The port, defaulting to whichever one matches the protocol.
+
+    Explicit CLICKHOUSE_PORT always wins. Without it, TLS means 8443 and plain
+    means 8123, so `CLICKHOUSE_SECURE=1` on its own is a complete answer rather
+    than half of one.
+    """
+    raw = os.environ.get("CLICKHOUSE_PORT", "").strip()
+    if raw:
+        return int(raw)
+    return DEFAULT_SECURE_PORT if use_tls() else DEFAULT_PORT
 
 
 def is_configured() -> bool:
@@ -56,12 +114,19 @@ def connect() -> Optional[Any]:
         return None
 
     host = os.environ["CLICKHOUSE_HOST"].strip()
+    secure = use_tls()
+    chosen_port = port()
     try:
         client = clickhouse_connect.get_client(
             host=host,
-            port=int(os.environ.get("CLICKHOUSE_PORT", "8123")),
+            port=chosen_port,
             username=os.environ.get("CLICKHOUSE_USER", "default"),
             password=os.environ.get("CLICKHOUSE_PASSWORD", ""),
+            secure=secure,
+            # Certificates are verified unless someone turns it off, which is
+            # for a self-hosted instance with its own certificate authority.
+            # A managed endpoint has a public certificate and needs nothing.
+            verify=_flag("CLICKHOUSE_VERIFY", default=True),
             connect_timeout=int(os.environ.get("CLICKHOUSE_CONNECT_TIMEOUT", "5")),
         )
         # Applied on every connect. The statements are all IF NOT EXISTS, so this
@@ -69,8 +134,17 @@ def connect() -> Optional[Any]:
         for statement in CLICKHOUSE_SCHEMA_DDL.split(";"):
             if statement.strip():
                 client.command(statement)
-        logger.info("ClickHouse connected at %s; the analytical spine is live", host)
+        logger.info(
+            "ClickHouse connected at %s:%s (%s); the analytical spine is live",
+            host, chosen_port, "TLS" if secure else "plain HTTP",
+        )
         return client
     except Exception as exc:
-        logger.warning("ClickHouse at %s is unreachable (%s); using the in-memory spine only", host, exc)
+        # Names the protocol and port it tried. A TLS mismatch surfaces as an
+        # unreachable host, which sends people to check whether the server is
+        # up when the answer is on this side.
+        logger.warning(
+            "ClickHouse at %s:%s over %s is unreachable (%s); using the in-memory spine only",
+            host, chosen_port, "TLS" if secure else "plain HTTP", exc,
+        )
         return None
