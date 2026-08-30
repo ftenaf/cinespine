@@ -1,6 +1,8 @@
 import React from 'react';
 import { ShieldCheck, Save, CheckCircle2, X, Maximize2, RotateCw, Sparkles, Users } from 'lucide-react';
 import { CharacterProfile } from '../types';
+import { PersonalityPolygon } from './PersonalityPolygon';
+import { CharacterLinesPanel } from './CharacterLinesPanel';
 
 interface CharacterProfileCardProps {
   selectedCharacter: CharacterProfile;
@@ -14,6 +16,10 @@ interface CharacterProfileCardProps {
   handleGenerateCharacterPortrait: (char: CharacterProfile) => void;
   setEnlargedImage: (img: {url: string, prompt: string, title: string}) => void;
   setSelectedCharId: (id: string) => void;
+  /** Which screenplay this cast belongs to. Needed to look up lines. */
+  scriptId?: string;
+  /** Optional: lets the surrounding view follow a selected line. */
+  onGoToScene?: (sceneNumber: string) => void;
 }
 
 export function CharacterProfileCard({
@@ -27,7 +33,9 @@ export function CharacterProfileCard({
   generatingPortraitMap,
   handleGenerateCharacterPortrait,
   setEnlargedImage,
-  setSelectedCharId
+  setSelectedCharId,
+  scriptId,
+  onGoToScene
 }: CharacterProfileCardProps) {
   return (
     <div className="max-w-3xl space-y-6">
@@ -240,6 +248,28 @@ export function CharacterProfileCard({
             className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-spine-accent"
           />
         </div>
+      </div>
+
+      {/* Personality, and the lines it was read from.
+          Kept together deliberately: the polygon is a reading and the lines
+          are its evidence, and a reading nobody can check is an assertion
+          with a chart around it. */}
+      <div className="pt-6 border-t border-slate-800 grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <PersonalityPolygon
+          axes={selectedCharacter.personality_axes}
+          name={selectedCharacter.name}
+        />
+        {scriptId ? (
+          <CharacterLinesPanel
+            scriptId={scriptId}
+            characterName={selectedCharacter.name}
+            onGoToScene={onGoToScene}
+          />
+        ) : (
+          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-xs text-gray-500">
+            Lines appear once this cast is opened from a stored screenplay.
+          </div>
+        )}
       </div>
 
       {/* Character Relationship Network Section */}

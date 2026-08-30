@@ -285,6 +285,50 @@ export interface CharacterRelationship {
   interaction_count: number;
 }
 
+/**
+ * One axis of a character's personality, read from the screenplay.
+ *
+ * `score` is null where the script does not support a reading — a character
+ * with four lines does not contain five of them. Null is a real answer and
+ * must not be rendered as zero: zero on a radar draws a point at the centre,
+ * which reads as "none of this trait" and is a claim nobody made.
+ */
+export interface PersonalityAxis {
+  score: number | null;
+  evidence: string | null;
+}
+
+/** The five axes, always the same five. See PersonalityPolygon. */
+export interface PersonalityAxes {
+  openness?: PersonalityAxis;
+  conscientiousness?: PersonalityAxis;
+  extraversion?: PersonalityAxis;
+  agreeableness?: PersonalityAxis;
+  emotional_volatility?: PersonalityAxis;
+}
+
+/** One line a character speaks, and where in the script to find it. */
+export interface CharacterLine {
+  ordinal: number;
+  scene_number: string;
+  heading: string;
+  index_in_scene: number;
+  parenthetical: string | null;
+  line: string;
+}
+
+export interface CharacterLines {
+  script_id: string;
+  character: string;
+  /** Named anywhere in the script, whether or not they speak. */
+  known_character: boolean;
+  /** Has a character profile, which is built from dialogue cues. */
+  has_profile: boolean;
+  scenes_present: string[];
+  line_count: number;
+  lines: CharacterLine[];
+}
+
 export interface CharacterProfile {
   id: string;
   name: string;
@@ -293,6 +337,7 @@ export interface CharacterProfile {
   look_and_costume: string;
   facial_features: string;
   personality_traits: string[];
+  personality_axes?: PersonalityAxes | null;
   avatar_url?: string;
   portrait_prompt?: string;
   dialogue_count: number;

@@ -11,6 +11,42 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**A character's personality, scored from the script, with the lines it was read from beside it.** Five
+axes drawn as a polygon, and every line that character speaks, navigable in script order. The two are
+deliberately side by side: the polygon is a reading and the lines are its evidence, and a reading nobody
+can check against the script is an assertion with a chart around it.
+
+The axes are the Big Five, named rather than invented. Five dimensions made up for this app would be
+pseudo-psychology with a chart around it and nobody could say what a score meant. They score the
+*character* as written, never an actor.
+
+**The interesting part is the gap.** Rule 2 of the character prompt says never say a detail is unknown --
+right for costume, because a wardrobe has to be built and "unknown" cannot be photographed. It is wrong
+for personality: a character with four lines does not contain five readings. So the axes are an explicit
+exception in the prompt, a score may come back null, and null survives all the way to the chart. It is
+drawn as a missing vertex and a dashed spoke, never as a zero, because zero puts a point at the centre
+and reads as "none of this trait" -- absence rendered as presence. A score outside 0-100 is dropped
+rather than clamped: a model returning 140 has not understood the scale, and clamping would turn a broken
+answer into a confident one.
+
+**Two facts that looked identical and no longer do.** Character profiles are built from dialogue cues, so
+a character who never speaks has no profile -- which made "appears and never speaks" indistinguishable
+from "not in this script". The lines endpoint now checks the scene text for a whole-word uppercase
+mention, which is the screenplay convention for naming someone in action, and reports the two separately.
+Case-sensitive on purpose: a lowercase "lead" in prose is the English word.
+
+**Found while building it: the cast detail is duplicated.** The same markup exists in
+`CharacterProfileCard.tsx` (which renders in the popup) and inline in `ScriptStudio.tsx` (which is what
+actually renders), and `CharacterProfile` is declared twice -- in `types.ts` and again in
+`ScriptStudio.tsx`. Adding a field to one and not the other type-errors in exactly one place and is easy
+to miss. Both were updated and both carry a note; collapsing them is worth doing on its own rather than
+inside a feature.
+
+Verified in the browser against the real demo script, whose LEAD already carried genuine inference:
+openness 85 "dedicates himself entirely to complex musical counterpoint", extraversion 15 "whispers to
+himself and walks out without answering", volatility 90. The first draft clipped its own axis labels to
+"Conscie" and "vol... 90", which named nothing -- short forms and a wider viewBox since.
+
 **The test suite was writing into the mirror a demo reads from, and now is not.** With CLICKHOUSE_HOST
 set, a suite run put fixtures -- CHTEST, HEAVY, BATCH1, INTENT_DISAGREE -- into the same tables as the
 production's rows: 5355 of 5830 were test data, so the analytics panel was 92% fixtures and nothing about

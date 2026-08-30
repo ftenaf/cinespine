@@ -27,6 +27,7 @@ USER_OWNED_CHARACTER_FIELDS = (
     "look_and_costume",
     "facial_features",
     "personality_traits",
+    "personality_axes",
     "avatar_url",
     "portrait_prompt",
 )

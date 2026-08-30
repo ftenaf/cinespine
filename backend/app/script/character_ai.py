@@ -52,7 +52,74 @@ INFERRED_FIELDS = (
     "look_and_costume",
     "facial_features",
     "personality_traits",
+    "personality_axes",
 )
+
+# The five axes a character is scored on, in the order they are drawn.
+#
+# These are the Big Five (five-factor model), named rather than invented: five
+# axes made up for this app would be pseudo-psychology with a chart around it,
+# and nobody could say what a score meant. Neuroticism is labelled "Emotional
+# volatility" because that is what it describes and the clinical word reads
+# wrong on a call sheet.
+#
+# This scores a CHARACTER -- a person written in a screenplay -- and never an
+# actor. Nothing here is about a real human being.
+PERSONALITY_AXES = (
+    ("openness", "Openness",
+     "Curiosity and imagination; appetite for the unfamiliar."),
+    ("conscientiousness", "Conscientiousness",
+     "Order, diligence, follow-through."),
+    ("extraversion", "Extraversion",
+     "Energy directed outward; how much they take up a room."),
+    ("agreeableness", "Agreeableness",
+     "Warmth and accommodation towards others."),
+    ("emotional_volatility", "Emotional volatility",
+     "How readily feeling breaks the surface and swings."),
+)
+
+AXIS_KEYS = tuple(key for key, _, _ in PERSONALITY_AXES)
+
+
+def _coerce_personality_axes(value: Any) -> Optional[Dict[str, Dict[str, Any]]]:
+    """
+    The five axes, or None if the model returned nothing usable.
+
+    A score is an integer 0-100 or null, and null is a real answer: it means
+    the script does not support one, and it has to survive all the way to the
+    chart rather than becoming a zero. Zero draws a point at the centre of a
+    radar, which reads as "none of this trait" -- a claim nobody made. Absence
+    rendered as presence.
+
+    A score outside the range is dropped rather than clamped. A model returning
+    140 has not understood the scale, and clamping to 100 would turn a broken
+    answer into a confident one.
+    """
+    if not isinstance(value, dict):
+        return None
+
+    axes: Dict[str, Dict[str, Any]] = {}
+    for key in AXIS_KEYS:
+        entry = value.get(key)
+        score, evidence = None, None
+        if isinstance(entry, dict):
+            raw = entry.get("score")
+            if isinstance(raw, bool):
+                raw = None
+            if isinstance(raw, (int, float)) and 0 <= raw <= 100:
+                score = int(round(raw))
+            text = entry.get("evidence")
+            if isinstance(text, str) and text.strip():
+                evidence = text.strip()[:200]
+        # No score means no evidence either: evidence for a number that was
+        # thrown away would explain something nobody can see.
+        axes[key] = {"score": score, "evidence": evidence if score is not None else None}
+
+    if all(a["score"] is None for a in axes.values()):
+        # Nothing scored. Five nulls say the same as no field at all, and no
+        # field is cheaper to reason about.
+        return None
+    return axes
 
 
 def is_enabled() -> bool:
@@ -170,7 +237,21 @@ def build_prompt(screenplay: Screenplay, retry_feedback: Optional[str] = None) -
         '  "look_and_costume": one sentence, 20-50 words\n'
         '  "facial_features": one sentence, 15-40 words\n'
         '  "personality_traits": array of 3 to 5 single-word traits, each specific '
-        "to this character\n\n"
+        "to this character\n"
+        '  "personality_axes": an object with exactly these five keys: '
+        + ", ".join(AXIS_KEYS)
+        + ".\n"
+        '     Each value is {"score": 0-100, "evidence": one short clause '
+        "naming what in the script supports it}.\n\n"
+        "THE AXES ARE THE ONE EXCEPTION TO RULE 2.\n"
+        "Everywhere else you must decide and commit, because a costume has to "
+        "be built and a face has to be rendered and 'unknown' cannot be "
+        "photographed. A personality score is different: it is a reading of "
+        "evidence, and a character with four lines does not contain five of "
+        "them. Where the script will not support an axis, return "
+        '{"score": null, "evidence": null} for it. A confident number with '
+        "nothing behind it is worse than a gap, because the gap is true.\n"
+        "Score the CHARACTER as written, never the actor who might play them.\n\n"
     )
 
     if retry_feedback:
@@ -313,7 +394,11 @@ def parse_ai_response(raw: str) -> Dict[str, Dict[str, Any]]:
         fields: Dict[str, Any] = {}
         for key in INFERRED_FIELDS:
             value = entry.get(key)
-            if key == "personality_traits":
+            if key == "personality_axes":
+                axes = _coerce_personality_axes(value)
+                if axes:
+                    fields[key] = axes
+            elif key == "personality_traits":
                 if isinstance(value, list):
                     traits = [str(t).strip() for t in value if str(t).strip()]
                     if traits:
