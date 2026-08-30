@@ -20,7 +20,9 @@ from backend.app.parsers.base import (
     ParsedScriptRecord,
     ParsedSilverstackClip,
     ParserFailureError,
+    looks_like_a_clip_name,
 )
+from backend.app.core.privacy import is_contact_information
 from backend.app.normalizers.rolls import normalize_camera_roll, normalize_sound_roll
 from backend.app.normalizers.slates import normalize_slate
 from backend.app.normalizers.shoot_days import normalize_shoot_day
@@ -565,12 +567,26 @@ def parse_scripte_tclog_text(text: str) -> List[ParsedScriptRecord]:
             continue
 
         # Accumulate descriptions and comments
+        # Anything unrecognised becomes a note on the take before it. That is
+        # what a script supervisor's marginalia is, and it has to stay free
+        # text -- but it means a report footer became something they supposedly
+        # wrote about that take, and a contact block reached the spine and the
+        # mirror inside a witness statement.
+        #
+        # Refused rather than redacted. Rewriting a note would quietly alter
+        # what somebody said; declining to attribute a line that is plainly not
+        # about this take leaves the note as what they actually wrote.
         if records and not cleaned.startswith("Lens:") and not cleaned.startswith("Script /"):
+            if is_contact_information(cleaned):
+                continue
             prev_note = records[-1].note or ""
             records[-1].note = f"{prev_note} {cleaned}".strip()
             continue
 
         if current_slate and not cleaned.startswith("Lens:") and not cleaned.startswith("Script /"):
+            # Same catch-all, same refusal. See the note above.
+            if is_contact_information(cleaned):
+                continue
             current_notes.append(cleaned)
 
     if not records:
@@ -892,6 +908,9 @@ def parse_scripte_detailed_editor_log_text(text: str) -> List[ParsedScriptRecord
             continue
 
         if current_slate and not cleaned.startswith("Script /") and not cleaned.startswith("Date:"):
+            # Same catch-all, same refusal. See the note above.
+            if is_contact_information(cleaned):
+                continue
             current_notes.append(cleaned)
 
     if not records:
@@ -1326,9 +1345,26 @@ def parse_silverstack_thumbnail_text(text: str, thumbnails_map: Optional[Dict[st
 
     clips: List[ParsedSilverstackClip] = []
 
+    skipped_blocks: List[str] = []
     for blk in clip_blocks:
         name_line = blk[0]
         raw_name = name_line[5:].strip()
+
+        # A block that is not a clip at all.
+        #
+        # Blocks are split on lines beginning "Name ", so a contact block
+        # written that way became an entire clip: an email address in
+        # file_name, and the same line canonicalised into scene and shot. A
+        # slate-shaped test would not have caught it, because file_name is not
+        # a slate -- the third parser today with the same defect wearing a
+        # different field.
+        #
+        # Skipped rather than rejected: one junk block does not make a report
+        # unparseable, and the empty-result guard below still catches a
+        # document that is entirely junk.
+        if not looks_like_a_clip_name(raw_name):
+            skipped_blocks.append(raw_name or "(blank)")
+            continue
 
         # Handle wrapped trailing character (e.g. 'A_0120C001_260728_091309_h1EI' + 'C')
         if len(blk) > 1 and len(blk[1]) <= 4 and not any(k in blk[1] for k in ["ShotID", "Duration", "Camera", "Reel", "Scene", "Take", "Director", "Sensor"]):

@@ -11,6 +11,28 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**Four parsers had the contact-details defect, not one.** `camera_csv` was fixed in the morning,
+`sound_ale` in the afternoon, and a sweep found two more: `silverstack_thumbnail`, where the address
+landed in `file_name` and no slate-shaped guard would have caught it, and `scripte_tclog`, where every
+unrecognised line is appended to the previous take's note. All eight parsers are clean now, and all 11
+real documents still parse to the same 40 events and the same five slates.
+
+The `scripte_tclog` case needed a different answer from the others. A note is free text and legitimately
+carries names -- rewriting it would be the helpful correction, a witness statement quietly altered. So the
+line is refused rather than redacted: declining to attribute something plainly not about this take leaves
+the note as what somebody actually wrote. `privacy.is_contact_information` shares its patterns with
+`redact`, so there is one definition of contact information in the codebase.
+
+Recorded in [findings/defects-found.md](findings/defects-found.md), and the lesson is the count rather
+than any one instance: three fixes were applied believing each was the last.
+
+**Three stale entries corrected in [findings/spec-drift.md](findings/spec-drift.md).** REQ-10 still said
+both gauges had no callers -- one fills now and the other was removed with reasons, and what the
+requirement actually asks for is answered by the acknowledgement axis. REQ-13 was listed as a gap when the
+behaviour it is for works: notifications ride the requirement events and the SSE handler refreshes on any
+of them, so emitting `NOTIFICATION_ADDED` would fire twice for one fact. REQ-09's naming is wrong and
+staying wrong, which is a decision and now reads as one. All three moved to deliberate divergences.
+
 **The mirror is live on ClickHouse Cloud, and rebuilding it found three things.** 42 spine events, 45 tag
 events, 13 requirement events and the activity trail now sit in the hosted instance, and all ten
 analytics queries answer from it.

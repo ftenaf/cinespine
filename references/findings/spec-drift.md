@@ -37,22 +37,36 @@ out loud rather than shown silently.
 
 ## Open
 
-**REQ-10, two gauges that can never fill.** `cinespine_department_sync_lag_seconds` and
-`cinespine_active_discrepancies` are declared; `set_sync_lag` and `set_discrepancies_count` have no
-callers. The falsification -- simulate a four-hour DIT delay, assert the matrix goes amber -- cannot pass.
-The intent axis has since supplied the wrap time this needs.
-
-**REQ-14, target levels.** Closed on 2026-08-30. `RequirementTargetType` now has all four
-(`production`, `scene`, `shot`, `take`). Editorial tags still have two, which is a narrower gap
-than the one recorded here originally.
-
-**REQ-13, `NOTIFICATION_ADDED`** is specified and never emitted. The other four event types are.
-
-**REQ-09, naming.** `ClickHouseMCPServer` is neither ClickHouse-backed -- it reads the in-memory spine --
-nor MCP: there is no protocol and no `query_clickhouse` tool. Its negative holds by construction, since
-there is no SQL surface at all, but the name misleads.
+**REQ-14, target levels.** Editorial tags carry `scene` and `shot` and not `take`. Requirements were
+closed on 2026-08-30 and now carry all four. A tag hangs on coverage rather than on one attempt, so this
+may be right as it stands -- recorded as open because nobody has confirmed it either way.
 
 ## Deliberate divergences, not drift
+
+**REQ-10's two gauges, one filled and one removed.** Closed on 2026-08-30, in opposite directions.
+`cinespine_active_discrepancies` is now written wherever discrepancies are computed, labelled by
+production and day so one day cannot overwrite another, with every severity and kind written on each
+observation -- zeros included, because a gauge keeps its last value and a resolved discrepancy would
+otherwise show its old count.
+
+`cinespine_department_sync_lag_seconds` was removed rather than wired. It cannot be computed: a daily
+production report states wrap as a time of day with no date on it, and the only other timestamp available
+is when the document reached this system, which for day 31 is months after it was shot. Subtracting one
+from the other invents a number neither witness supports. What REQ-10 actually asks for -- a department
+sync matrix -- is answered instead by the acknowledgement axis added the same day, which measures from a
+fact the product records: how long between something being raised and somebody saying they have it. See
+`analytics.time_to_acknowledge`.
+
+**REQ-13's `NOTIFICATION_ADDED` is not emitted, and adding it would change nothing.** The specified event
+does not exist. The behaviour it is for does: notifications are created alongside `REQUIREMENT_CREATED`,
+`REQUIREMENT_UPDATED` and `REQUIREMENT_RESOLVED`, all of which are emitted, and the SSE handler refreshes
+notifications on any live event -- so the bell updates without a page reload. Emitting a dedicated event
+would fire a second time for the same fact. Recorded here rather than built.
+
+**REQ-09's naming is wrong and staying.** `ClickHouseMCPServer` is neither ClickHouse-backed -- it reads
+the in-memory spine -- nor MCP: there is no protocol and no `query_clickhouse` tool. The requirement's own
+negative holds by construction, since there is no SQL surface at all. The name misleads and a rename
+touches every call site and test for cosmetic gain, so it is written down instead of done.
 
 **REQ-01 asks for Kafka. There is no broker, and this is now a choice.**
 Removed on 2026-08-30 along with the Redpanda container. It had been drift --
