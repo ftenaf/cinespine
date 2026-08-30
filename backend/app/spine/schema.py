@@ -2,11 +2,11 @@
 ClickHouse Append-Only Event Spine Schema & DDL.
 """
 
-CLICKHOUSE_SCHEMA_DDL = """
-CREATE DATABASE IF NOT EXISTS cinespine;
+_SCHEMA_TEMPLATE = """
+CREATE DATABASE IF NOT EXISTS {db};
 
 -- 1. Immutable Append-Only Event Spine
-CREATE TABLE IF NOT EXISTS cinespine.production_events (
+CREATE TABLE IF NOT EXISTS {db}.production_events (
     event_id UUID,
     production_id LowCardinality(String),
     shoot_day LowCardinality(String),
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS cinespine.production_events (
 ORDER BY (production_id, shoot_day, created_at, event_id);
 
 -- 2. Materialized View: Takes Index
-CREATE TABLE IF NOT EXISTS cinespine.takes_meta (
+CREATE TABLE IF NOT EXISTS {db}.takes_meta (
     production_id LowCardinality(String),
     shoot_day LowCardinality(String),
     scene_id String,
@@ -49,7 +49,7 @@ ORDER BY (production_id, shoot_day, slate, take_id, camera_roll);
 -- a time, which ClickHouse is the wrong shape for. What is mirrored here is the
 -- trail, where the question is analytical -- what moved this week, who is
 -- clearing what -- and the table only ever grows.
-CREATE TABLE IF NOT EXISTS cinespine.editorial_tag_events (
+CREATE TABLE IF NOT EXISTS {db}.editorial_tag_events (
     event_id String,
     production_id LowCardinality(String),
     target_type LowCardinality(String),
@@ -76,7 +76,7 @@ ORDER BY (production_id, target_type, target_id, created_at);
 -- mirrored here is the trail, where the questions are analytical -- how long
 -- does a blocker sit, which department is the bottleneck, what got re-opened
 -- -- and the table only ever grows.
-CREATE TABLE IF NOT EXISTS cinespine.requirement_events (
+CREATE TABLE IF NOT EXISTS {db}.requirement_events (
     event_id       String,
     requirement_id String,
     production_id  String,
@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS cinespine.requirement_events (
 ORDER BY (production_id, requirement_id, created_at);
 
 -- 5. Audit Discrepancies Table
-CREATE TABLE IF NOT EXISTS cinespine.audit_discrepancies (
+CREATE TABLE IF NOT EXISTS {db}.audit_discrepancies (
     discrepancy_id UUID,
     production_id LowCardinality(String),
     shoot_day LowCardinality(String),
@@ -110,3 +110,18 @@ CREATE TABLE IF NOT EXISTS cinespine.audit_discrepancies (
 ) ENGINE = ReplacingMergeTree(created_at)
 ORDER BY (production_id, shoot_day, discrepancy_type, entity_id);
 """
+
+
+def schema_ddl(db: str = "cinespine") -> str:
+    """
+    The DDL, pointed at one database.
+
+    Parameterised so the test suite can build its tables somewhere the demo
+    does not read from. Everything is IF NOT EXISTS, so this is also how a
+    fresh container gets its tables without a migration step.
+    """
+    return _SCHEMA_TEMPLATE.replace("{db}", db)
+
+
+# Kept for callers that want the default shape.
+CLICKHOUSE_SCHEMA_DDL = schema_ddl()

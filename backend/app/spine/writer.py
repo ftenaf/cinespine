@@ -20,6 +20,17 @@ from backend.app.streaming.models import DEFAULT_TEAM_USERS
 
 logger = logging.getLogger(__name__)
 
+
+def _db() -> str:
+    """
+    The database the mirror writes into.
+
+    Resolved per call rather than captured at import, so a test can point the
+    suite somewhere else without the module having to be reloaded.
+    """
+    from backend.app.spine.clickhouse import database
+    return database()
+
 # Events are buffered and sent together. Large enough that an ordinary document
 # goes in one insert, small enough that a runaway ingestion cannot grow memory
 # without bound before a flush.
@@ -272,7 +283,7 @@ class SpineWriter:
         if not self.mirror_available():
             return
         self._try_insert(
-            "cinespine.editorial_tag_events",
+            f"{_db()}.editorial_tag_events",
             [[
                     record.get("event_id") or f"tev_{uuid.uuid4().hex[:12]}",
                     record.get("production_id", ""),
@@ -375,7 +386,7 @@ class SpineWriter:
             return
         try:
             self.client.command(
-                "ALTER TABLE cinespine.production_events DELETE "
+                f"ALTER TABLE {_db()}.production_events DELETE "
                 "WHERE JSONExtractString(metadata_json, 'doc_id') = %(doc_id)s",
                 parameters={"doc_id": doc_id},
             )
@@ -435,7 +446,7 @@ class SpineWriter:
         # shut would grow memory across an outage to protect a reporting copy.
         rows, self._pending_rows = self._pending_rows, []
         sent = self._try_insert(
-            "cinespine.production_events",
+            f"{_db()}.production_events",
             rows,
             column_names=[
                 "event_id",
@@ -507,7 +518,7 @@ class SpineWriter:
             return 0
 
         sent = self._try_insert(
-            "cinespine.takes_meta",
+            f"{_db()}.takes_meta",
             list(rows.values()),
             column_names=[
                 "production_id", "shoot_day", "scene_id", "slate", "take_id",
@@ -541,7 +552,7 @@ class SpineWriter:
             ])
 
         sent = self._try_insert(
-            "cinespine.audit_discrepancies",
+            f"{_db()}.audit_discrepancies",
             rows,
             column_names=[
                 "discrepancy_id", "production_id", "shoot_day", "entity_type",
@@ -861,7 +872,7 @@ class SpineWriter:
             return record
 
         self._try_insert(
-            "cinespine.requirement_events",
+            f"{_db()}.requirement_events",
             [[
                 event["event_id"],
                 event["requirement_id"],

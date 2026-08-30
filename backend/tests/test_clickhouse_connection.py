@@ -170,8 +170,8 @@ def test_the_schema_is_applied_over_a_secure_connection(monkeypatch):
 
     ch.connect()
     ddl = " ".join(made["client"].commands)
-    assert "cinespine.production_events" in ddl
-    assert "cinespine.editorial_tag_events" in ddl
+    assert f"{ch.database()}.production_events" in ddl
+    assert f"{ch.database()}.editorial_tag_events" in ddl
 
 
 # --------------------------------------------------------------------------- #

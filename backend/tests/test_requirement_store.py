@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from backend.app.main import app
 from backend.app.spine import requirement_store
 from backend.app.spine.requirement_store import UnknownRequirementValue
+from backend.app.spine.clickhouse import database
 
 client = TestClient(app)
 
@@ -278,7 +279,7 @@ def test_every_transition_is_mirrored_to_the_analytical_spine():
     writer.update_requirement(req["requirement_id"], {"status": "blocked"}, actor="@ana")
     writer.resolve_requirement(req["requirement_id"], "Recorded on pickups.", "@ana")
 
-    assert {table for table, _, _ in fake.rows} == {"cinespine.requirement_events"}
+    assert {table for table, _, _ in fake.rows} == {f"{database()}.requirement_events"}
     assert [dict(zip(c, r[0]))["action"] for _, r, c in fake.rows] == [
         "created", "status_changed", "resolved",
     ]

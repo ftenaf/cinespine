@@ -30,6 +30,8 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+from backend.app.spine.clickhouse import database
+
 
 def _rows(client: Any, sql: str, parameters: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
     """
@@ -41,7 +43,11 @@ def _rows(client: Any, sql: str, parameters: Dict[str, Any]) -> Optional[List[Di
     if client is None:
         return None
     try:
-        result = client.query(sql, parameters=parameters)
+        # The database name is substituted here rather than passed as a query
+        # parameter. ClickHouse spells parameters `{name:Type}` and a table
+        # name cannot be one of those -- and `{db}` left in the SQL would be
+        # read as a parameter nobody set. `database()` validates the name.
+        result = client.query(sql.replace("{db}", database()), parameters=parameters)
         return [dict(zip(result.column_names, row)) for row in result.result_rows]
     except Exception as e:
         logger.warning("Analytics query failed: %s", e)
@@ -59,7 +65,7 @@ def production_shape(client: Any, production_id: str) -> Optional[List[Dict[str,
     return _rows(client, """
         SELECT axis, department, count() AS events,
                uniqExact(shoot_day) AS days
-        FROM cinespine.production_events
+        FROM {db}.production_events
         WHERE production_id = {production_id:String}
         GROUP BY axis, department
         ORDER BY axis, events DESC
@@ -80,7 +86,7 @@ def department_arrivals(client: Any, production_id: str) -> Optional[List[Dict[s
                count() AS events,
                min(created_at) AS first_filed,
                max(created_at) AS last_filed
-        FROM cinespine.production_events
+        FROM {db}.production_events
         WHERE production_id = {production_id:String}
         GROUP BY shoot_day, department
         ORDER BY shoot_day, first_filed
@@ -110,7 +116,7 @@ def roll_disagreements(client: Any, production_id: str) -> Optional[List[Dict[st
                    substring(JSONExtractString(payload_json, 'camera_roll'), 1, 1) AS camera,
                    arraySort(groupUniqArray(JSONExtractString(payload_json, 'camera_roll'))) AS rolls,
                    arraySort(groupUniqArray(department)) AS witnesses
-            FROM cinespine.production_events
+            FROM {db}.production_events
             WHERE production_id = {production_id:String}
               AND entity_type = 'take'
               AND JSONExtractString(payload_json, 'camera_roll') != ''
@@ -141,7 +147,7 @@ def scene_coverage(client: Any, production_id: str) -> Optional[List[Dict[str, A
                    JSONExtractString(payload_json, 'slate') AS slate,
                    -- The scene is the half of the slate before the shot.
                    if(position(slate, '/') > 0, substring(slate, 1, position(slate, '/') - 1), slate) AS scene
-            FROM cinespine.production_events
+            FROM {db}.production_events
             WHERE production_id = {production_id:String}
               AND entity_type = 'take'
               AND JSONExtractString(payload_json, 'slate') != ''
@@ -170,7 +176,7 @@ def editorial_state(client: Any, production_id: str) -> Optional[List[Dict[str, 
             SELECT target_type, target_id,
                    argMax(status, created_at) AS status,
                    argMax(action, created_at) AS action
-            FROM cinespine.editorial_tag_events
+            FROM {db}.editorial_tag_events
             WHERE production_id = {production_id:String}
             GROUP BY target_type, target_id
         )
@@ -209,7 +215,7 @@ def requirement_ageing(client: Any, production_id: str) -> Optional[List[Dict[st
                             if(maxIf(created_at, action = 'resolved') > toDateTime64(0, 3),
                                maxIf(created_at, action = 'resolved'), now64(3))) AS hours_open,
                    'general' AS category
-            FROM cinespine.requirement_events
+            FROM {db}.requirement_events
             WHERE production_id = {production_id:String}
             GROUP BY requirement_id
         )
