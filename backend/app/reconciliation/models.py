@@ -14,6 +14,16 @@ class DiscrepancyType(str, Enum):
     ROLL_MISMATCH = "ROLL_MISMATCH"
     PAPERWORK_WITHOUT_MEDIA = "PAPERWORK_WITHOUT_MEDIA"
     MEDIA_WITHOUT_PAPERWORK = "MEDIA_WITHOUT_PAPERWORK"
+    # Office planned a scene and says it was shot; no other department has
+    # filed anything for it. Office does not observe what happened, so this is
+    # two witnesses disagreeing rather than a scene that is missing.
+    SCENE_COMPLETE_WITHOUT_MATERIAL = "SCENE_COMPLETE_WITHOUT_MATERIAL"
+    # Set shot a scene Office never scheduled. The DPR states this itself, in
+    # a named field, and it has always died on the page.
+    SCENE_SHOT_NOT_SCHEDULED = "SCENE_SHOT_NOT_SCHEDULED"
+    # A scene Office planned and states was not shot. A negative fact, and one
+    # nothing downstream could previously ask about.
+    SCENE_SCHEDULED_NOT_SHOT = "SCENE_SCHEDULED_NOT_SHOT"
 
 
 class Severity(str, Enum):

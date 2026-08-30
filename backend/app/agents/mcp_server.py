@@ -82,7 +82,32 @@ class ClickHouseMCPServer:
                 media_files=media_files,
                 has_offload_report=has_offload_report,
             )
-        # 3. Apply stored resolutions
+        # 3. Office's plan and belief against what every other department filed.
+        #    Scene events come off the DPR; material is anything the other axes
+        #    said about a scene, whatever shape it arrived in.
+        scene_events = [e for e in events if e.get("entity_type") == "scene"]
+        if scene_events:
+            scenes_with_material = set()
+            for evt in events:
+                if evt.get("entity_type") == "scene":
+                    continue
+                payload = evt.get("payload") or {}
+                scene = payload.get("scene")
+                if not scene:
+                    slate = str(payload.get("slate") or "")
+                    scene = slate.split("/")[0] if "/" in slate else (slate or None)
+                if scene:
+                    scenes_with_material.add(str(scene))
+
+            for d in self.reconciler.reconcile_intent(
+                production_id=production_id,
+                shoot_day=shoot_day,
+                scene_events=scene_events,
+                scenes_with_material=scenes_with_material,
+            ):
+                all_discrepancies.append(d.model_dump())
+
+        # 4. Apply stored resolutions
         resolutions = self.spine_writer.get_discrepancy_resolutions(production_id=production_id, shoot_day=shoot_day)
         for d in all_discrepancies:
             d_id = d.get("discrepancy_id")
