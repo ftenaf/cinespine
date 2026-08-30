@@ -140,6 +140,18 @@ class ClickHouseMCPServer:
             ):
                 all_discrepancies.append(d.model_dump())
 
+        # 3c. Do the departments agree what day of the calendar this was?
+        #     Every one of them states it, and when two disagree a document is
+        #     filed under the wrong day -- taking every take on it along.
+        date_claims = [e for e in events if e.get("entity_type") == "shoot_date"]
+        if date_claims:
+            for d in self.reconciler.reconcile_shoot_date(
+                production_id=production_id,
+                shoot_day=shoot_day,
+                date_claims=date_claims,
+            ):
+                all_discrepancies.append(d.model_dump())
+
         # 4. Apply stored resolutions
         resolutions = self.spine_writer.get_discrepancy_resolutions(production_id=production_id, shoot_day=shoot_day)
         for d in all_discrepancies:

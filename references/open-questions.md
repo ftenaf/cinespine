@@ -15,16 +15,40 @@ was a decision, what was done with it is noted below.
 
 ## Still open
 
-**What is the date of a shoot day?** This is the one thing standing between the spine and a department
-sync lag. A daily production report states wrap as a time of day -- `18:55` -- and the only other
-timestamp available is when the document reached this system, which for day 31 is months after it was
-shot. Subtracting one from the other invents a number neither witness supports. A shoot day is a number,
-not a date, and nothing parsed so far carries the mapping. The reports themselves almost certainly print
-a date somewhere; what is not known is under which label, and that needs a real report to answer rather
-than a guess. Until then `cinespine_department_sync_lag_seconds` is removed rather than left permanently
-empty, because a flat zero on a dashboard reads as "no lag" rather than "not known".
+Nothing. Every question written here has been answered.
 
 ## Answered, and what came of it
+
+**The shooting date is on the paperwork, and the Thumbnail Report states it most reliably.** Francisco,
+2026-08-30:
+
+> You can find the shooting date in the daily production report on the top of the page... but you can find
+> it also in the Thumbnail Report (260728_SD31 -> 28 July - 2026). Also on every script report on the
+> header (Date: 28/07/2026). Also on the sound csv header... So to find the shooting date you should look
+> at the Thumbnail Report, because it's the most reliable one.
+
+`normalizers.shoot_days.extract_shoot_date` reads all four in his order, and returns which document said
+so alongside the date -- a date with no source is a number nobody can check. The volume stamp comes first
+because it is the only place the date and the shoot day are written together, so the two cannot be paired
+wrongly.
+
+Every document now emits its own date claim onto the spine, from a subscriber on every raw topic rather
+than from inside the parsers: every department states the date, and a document whose parser refuses it has
+still said what day it covers. `SHOOT_DATE_DISAGREEMENT` reports when two of them differ, and does not
+resolve it -- the most reliable source is still not the answer, and which document is wrong is a question
+for the people who wrote them.
+
+Against the real data all eight documents for day 31 agree on 2026-07-28, from three different kinds of
+source, and the check is silent. Finding it also turned up a hardcoded skip list in the thumbnail parser:
+`"and 28 July"`, `"260728_SD31"` and `"DEMO PRODUCTION"` were matched literally, so another production's
+report would have carried those lines into its clips -- and it was discarding the volume stamp that
+carries the answer.
+
+**The department sync lag is now computable and still not built.** The date was the missing input, so the
+subtraction is possible. On historical paperwork it is also useless: the only other timestamp is when the
+document reached this system, months after the day was shot, so the number would be correct and mean
+nothing. What REQ-10 actually asks for -- where a handover stalls -- is answered by the acknowledgement
+axis instead, which measures from a fact the product records. Recorded rather than done.
 
 **The slate ranges are usable as a completeness check, and the first thing they caught was ours.**
 Implemented 2026-08-30 as `SLATE_OUTSIDE_STATED_RANGE`. Run against the real day it produced one finding:

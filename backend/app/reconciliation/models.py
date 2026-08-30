@@ -32,6 +32,10 @@ class DiscrepancyType(str, Enum):
     # stated for that scene. Either the slate is wrong or Office's list is
     # short, and both are worth someone looking at.
     SLATE_OUTSIDE_STATED_RANGE = "SLATE_OUTSIDE_STATED_RANGE"
+    # Two documents disagree about what calendar date this shoot day was. Every
+    # department states it and they should all say the same thing; when they do
+    # not, one of them is filed under the wrong day.
+    SHOOT_DATE_DISAGREEMENT = "SHOOT_DATE_DISAGREEMENT"
 
 
 class Severity(str, Enum):

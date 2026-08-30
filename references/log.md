@@ -11,6 +11,26 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**The shoot day is bound to a calendar date, and the last open question is closed.** Francisco named
+where the date is written and which source to trust: the Thumbnail Report's volume stamp, `260728_SD31`,
+because it is the only place the date and the shoot day appear together and so cannot be paired wrongly.
+Four sources are read in his order and the answer carries which document said it.
+
+Every document emits its own date claim, from a subscriber on every raw topic rather than from inside the
+parsers -- every department states the date, and a document whose parser refuses it has still said what
+day it covers. `SHOOT_DATE_DISAGREEMENT` reports when two disagree and deliberately does not resolve it:
+the most reliable source is still not the answer, and which document is wrong belongs to the people who
+wrote them. Against the real data all eight day-31 documents agree on 2026-07-28 and the check is silent.
+
+**The thumbnail parser's skip list named this exact document.** `"and 28 July"`, `"260728_SD31"` and
+`"DEMO PRODUCTION"` were matched as literal strings, so another production's report would have carried
+those lines into its clips -- and the list was discarding the volume stamp that answers the question.
+Matched on shape now.
+
+**The sync lag is computable and still not built.** The date was the missing input. On historical
+paperwork the only other timestamp is the ingest, months later, so the number would be correct and mean
+nothing; what REQ-10 asks for is answered by the acknowledgement axis instead.
+
 **Four parsers had the contact-details defect, not one.** `camera_csv` was fixed in the morning,
 `sound_ale` in the afternoon, and a sweep found two more: `silverstack_thumbnail`, where the address
 landed in `file_name` and no slate-shaped guard would have caught it, and `scripte_tclog`, where every
