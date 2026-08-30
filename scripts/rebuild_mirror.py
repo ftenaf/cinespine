@@ -26,8 +26,19 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# The app reads .env at import; this script imports the spine directly and so
+# would not. Without this the docstring above is false -- it says the settings
+# are read "the same as the app", and a configured deployment got "No
+# ClickHouse connection" while the app beside it was connected.
+try:
+    from dotenv import load_dotenv  # noqa: E402
+
+    load_dotenv()
+except ImportError:  # pragma: no cover - dotenv is a dependency of the app
+    pass
+
 from backend.app.spine import clickhouse as ch  # noqa: E402
-from backend.app.spine.schema import schema_ddl  # noqa: E402
+from backend.app.spine.schema import statements  # noqa: E402
 from backend.app.spine.writer import _clickhouse_datetime  # noqa: E402
 
 # Tables with a durable SQLite source, and the query that reproduces them.
@@ -54,6 +65,18 @@ SOURCES = {
         """,
         "columns": ["event_id", "production_id", "target_type", "target_id", "action",
                     "status", "needs_json", "descriptors_json", "note", "actor", "created_at"],
+        "uuid_first": False,
+    },
+    "user_activity": {
+        "sql": """
+            SELECT event_id, production_id, shoot_day, actor, department, action,
+                   target_type, target_id, target_label,
+                   seconds_since_target_created, context_json, created_at
+            FROM user_activity ORDER BY rowid
+        """,
+        "columns": ["event_id", "production_id", "shoot_day", "actor", "department",
+                    "action", "target_type", "target_id", "target_label",
+                    "seconds_since_target_created", "context_json", "created_at"],
         "uuid_first": False,
     },
     "requirement_events": {
@@ -111,9 +134,12 @@ def main() -> int:
         print("\nNothing written. Re-run with --apply.")
         return 0
 
-    for statement in schema_ddl(db).split(";"):
-        if statement.strip():
-            client.command(statement)
+    # `statements()`, not a split on ";" -- a semicolon inside a comment cuts a
+    # CREATE TABLE in half, and the half fails as "Empty query" a long way from
+    # the prose that caused it. connect() was fixed for this and the script was
+    # not, so it broke here first.
+    for statement in statements(db):
+        client.command(statement)
 
     for table in list(SOURCES) + ["takes_meta", "audit_discrepancies"]:
         client.command(f"TRUNCATE TABLE IF EXISTS {db}.{table}")

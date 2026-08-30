@@ -266,8 +266,12 @@ def unacknowledged_requirements(client: Any, production_id: str) -> Optional[Lis
                argMax(r.priority, r.created_at) AS priority,
                argMax(r.assigned_to, r.created_at) AS assigned_to,
                min(r.created_at) AS raised_at,
-               countIf(a.action = 'viewed') AS views,
-               countIf(a.action = 'acknowledged') AS acknowledgements
+               -- uniqExactIf over the activity id, not countIf. This is a join
+               -- against a trail with many rows per requirement, so a plain
+               -- count multiplies each activity row by the number of trail
+               -- rows beside it and reports a number nobody did.
+               uniqExactIf(a.event_id, a.action = 'viewed') AS views,
+               uniqExactIf(a.event_id, a.action = 'acknowledged') AS acknowledgements
         FROM {db}.requirement_events AS r
         LEFT JOIN {db}.user_activity AS a
           ON a.target_id = r.requirement_id
@@ -291,8 +295,11 @@ def unreviewed_days(client: Any, production_id: str) -> Optional[List[Dict[str, 
     return _rows(client, """
         SELECT e.shoot_day AS shoot_day,
                count(DISTINCT e.event_id) AS spine_events,
-               countIf(a.action = 'viewed') AS views,
-               countIf(a.action = 'acknowledged') AS acknowledgements,
+               -- Same trap, worse here: every spine event on the day joins to
+               -- every activity row on it, so a plain count reported 78 views
+               -- of a day two people had opened.
+               uniqExactIf(a.event_id, a.action = 'viewed') AS views,
+               uniqExactIf(a.event_id, a.action = 'acknowledged') AS acknowledgements,
                groupUniqArray(a.actor) AS seen_by
         FROM {db}.production_events AS e
         LEFT JOIN {db}.user_activity AS a

@@ -254,3 +254,43 @@ def test_the_analytics_endpoint_carries_the_acknowledgement_axis():
     for key in ("time_to_acknowledge", "unacknowledged_requirements",
                 "unreviewed_days", "department_attention"):
         assert key in body, f"{key} is missing from the analytics surface"
+
+
+def test_the_joined_queries_do_not_multiply_their_counts():
+    """
+    Both of these join activity against a trail with many rows per key, so a
+    plain countIf multiplies every activity row by the number of trail rows
+    beside it. It reported 78 views of a shoot day two people had opened --
+    a plausible number nobody did, which is worse than an obviously broken one.
+
+    Asserted on the SQL because the shape of the join is the bug; a live-data
+    test would only catch it once there is enough data for the product to
+    exceed the truth, which is exactly when nobody is looking.
+    """
+    import inspect
+
+    from backend.app.spine import analytics
+
+    for name in ("unacknowledged_requirements", "unreviewed_days"):
+        sql = inspect.getsource(getattr(analytics, name))
+        assert "uniqExactIf(a.event_id" in sql, f"{name} counts joined rows"
+        assert "countIf(a.action" not in sql, f"{name} still multiplies its counts"
+
+
+@pytest.mark.parametrize("query", ["unreviewed_days", "unacknowledged_requirements"])
+def test_the_counts_are_not_larger_than_the_events_that_exist(live, query):
+    """
+    The falsification for the above, against whatever data is really there:
+    no row may claim more views than the table holds.
+    """
+    from backend.app.spine import analytics
+
+    total = live.query(
+        "SELECT count() FROM " + __import__(
+            "backend.app.spine.clickhouse", fromlist=["database"]
+        ).database() + ".user_activity"
+    ).result_rows[0][0]
+
+    for row in getattr(analytics, query)(live, "DEMO_PRODUCTION") or []:
+        assert row["views"] <= total, f"{query} reported {row['views']} of {total} events"
+        assert row["acknowledgements"] <= total

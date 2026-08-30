@@ -11,6 +11,27 @@ Newest first. Each entry names what produced it.
 
 ## 2026-08-30
 
+**The mirror is live on ClickHouse Cloud, and rebuilding it found three things.** 42 spine events, 45 tag
+events, 13 requirement events and the activity trail now sit in the hosted instance, and all ten
+analytics queries answer from it.
+
+The rebuild script did not load `.env`, though its own docstring said it read the environment "the same
+as the app" -- the app loads it in `main.py` and the script imports the spine directly, so a fully
+configured machine got "No ClickHouse connection" while the app beside it was connected.
+
+It also still split the DDL on `;`. `connect()` was fixed for the comment-semicolon bug and the script
+was not, so it failed on the schema loop -- before the truncate, which is the only reason nothing was
+lost. And `user_activity` was not among its sources, so a rebuild would have left the acknowledgement
+axis inconsistent with the spine it claims to rebuild from.
+
+**A join reported 78 views of a day two people had opened.** `unreviewed_days` and
+`unacknowledged_requirements` both join activity against a trail with many rows per key, and `countIf`
+multiplies every activity row by the number of trail rows beside it. `uniqExactIf` over the activity id
+counts what happened. The number was plausible, which is what made it dangerous: an obviously broken
+figure gets investigated, and 78 would have been read off a dashboard as engagement. Guarded on the SQL
+rather than on data, because the shape of the join is the defect and a data test only fails once there is
+enough of it.
+
 **Acknowledgement is an axis on the spine now, not a metric bought from someone else.** `handoffs.md`
 names the gap: "No acknowledgement is recorded anywhere." A blocker is raised, a notification goes out,
 and nothing in the production can answer whether the person it was for ever saw it. `user_activity` is
