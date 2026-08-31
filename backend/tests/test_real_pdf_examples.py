@@ -23,7 +23,10 @@ from backend.app.parsers.pdf_parsers import (
 EXAMPLES_DIR = os.environ.get("CINESPINE_EXAMPLES_DIR", "data/examples")
 
 
-@pytest.mark.skipif(not os.path.exists(EXAMPLES_DIR), reason="Example PDFs not present locally")
+@pytest.mark.skipif(
+    not os.path.exists(os.path.join(EXAMPLES_DIR, "DEMO_TCLog_D031_280726.pdf")),
+    reason="Real production PDF examples not present locally",
+)
 class TestRealPDFExamples:
     def test_parse_real_scripte_tclog(self):
         tclog_path = os.path.join(EXAMPLES_DIR, "DEMO_TCLog_D031_280726.pdf")

@@ -728,6 +728,9 @@ export default function App() {
     }
   };
 
+  const activeDiscrepancies = useMemo(() => discrepancies.filter(d => !d.is_resolved), [discrepancies]);
+  const resolvedDiscrepancies = useMemo(() => discrepancies.filter(d => d.is_resolved), [discrepancies]);
+
   const uniqueScenes = useMemo(() => {
     const s = new Set<string>();
     takes.forEach(t => {
@@ -1282,12 +1285,23 @@ export default function App() {
                 onClick={() => setActiveTab('discrepancies')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
                   activeTab === 'discrepancies'
-                    ? 'bg-spine-critical/20 text-spine-critical border border-spine-critical/40'
+                    ? activeDiscrepancies.length > 0
+                      ? 'bg-spine-critical/20 text-spine-critical border border-spine-critical/40'
+                      : 'bg-spine-success/20 text-spine-success border border-spine-success/40'
                     : 'text-gray-300 hover:text-white hover:bg-slate-900 border border-transparent'
                 }`}
               >
-                <AlertTriangle className="w-4 h-4 text-spine-critical" />
-                Active Discrepancies ({discrepancies.length})
+                {activeDiscrepancies.length > 0 ? (
+                  <AlertTriangle className="w-4 h-4 text-spine-critical" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 text-spine-success" />
+                )}
+                Active Discrepancies ({activeDiscrepancies.length})
+                {resolvedDiscrepancies.length > 0 && (
+                  <span className="bg-spine-success/30 text-spine-success text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-spine-success/40">
+                    {resolvedDiscrepancies.length} resolved
+                  </span>
+                )}
               </button>
 
               <button
