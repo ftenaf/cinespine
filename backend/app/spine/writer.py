@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional
 
 from backend.app.spine import character_store, activity_store
 from backend.app.spine import production_store
+from backend.app.spine import crew_store
 from backend.app.spine import requirement_store
 from backend.app.spine import notification_store
 from backend.app.spine import event_store
@@ -717,6 +718,44 @@ class SpineWriter:
 
     def count_production_events(self, production_id: str) -> int:
         return sum(1 for e in self._in_memory_spine if e.get("production_id") == production_id)
+
+    def list_production_crew(
+        self,
+        production_id: str,
+        active_only: bool = False,
+    ) -> List[Dict[str, Any]]:
+        return crew_store.list_for(production_id, active_only=active_only)
+
+    def upsert_production_crew_member(self, member: Dict[str, Any]) -> Dict[str, Any]:
+        record = crew_store.upsert(member)
+        self.register_user(
+            handle=record["handle"],
+            name=record["name"],
+            email=record["email"] or f"{record['handle'].lstrip('@')}@production.film",
+            role=record["role"],
+            avatar_color="#3b82f6" if record["department"] == "editorial" else "#8b5cf6",
+        )
+        return record
+
+    def update_production_crew_member(
+        self,
+        production_id: str,
+        handle: str,
+        updates: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        record = crew_store.update(production_id, handle, updates)
+        if record:
+            self.register_user(
+                handle=record["handle"],
+                name=record["name"],
+                email=record["email"] or f"{record['handle'].lstrip('@')}@production.film",
+                role=record["role"],
+                avatar_color="#3b82f6" if record["department"] == "editorial" else "#8b5cf6",
+            )
+        return record
+
+    def delete_production_crew_member(self, production_id: str, handle: str) -> bool:
+        return crew_store.delete(production_id, handle)
 
     def store_discrepancy_resolution(
         self,

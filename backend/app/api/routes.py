@@ -17,11 +17,17 @@ from backend.app.streaming.broker import event_broker, SpineLiveEvent
 from backend.app.spine.writer import SpineWriter
 from backend.app.spine import activity_store, analytics as spine_analytics
 from backend.app.spine import production_store
+from backend.app.spine import crew_store
 from backend.app.spine import requirement_store
 from backend.app.spine import breakdown_store
 from backend.app.spine import tag_store
 from backend.app.reconciliation.engine import ReconciliationEngine
 from backend.app.agents.mcp_server import ClickHouseMCPServer, GeminiDiscrepancyAssistant
+from backend.app.agents.editorial_queue import (
+    ACTIVE_PRODUCTION_STATUSES,
+    ASSISTANT_QUEUE_ACTOR,
+    AssistantEditorQueueAgent,
+)
 from backend.app.agents.wrap_rescue import WRAP_RESCUE_ACTOR, WrapRescueAgent
 from backend.app.parsers.classifier import classify_document, infer_production_and_day
 from backend.app.agents.multimodal import extract_lined_page_if_enabled
@@ -196,11 +202,90 @@ class ResolveRequirementRequest(BaseModel):
     resolved_by: str = "@user"
 
 
+class UpsertCrewMemberRequest(BaseModel):
+    handle: str
+    name: str
+    email: Optional[str] = ""
+    role: str = "Assistant Editor"
+    department: str = "editorial"
+    active: bool = True
+
+
+class UpdateCrewMemberRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+    department: Optional[str] = None
+    active: Optional[bool] = None
+
+
 class RunWrapRescueRequest(BaseModel):
     production_id: str = "DEMO_PRODUCTION"
     shoot_day: str = "31"
     actor: str = WRAP_RESCUE_ACTOR
     max_blockers: int = Field(default=5, ge=1, le=12)
+
+
+class RunAssistantQueueRequest(BaseModel):
+    production_id: str = "DEMO_PRODUCTION"
+    shoot_day: Optional[str] = None
+    actor: str = ASSISTANT_QUEUE_ACTOR
+    assignee: Optional[str] = None
+    max_scenes: int = Field(default=6, ge=1, le=20)
+
+
+def _require_active_production(production_id: str) -> Dict[str, Any]:
+    production = spine_writer.get_production(production_id)
+    if not production:
+        raise HTTPException(status_code=404, detail=f"No production {production_id}")
+    status = production.get("status") or "Active"
+    if status not in ACTIVE_PRODUCTION_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{production['production_id']} is {status}; production crew and assistant "
+                "editor batches are read-only after the production is finished."
+            ),
+        )
+    return production
+
+
+def _record_crew_change(
+    production: Dict[str, Any],
+    action: str,
+    actor: str,
+    member: Optional[Dict[str, Any]] = None,
+    handle: Optional[str] = None,
+) -> None:
+    target_handle = handle or (member or {}).get("handle") or ""
+    payload = member or {"handle": target_handle}
+    spine_writer.append_event({
+        "event_id": str(uuid.uuid4()),
+        "production_id": production["production_id"],
+        "shoot_day": "ALL",
+        "axis": "intent",
+        "department": "production",
+        "doc_type": "production_crew_event",
+        "entity_type": "production_crew",
+        "payload": payload,
+        "metadata": {
+            "action": action,
+            "actor": actor,
+            "handle": target_handle,
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    event_broker.publish_sync(SpineLiveEvent(
+        event_type="PRODUCTION_CREW_UPDATED",
+        production_id=production["production_id"],
+        shoot_day="ALL",
+        actor_handle=actor,
+        target_type="production",
+        target_id=production["production_id"],
+        target_label=production["name"],
+        summary=f"Crew {action}: {target_handle}",
+        data={"action": action, "member": member, "handle": target_handle},
+    ))
 
 
 
@@ -317,6 +402,63 @@ def delete_production(production_id: str):
         )
 
     return {"deleted": spine_writer.delete_production(key), "production_id": key}
+
+
+# ==========================================
+# Production Crew
+# ==========================================
+@router.get("/productions/{production_id}/crew")
+def list_production_crew(production_id: str, active_only: bool = False):
+    production = spine_writer.get_production(production_id)
+    if not production:
+        raise HTTPException(status_code=404, detail=f"No production {production_id}")
+    return spine_writer.list_production_crew(production["production_id"], active_only=active_only)
+
+
+@router.post("/productions/{production_id}/crew")
+def upsert_production_crew_member(production_id: str, req: UpsertCrewMemberRequest):
+    production = _require_active_production(production_id)
+    try:
+        member = spine_writer.upsert_production_crew_member({
+            **req.model_dump(),
+            "production_id": production["production_id"],
+        })
+    except crew_store.UnknownCrewValue as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    _record_crew_change(production, "upserted", member["handle"], member=member)
+    return member
+
+
+@router.patch("/productions/{production_id}/crew/{handle}")
+def update_production_crew_member(
+    production_id: str,
+    handle: str,
+    req: UpdateCrewMemberRequest,
+):
+    production = _require_active_production(production_id)
+    try:
+        member = spine_writer.update_production_crew_member(
+            production["production_id"],
+            handle,
+            req.model_dump(exclude_unset=True),
+        )
+    except crew_store.UnknownCrewValue as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if not member:
+        raise HTTPException(status_code=404, detail=f"No crew member {handle} on {production_id}")
+    _record_crew_change(production, "updated", member["handle"], member=member)
+    return member
+
+
+@router.delete("/productions/{production_id}/crew/{handle}")
+def delete_production_crew_member(production_id: str, handle: str):
+    production = _require_active_production(production_id)
+    deleted = spine_writer.delete_production_crew_member(production["production_id"], handle)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"No crew member {handle} on {production_id}")
+    _record_crew_change(production, "deleted", handle, handle=handle)
+    return {"deleted": True, "production_id": production["production_id"], "handle": handle}
 
 
 @router.get("/documents")
@@ -1707,6 +1849,50 @@ async def run_wrap_rescue_agent(req: RunWrapRescueRequest):
             "mcp_available": result.mcp_status.available,
             "tool_calls": len(result.tool_calls),
             "blockers": len(result.blockers),
+            "requirement_actions": len(result.requirement_actions),
+        },
+    ))
+
+    return result.model_dump()
+
+
+@router.post("/agents/assistant-editor-queue/run")
+def run_assistant_editor_queue(req: RunAssistantQueueRequest):
+    """
+    Plans a same-day assistant editor batch from clean scene groups.
+
+    Clean is deterministic here: no active discrepancies or blocking
+    requirements, with enough script/camera/sound/offload evidence to start
+    turnover instead of investigation.
+    """
+    _require_active_production(req.production_id)
+    agent = AssistantEditorQueueAgent(
+        spine_writer=spine_writer,
+        discrepancy_source=mcp_server,
+    )
+    try:
+        result = agent.run(
+            production_id=req.production_id,
+            shoot_day=req.shoot_day,
+            actor=req.actor,
+            assignee=req.assignee,
+            max_scenes=req.max_scenes,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    event_broker.publish_sync(SpineLiveEvent(
+        event_type="ASSISTANT_QUEUE_RUN",
+        production_id=result.production_id,
+        shoot_day=result.shoot_day,
+        actor_handle=result.actor,
+        target_type="production",
+        target_id=result.production_id,
+        target_label=result.production_id,
+        summary=result.summary,
+        data={
+            "assigned_to": result.assigned_to,
+            "scenes": len(result.scenes),
             "requirement_actions": len(result.requirement_actions),
         },
     ))

@@ -255,6 +255,14 @@ requirement actions, and the final Gemini Enterprise handoff memo. In the demo s
 paperwork conflict, missing offload, and unacknowledged sound blocker; ClickHouse is the operational
 memory the agent queries before deciding who must act.
 
+### 3.6 ✂️ Assistant Editor Queue Agent
+Every active production has a managed crew roster and an **Assistant Editorial** panel. While a production
+is still active, post supervisors can add, deactivate, or remove crew members, then run a deterministic
+queue agent that finds clean scenes from the day: script/camera/sound paperwork present, offload evidence
+present, and no active discrepancies or blocking requirements. The agent creates scene-level end-of-day
+requirements assigned to the logged editor or assistant editor, so each assistant leaves set with a concrete
+batch to finish before the lead editor arrives.
+
 ### 4. 📡 Append-Only Event Spine & Real-Time SSE Bus
 * Backed by **ClickHouse** and SQLite for zero-data-loss event streaming.
 * Real-time Server-Sent Events (SSE) dispatching live updates to crew members based on department handle (`@director`, Sound, Camera, Editorial).

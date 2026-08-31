@@ -222,6 +222,60 @@ export async function fetchCurrentUser(handle?: string): Promise<import('./types
   return res.json();
 }
 
+export async function fetchProductionCrew(
+  productionId: string,
+  activeOnly = false,
+): Promise<import('./types').ProductionCrewMember[]> {
+  const q = activeOnly ? '?active_only=true' : '';
+  const res = await fetch(`${API_BASE}/productions/${encodeURIComponent(productionId)}/crew${q}`);
+  if (!res.ok) throw await apiError(res, 'Failed to fetch production crew');
+  return res.json();
+}
+
+export async function upsertProductionCrewMember(
+  productionId: string,
+  payload: {
+    handle: string;
+    name: string;
+    email?: string;
+    role?: string;
+    department?: string;
+    active?: boolean;
+  },
+): Promise<import('./types').ProductionCrewMember> {
+  const res = await fetch(`${API_BASE}/productions/${encodeURIComponent(productionId)}/crew`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw await apiError(res, 'Failed to save crew member');
+  return res.json();
+}
+
+export async function updateProductionCrewMember(
+  productionId: string,
+  handle: string,
+  updates: Partial<import('./types').ProductionCrewMember>,
+): Promise<import('./types').ProductionCrewMember> {
+  const res = await fetch(`${API_BASE}/productions/${encodeURIComponent(productionId)}/crew/${encodeURIComponent(handle)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw await apiError(res, 'Failed to update crew member');
+  return res.json();
+}
+
+export async function deleteProductionCrewMember(
+  productionId: string,
+  handle: string,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/productions/${encodeURIComponent(productionId)}/crew/${encodeURIComponent(handle)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw await apiError(res, 'Failed to remove crew member');
+}
+
 export async function fetchRequirements(params: {
   production_id?: string;
   shoot_day?: string;
@@ -317,6 +371,22 @@ export async function runWrapRescueAgent(payload: {
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw await apiError(res, 'Wrap Rescue Agent failed');
+  return res.json();
+}
+
+export async function runAssistantEditorQueue(payload: {
+  production_id: string;
+  shoot_day?: string;
+  actor?: string;
+  assignee?: string;
+  max_scenes?: number;
+}): Promise<import('./types').AssistantQueueResult> {
+  const res = await fetch(`${API_BASE}/agents/assistant-editor-queue/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw await apiError(res, 'Assistant Editor Queue failed');
   return res.json();
 }
 

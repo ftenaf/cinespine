@@ -206,6 +206,20 @@ export interface UserProfile {
   avatar_color: string;
 }
 
+export type CrewDepartment = 'editorial' | 'camera' | 'sound' | 'dit' | 'vfx' | 'production' | 'general';
+
+export interface ProductionCrewMember {
+  production_id: string;
+  handle: string;
+  name: string;
+  email: string;
+  role: string;
+  department: CrewDepartment;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export type RequirementPriority = 'low' | 'medium' | 'high' | 'critical';
 export type RequirementCategory = 'sound' | 'vfx' | 'edit' | 'color' | 'reshoot' | 'legal' | 'general';
 export type RequirementStatus = 'open' | 'in_progress' | 'resolved' | 'blocked';
@@ -308,6 +322,40 @@ export interface WrapRescueResult {
   blockers: WrapRescueBlocker[];
   requirement_actions: WrapRequirementAction[];
   final_memo: string;
+  generated_at: string;
+}
+
+export interface AssistantQueueScene {
+  scene: string;
+  shoot_days: string[];
+  target_label: string;
+  assigned_to: string;
+  takes_count: number;
+  circled_takes_count: number;
+  document_count: number;
+  clean_score: number;
+  reasons: string[];
+  blockers: string[];
+}
+
+export interface AssistantQueueAction {
+  action: 'created' | 'updated' | 'unchanged';
+  requirement_id: string;
+  scene: string;
+  assigned_to: string;
+  status: string;
+  priority: string;
+}
+
+export interface AssistantQueueResult {
+  production_id: string;
+  shoot_day: string;
+  actor: string;
+  assigned_to: string;
+  production_status: string;
+  scenes: AssistantQueueScene[];
+  requirement_actions: AssistantQueueAction[];
+  summary: string;
   generated_at: string;
 }
 
