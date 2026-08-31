@@ -263,7 +263,9 @@ queue agent for one day or **all days with unassigned clean work**: script/camer
 offload evidence present, and no active discrepancies or blocking requirements. The agent balances scene-level
 end-of-day requirements across all active assistant editors. Each assigned assistant can mark their scene
 complete, resolving the requirement with `resolved_by` and `resolved_at` audit fields, and the production
-dashboard shows pre-editing progress by assistant with a completion chart.
+dashboard shows pre-editing progress by assistant with a completion chart. The same dashboard also includes
+a production-wide **Crew Workload** view so coordinators can see every crew member's active requirements,
+blocked items, completed count and current task targets at a glance.
 
 ### 4. 📡 Append-Only Event Spine & Real-Time SSE Bus
 * Backed by **ClickHouse** and SQLite for zero-data-loss event streaming.

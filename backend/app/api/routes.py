@@ -19,6 +19,7 @@ from backend.app.spine import activity_store, analytics as spine_analytics
 from backend.app.spine import production_store
 from backend.app.spine import crew_store
 from backend.app.spine import requirement_store
+from backend.app.spine import workload
 from backend.app.spine import breakdown_store
 from backend.app.spine import tag_store
 from backend.app.reconciliation.engine import ReconciliationEngine
@@ -2279,6 +2280,7 @@ def get_production_dashboard(production_id: str, recent_limit: int = 12):
     progress["vocabulary"] = tag_store.vocabulary()
     progress["recent"] = tag_store.history(production_id, limit=max(1, min(recent_limit, 50)))
     progress["pre_editing"] = pre_editing_progress(spine_writer, production_id)
+    progress["crew_workload"] = workload.crew_workload(spine_writer, production_id)
     progress["shoot_days"] = sorted(
         {e.get("shoot_day") for e in events if e.get("shoot_day")},
         key=lambda d: int(d) if str(d).isdigit() else 9999,

@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.agents.editorial_queue import AssistantEditorQueueAgent
 from backend.app.main import app
+from backend.app.spine import workload
 from backend.app.spine.writer import SpineWriter
 
 client = TestClient(app)
@@ -196,6 +197,44 @@ def test_assistant_queue_requires_active_assistant_editors():
         raise AssertionError("queue should require active assistant editors")
 
 
+def test_crew_workload_shows_all_current_work_and_latest_audit_actor():
+    writer = SpineWriter(clickhouse_client=False)
+    writer.register_production("WORKLOAD_CREW", "Workload Crew")
+    writer.upsert_production_crew_member({
+        "production_id": "WORKLOAD_CREW",
+        "handle": "@night_ae",
+        "name": "Night AE",
+        "role": "Assistant Editor",
+        "department": "editorial",
+    })
+
+    created = []
+    for scene in range(1, 7):
+        created.append(writer.create_requirement({
+            "production_id": "WORKLOAD_CREW",
+            "shoot_day": "31",
+            "target_type": "scene",
+            "target_id": str(scene),
+            "target_label": f"Scene {scene}",
+            "title": f"Prep Scene {scene}",
+            "category": "edit",
+            "priority": "medium",
+            "assigned_to": "@night_ae",
+            "created_by": "@director",
+        }))
+
+    writer.update_requirement(created[0]["requirement_id"], {"status": "blocked"}, actor="@director")
+
+    board = workload.crew_workload(writer, "WORKLOAD_CREW")
+    member = board["by_member"][0]
+    assert member["handle"] == "@night_ae"
+    assert len(member["current"]) == 6
+    assert member["blocked"] == 1
+    assert member["latest_activity_actor"] == "@director"
+    assert member["latest_activity_action"] == "status_changed"
+    assert member["current"][0]["last_actor"] == "@director"
+
+
 def test_api_completion_feeds_pre_editing_dashboard():
     response = client.post("/api/productions", json={
         "production_id": "QUEUE_DASH",
@@ -241,10 +280,20 @@ def test_api_completion_feeds_pre_editing_dashboard():
     assert dashboard["pre_editing"]["total"] == 2
     assert dashboard["pre_editing"]["completed"] == 1
     assert dashboard["pre_editing"]["pending"] == 1
+    assert dashboard["crew_workload"]["totals"]["crew"] == 2
+    assert dashboard["crew_workload"]["total_open"] == 1
     finisher = next(
         row for row in dashboard["pre_editing"]["by_assistant"]
         if row["handle"] == first_scene["assigned_to"]
     )
     assert finisher["completed"] == 1
     assert finisher["scenes_completed"] == 1
+    owner = next(
+        row for row in dashboard["crew_workload"]["by_member"]
+        if row["handle"] != first_scene["assigned_to"]
+    )
+    assert owner["open"] == 1
+    assert owner["current"][0]["target_type"] == "scene"
+    assert owner["current"][0]["last_actor"] == "@director"
+    assert owner["current"][0]["last_action"] == "created"
     assert dashboard["pre_editing"]["recent_completed"][0]["resolved_by"] == first_scene["assigned_to"]

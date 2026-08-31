@@ -747,6 +747,7 @@ def test_the_api_serves_a_board():
     })
     board = client.get("/api/dashboard", params={"production_id": PROD}).json()
     assert "shots" in board and "scenes" in board and "outstanding" in board
+    assert "crew_workload" in board
     assert board["vocabulary"]["statuses"][0]["key"] == "finished_shooting"
     assert board["recent"] and board["recent"][0]["target_id"] == "27/7"
 
@@ -755,6 +756,7 @@ def test_a_production_with_no_paperwork_yet_is_an_empty_board_not_an_error():
     board = client.get("/api/dashboard", params={"production_id": "NOTHING_HERE"}).json()
     assert board["shots"]["known"] == 0
     assert board["outstanding"]["sfx"] == []
+    assert board["crew_workload"]["total_open"] == 0
     assert board["recent"] == []
 
 

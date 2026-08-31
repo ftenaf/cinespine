@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Loader2, RefreshCw, AlertTriangle, PieChart } from 'lucide-react';
+import { Loader2, RefreshCw, AlertTriangle, PieChart, UsersRound } from 'lucide-react';
 import {
+  CrewWorkload,
   PreEditingProgress,
   ProductionDashboard as Board,
   ProgressAxis,
@@ -37,6 +38,11 @@ const STATUS_BAR: Record<string, string> = {
 };
 
 const NEED_ICONS: Record<string, string> = { sfx: '🔊', subtitles: '💬', translation: '🌐' };
+const WORK_STATUS_CLASS: Record<string, string> = {
+  open: 'border-blue-700/50 text-blue-200 bg-blue-500/10',
+  in_progress: 'border-emerald-700/50 text-emerald-200 bg-emerald-500/10',
+  blocked: 'border-rose-700/50 text-rose-200 bg-rose-500/10',
+};
 
 function shortDateTime(value?: string | null): string {
   if (!value) return 'not yet';
@@ -48,6 +54,23 @@ function shortDateTime(value?: string | null): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function shootDayLabel(value: string): string {
+  return value === 'ALL' ? 'All days' : `Day ${value}`;
+}
+
+function actionLabel(value?: string | null): string {
+  const labels: Record<string, string> = {
+    created: 'created',
+    updated: 'updated',
+    reassigned: 'reassigned',
+    status_changed: 'changed status',
+    reopened: 'reopened',
+    resolved: 'completed',
+    deleted: 'deleted',
+  };
+  return value ? (labels[value] ?? value.split('_').join(' ')) : 'updated';
 }
 
 function PreEditingProgressCard({ progress }: { progress: PreEditingProgress }) {
@@ -119,6 +142,87 @@ function PreEditingProgressCard({ progress }: { progress: PreEditingProgress }) 
               </p>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CrewWorkloadCard({ workload }: { workload: CrewWorkload }) {
+  return (
+    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-3 mb-3">
+        <p className="text-sm font-semibold text-white flex items-center gap-2">
+          <UsersRound className="w-4 h-4 text-blue-300" aria-hidden />
+          Crew workload
+        </p>
+        <p className="text-xs text-gray-400">
+          <span className="font-mono text-white">{workload.total_open}</span> active requirement{workload.total_open === 1 ? '' : 's'}
+        </p>
+      </div>
+
+      {workload.by_member.length === 0 ? (
+        <p className="text-xs text-gray-400">No crew has been assigned to this production yet.</p>
+      ) : (
+        <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
+          {workload.by_member.map(member => {
+            const activeCount = member.open + member.in_progress + member.blocked;
+            return (
+              <div key={member.handle} className="border border-slate-800 rounded-xl p-3 bg-slate-950/50">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{member.name}</p>
+                    <p className="text-[11px] text-gray-500 truncate">
+                      {member.handle} · {member.role}
+                    </p>
+                    {member.latest_activity_at ? (
+                      <p className="text-[10px] text-gray-600 truncate">
+                        last work {actionLabel(member.latest_activity_action)} by {member.latest_activity_actor ?? 'someone'} · {shortDateTime(member.latest_activity_at)}
+                      </p>
+                    ) : (
+                      <p className="text-[10px] text-gray-600 truncate">no requirement activity yet</p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap justify-end gap-1.5 text-[10px]">
+                    <span className="px-1.5 py-0.5 rounded border border-slate-700 text-slate-300 bg-slate-900">
+                      {activeCount} active
+                    </span>
+                    {member.blocked > 0 && (
+                      <span className="px-1.5 py-0.5 rounded border border-rose-700/50 text-rose-200 bg-rose-500/10">
+                        {member.blocked} blocked
+                      </span>
+                    )}
+                    <span className="px-1.5 py-0.5 rounded border border-emerald-700/50 text-emerald-200 bg-emerald-500/10">
+                      {member.completed} done
+                    </span>
+                  </div>
+                </div>
+
+                {member.current.length === 0 ? (
+                  <p className="mt-2 text-[11px] text-gray-500">No active work assigned.</p>
+                ) : (
+                  <div className="mt-2 space-y-1.5">
+                    {member.current.map(item => (
+                      <div key={item.requirement_id} className="flex items-start justify-between gap-2 text-[11px]">
+                        <div className="min-w-0">
+                          <p className="text-gray-300 truncate">{item.title}</p>
+                          <p className="text-gray-500 truncate">
+                            {shootDayLabel(item.shoot_day)} · {item.target_label} · {item.category}
+                          </p>
+                          <p className="text-gray-600 truncate">
+                            {actionLabel(item.last_action)} by {item.last_actor ?? item.created_by} · {shortDateTime(item.last_activity_at ?? item.updated_at)}
+                          </p>
+                        </div>
+                        <span className={`shrink-0 px-1.5 py-0.5 rounded border ${WORK_STATUS_CLASS[item.status] ?? 'border-slate-700 text-slate-300 bg-slate-900'}`}>
+                          {item.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -268,6 +372,8 @@ export function ProductionDashboardPanel({ productionId, reloadKey }: {
       <PreEditingProgressCard progress={board.pre_editing} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <CrewWorkloadCard workload={board.crew_workload} />
+
         <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
           <div className="flex items-baseline justify-between mb-3">
             <p className="text-sm font-semibold text-white">Outstanding work</p>

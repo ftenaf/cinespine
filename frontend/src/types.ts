@@ -618,12 +618,61 @@ export interface PreEditingProgress {
   recent_completed: PreEditingCompletion[];
 }
 
+export interface CrewWorkloadItem {
+  requirement_id: string;
+  title: string;
+  target_type: RequirementTargetType;
+  target_id: string;
+  target_label: string;
+  shoot_day: string;
+  status: RequirementStatus;
+  priority: RequirementPriority;
+  category: RequirementCategory;
+  updated_at: string;
+  created_by: string;
+  created_at: string;
+  last_action: RequirementEvent['action'];
+  last_actor?: string | null;
+  last_activity_at?: string | null;
+}
+
+export interface CrewWorkloadMember {
+  handle: string;
+  name: string;
+  role: string;
+  department: CrewDepartment;
+  active: boolean;
+  assigned: number;
+  open: number;
+  in_progress: number;
+  blocked: number;
+  completed: number;
+  latest_activity_at?: string | null;
+  latest_activity_actor?: string | null;
+  latest_activity_action?: RequirementEvent['action'] | null;
+  current: CrewWorkloadItem[];
+}
+
+export interface CrewWorkload {
+  total_open: number;
+  totals: {
+    crew: number;
+    assigned: number;
+    open: number;
+    in_progress: number;
+    blocked: number;
+    completed: number;
+  };
+  by_member: CrewWorkloadMember[];
+}
+
 export interface ProductionDashboard {
   production_id: string;
   shots: ProgressAxis;
   scenes: ProgressAxis;
   outstanding: Record<string, OutstandingTarget[]>;
   pre_editing: PreEditingProgress;
+  crew_workload: CrewWorkload;
   vocabulary: TagVocabulary;
   recent: TagHistoryEntry[];
   shoot_days: string[];
