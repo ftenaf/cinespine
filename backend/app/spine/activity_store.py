@@ -110,11 +110,12 @@ def _conn() -> sqlite3.Connection:
 
 
 def close_all() -> None:
+    """Closes every open connection. For tests and for a clean shutdown."""
     with _lock:
         for conn in _connections.values():
             try:
                 conn.close()
-            except Exception:
+            except sqlite3.Error:
                 pass
         _connections.clear()
 
