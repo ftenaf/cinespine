@@ -27,6 +27,8 @@ from backend.app.agents.editorial_queue import (
     ACTIVE_PRODUCTION_STATUSES,
     ASSISTANT_QUEUE_ACTOR,
     AssistantEditorQueueAgent,
+    assistant_queue_requirements,
+    pre_editing_progress,
 )
 from backend.app.agents.wrap_rescue import WRAP_RESCUE_ACTOR, WrapRescueAgent
 from backend.app.parsers.classifier import classify_document, infer_production_and_day
@@ -286,7 +288,6 @@ def _record_crew_change(
         summary=f"Crew {action}: {target_handle}",
         data={"action": action, "member": member, "handle": target_handle},
     ))
-
 
 
 @router.get("/health")
@@ -1891,13 +1892,24 @@ def run_assistant_editor_queue(req: RunAssistantQueueRequest):
         target_label=result.production_id,
         summary=result.summary,
         data={
-            "assigned_to": result.assigned_to,
+            "assignees": result.assignees,
             "scenes": len(result.scenes),
             "requirement_actions": len(result.requirement_actions),
         },
     ))
 
     return result.model_dump()
+
+
+@router.get("/agents/assistant-editor-queue/assignments")
+def list_assistant_editor_queue_assignments(production_id: str, active_only: bool = False):
+    production = spine_writer.get_production(production_id)
+    if not production:
+        raise HTTPException(status_code=404, detail=f"No production {production_id}")
+    rows = assistant_queue_requirements(spine_writer, production["production_id"])
+    if active_only:
+        rows = [row for row in rows if row.get("status") != "resolved"]
+    return rows
 
 
 # ==========================================
@@ -2266,6 +2278,7 @@ def get_production_dashboard(production_id: str, recent_limit: int = 12):
     progress = tag_store.progress(production_id, sorted(known_shots), sorted(known_scenes))
     progress["vocabulary"] = tag_store.vocabulary()
     progress["recent"] = tag_store.history(production_id, limit=max(1, min(recent_limit, 50)))
+    progress["pre_editing"] = pre_editing_progress(spine_writer, production_id)
     progress["shoot_days"] = sorted(
         {e.get("shoot_day") for e in events if e.get("shoot_day")},
         key=lambda d: int(d) if str(d).isdigit() else 9999,

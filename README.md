@@ -259,10 +259,11 @@ memory the agent queries before deciding who must act.
 Every active production has a managed crew roster and an **Assistant Editorial** panel. While a production
 is still active, post supervisors can add, deactivate, or remove crew members from a phase-grouped
 postproduction-first role dropdown that assigns each role to its operational department, then run a deterministic
-queue agent that finds clean scenes from the day: script/camera/sound paperwork present, offload evidence
-present, and no active discrepancies or blocking requirements. The agent creates scene-level end-of-day
-requirements assigned to the selected active assistant editor, so each assistant leaves set with a concrete
-batch to finish before the lead editor arrives.
+queue agent for one day or **all days with unassigned clean work**: script/camera/sound paperwork present,
+offload evidence present, and no active discrepancies or blocking requirements. The agent balances scene-level
+end-of-day requirements across all active assistant editors. Each assigned assistant can mark their scene
+complete, resolving the requirement with `resolved_by` and `resolved_at` audit fields, and the production
+dashboard shows pre-editing progress by assistant with a completion chart.
 
 ### 4. 📡 Append-Only Event Spine & Real-Time SSE Bus
 * Backed by **ClickHouse** and SQLite for zero-data-loss event streaming.

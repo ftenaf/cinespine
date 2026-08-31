@@ -330,6 +330,8 @@ export interface AssistantQueueScene {
   shoot_days: string[];
   target_label: string;
   assigned_to: string;
+  requirement_id?: string | null;
+  status: RequirementStatus;
   takes_count: number;
   circled_takes_count: number;
   document_count: number;
@@ -351,6 +353,7 @@ export interface AssistantQueueResult {
   production_id: string;
   shoot_day: string;
   actor: string;
+  assignees: string[];
   assigned_to: string;
   production_status: string;
   scenes: AssistantQueueScene[];
@@ -585,11 +588,42 @@ export interface OutstandingTarget {
   status: string;
 }
 
+export interface PreEditingAssistantProgress {
+  handle: string;
+  assigned: number;
+  pending: number;
+  completed: number;
+  scenes_completed: number;
+  shots_completed: number;
+  last_completed_at?: string | null;
+}
+
+export interface PreEditingCompletion {
+  requirement_id: string;
+  target_type: 'scene' | 'shot';
+  target_id: string;
+  target_label: string;
+  assigned_to: string;
+  resolved_by: string;
+  resolved_at?: string | null;
+}
+
+export interface PreEditingProgress {
+  total: number;
+  completed: number;
+  pending: number;
+  completion_percent: number;
+  status_counts: Record<RequirementStatus, number>;
+  by_assistant: PreEditingAssistantProgress[];
+  recent_completed: PreEditingCompletion[];
+}
+
 export interface ProductionDashboard {
   production_id: string;
   shots: ProgressAxis;
   scenes: ProgressAxis;
   outstanding: Record<string, OutstandingTarget[]>;
+  pre_editing: PreEditingProgress;
   vocabulary: TagVocabulary;
   recent: TagHistoryEntry[];
   shoot_days: string[];

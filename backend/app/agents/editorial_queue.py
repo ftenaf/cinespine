@@ -15,10 +15,12 @@ from typing import Any, Dict, List, Literal, Optional, cast
 from pydantic import BaseModel, Field
 
 from backend.app.core import analytics
+from backend.app.spine import requirement_store
 from backend.app.spine.writer import SpineWriter
 
 ASSISTANT_QUEUE_ACTOR = "@assistant_queue_agent"
 ASSISTANT_QUEUE_MARKER = "AssistantQueueSource:"
+ALL_DAYS = "ALL"
 ACTIVE_PRODUCTION_STATUSES = {"Active", "In Production", "Principal Photography"}
 
 
@@ -27,6 +29,8 @@ class AssistantQueueScene(BaseModel):
     shoot_days: List[str]
     target_label: str
     assigned_to: str
+    requirement_id: Optional[str] = None
+    status: str = "open"
     takes_count: int
     circled_takes_count: int
     document_count: int
@@ -48,6 +52,7 @@ class AssistantQueueResult(BaseModel):
     production_id: str
     shoot_day: str
     actor: str
+    assignees: List[str]
     assigned_to: str
     production_status: str
     scenes: List[AssistantQueueScene]
@@ -104,6 +109,95 @@ def _is_editorial_member(member: Dict[str, Any]) -> bool:
     return "editor" in text or member.get("department") == "editorial"
 
 
+def is_assistant_editor_member(member: Dict[str, Any]) -> bool:
+    text = f"{member.get('role', '')} {member.get('department', '')}".lower()
+    return "assistant editor" in text and _is_editorial_member(member)
+
+
+def is_assistant_queue_requirement(req: Dict[str, Any]) -> bool:
+    return (
+        ASSISTANT_QUEUE_MARKER in (req.get("description") or "")
+        or str(req.get("title") or "").startswith("[Assistant Queue]")
+    )
+
+
+def assistant_queue_requirements(spine_writer: SpineWriter, production_id: str) -> List[Dict[str, Any]]:
+    return [
+        req for req in spine_writer.list_requirements(production_id=production_id)
+        if is_assistant_queue_requirement(req)
+    ]
+
+
+def pre_editing_progress(spine_writer: SpineWriter, production_id: str) -> Dict[str, Any]:
+    requirements = [
+        req for req in assistant_queue_requirements(spine_writer, production_id)
+        if req.get("target_type") in {"scene", "shot"}
+    ]
+    status_counts = {status: 0 for status in requirement_store.STATUSES}
+    assistants: Dict[str, Dict[str, Any]] = {}
+    recent_completed: List[Dict[str, Any]] = []
+
+    def assistant_row(handle: Optional[str]) -> Dict[str, Any]:
+        key = handle or "@unassigned"
+        if key not in assistants:
+            assistants[key] = {
+                "handle": key,
+                "assigned": 0,
+                "pending": 0,
+                "completed": 0,
+                "scenes_completed": 0,
+                "shots_completed": 0,
+                "last_completed_at": None,
+            }
+        return assistants[key]
+
+    for req in requirements:
+        status = req.get("status") or "open"
+        if status in status_counts:
+            status_counts[status] += 1
+        assigned_row = assistant_row(req.get("assigned_to"))
+        assigned_row["assigned"] += 1
+
+        if status == "resolved":
+            completed_by = req.get("resolved_by") or req.get("assigned_to")
+            completed_row = assistant_row(completed_by)
+            completed_row["completed"] += 1
+            if req.get("target_type") == "shot":
+                completed_row["shots_completed"] += 1
+            else:
+                completed_row["scenes_completed"] += 1
+            completed_at = req.get("resolved_at")
+            if completed_at and (
+                completed_row["last_completed_at"] is None
+                or completed_at > completed_row["last_completed_at"]
+            ):
+                completed_row["last_completed_at"] = completed_at
+            recent_completed.append({
+                "requirement_id": req["requirement_id"],
+                "target_type": req["target_type"],
+                "target_id": req["target_id"],
+                "target_label": req["target_label"],
+                "assigned_to": req.get("assigned_to") or "",
+                "resolved_by": completed_by or "",
+                "resolved_at": completed_at,
+            })
+        else:
+            assigned_row["pending"] += 1
+
+    total = len(requirements)
+    completed = status_counts.get("resolved", 0)
+    recent_completed.sort(key=lambda item: item.get("resolved_at") or "", reverse=True)
+    return {
+        "total": total,
+        "completed": completed,
+        "pending": total - completed,
+        "completion_percent": round((completed / total) * 100, 1) if total else 0.0,
+        "status_counts": status_counts,
+        "by_assistant": sorted(assistants.values(), key=lambda row: row["handle"].lower()),
+        "recent_completed": recent_completed[:8],
+    }
+
+
 class AssistantEditorQueueAgent:
     def __init__(self, spine_writer: SpineWriter, discrepancy_source: Any):
         self.spine_writer = spine_writer
@@ -128,17 +222,18 @@ class AssistantEditorQueueAgent:
                 f"{production_id} is {status}; assistant batches can only be planned while production is active."
             )
 
-        selected_day = shoot_day or self._latest_shoot_day(production_id)
-        assigned_to = self._choose_assignee(production_id, actor, assignee)
-        candidates = self._candidate_scenes(production_id, selected_day, assigned_to)
-        chosen = candidates[:max(1, max_scenes)]
+        selected_day = self._selected_day(production_id, shoot_day)
+        assignees = self._assistant_editors(production_id, assignee)
+        candidates = self._candidate_scenes(production_id, selected_day)
+        chosen = self._assign_candidates(production_id, candidates, assignees, max(1, max_scenes))
         actions = self._apply_requirements(production_id, selected_day, chosen, actor)
-        summary = self._summary(production_id, selected_day, assigned_to, chosen, actions)
+        summary = self._summary(production_id, selected_day, assignees, chosen, actions)
         result = AssistantQueueResult(
             production_id=production_id,
             shoot_day=selected_day,
             actor=actor,
-            assigned_to=assigned_to,
+            assignees=assignees,
+            assigned_to="ALL",
             production_status=status,
             scenes=chosen,
             requirement_actions=actions,
@@ -149,11 +244,16 @@ class AssistantEditorQueueAgent:
         analytics.capture(actor, "assistant_editor_queue_run", {
             "production_id": production_id,
             "shoot_day": selected_day,
-            "assigned_to": assigned_to,
+            "assignees": assignees,
             "scenes": len(chosen),
             "requirement_actions": len(actions),
         })
         return result
+
+    def _selected_day(self, production_id: str, shoot_day: Optional[str]) -> str:
+        if shoot_day and shoot_day.strip().upper() == ALL_DAYS:
+            return ALL_DAYS
+        return shoot_day or self._latest_shoot_day(production_id)
 
     def _latest_shoot_day(self, production_id: str) -> str:
         days = sorted(
@@ -163,38 +263,46 @@ class AssistantEditorQueueAgent:
         )
         return days[-1] if days else "1"
 
-    def _choose_assignee(
+    def _assistant_editors(
         self,
         production_id: str,
-        actor: str,
         assignee: Optional[str],
-    ) -> str:
-        requested = _normalize_handle(assignee or actor, actor)
+    ) -> List[str]:
         crew = self.spine_writer.list_production_crew(production_id, active_only=True)
-        by_handle = {m["handle"].lower(): m for m in crew}
-        if requested.lower() in by_handle and _is_editorial_member(by_handle[requested.lower()]):
-            return requested
+        assistants = [
+            m["handle"] for m in crew
+            if is_assistant_editor_member(m)
+        ]
+        if assignee:
+            requested = _normalize_handle(assignee)
+            if requested in assistants:
+                return [requested]
+            raise ValueError(
+                f"{requested} is not an active assistant editor on {production_id}. "
+                "Add them to the production crew first."
+            )
+        if assistants:
+            return sorted(assistants, key=str.lower)
 
         raise ValueError(
-            f"{requested} is not active editorial crew on {production_id}. Add the responsible assistant to the production crew first."
+            f"No active assistant editors are crewed on {production_id}. Add at least one Assistant Editor to the production crew first."
         )
 
     def _candidate_scenes(
         self,
         production_id: str,
         shoot_day: str,
-        assigned_to: str,
     ) -> List[AssistantQueueScene]:
         scenes = self._scene_evidence(production_id, shoot_day)
-        discrepancies = self.discrepancy_source.query_production_discrepancies(
-            production_id=production_id,
-            shoot_day=shoot_day,
-        )
+        discrepancies = self._discrepancies(production_id, shoot_day)
         blocked_by_scene = self._blocking_requirements(production_id)
         active_discrepancies = self._active_discrepancies_by_scene(discrepancies)
+        already_queued = self._queued_scenes(production_id)
 
         candidates: List[AssistantQueueScene] = []
         for scene, evidence in scenes.items():
+            if scene in already_queued:
+                continue
             blockers = [
                 *sorted(active_discrepancies.get(scene, [])),
                 *sorted(blocked_by_scene.get(scene, [])),
@@ -206,7 +314,7 @@ class AssistantEditorQueueAgent:
                 scene=scene,
                 shoot_days=sorted(evidence.shoot_days, key=_sort_day),
                 target_label=f"Scene {scene}",
-                assigned_to=assigned_to,
+                assigned_to="",
                 takes_count=len(evidence.takes),
                 circled_takes_count=len(evidence.circled_takes),
                 document_count=len(evidence.docs),
@@ -220,15 +328,40 @@ class AssistantEditorQueueAgent:
             key=lambda s: (-s.clean_score, -s.circled_takes_count, -s.takes_count, s.scene),
         )
 
+    def _days_for_selection(self, production_id: str, shoot_day: str) -> Optional[set[str]]:
+        if shoot_day != ALL_DAYS:
+            return {shoot_day}
+        days = {
+            str(e.get("shoot_day")) for e in self.spine_writer.get_events(production_id=production_id)
+            if e.get("shoot_day")
+        }
+        return days or None
+
+    def _discrepancies(self, production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
+        days = self._days_for_selection(production_id, shoot_day)
+        if not days:
+            return []
+        results: List[Dict[str, Any]] = []
+        for day in sorted(days, key=_sort_day):
+            results.extend(self.discrepancy_source.query_production_discrepancies(
+                production_id=production_id,
+                shoot_day=day,
+            ))
+        return results
+
     def _scene_evidence(self, production_id: str, shoot_day: str) -> Dict[str, _SceneEvidence]:
         scenes: Dict[str, _SceneEvidence] = {}
-        for event in self.spine_writer.get_events(production_id=production_id, shoot_day=shoot_day):
+        days = self._days_for_selection(production_id, shoot_day)
+        for event in self.spine_writer.get_events(production_id=production_id):
+            event_day = str(event.get("shoot_day") or "")
+            if days is not None and event_day not in days:
+                continue
             payload = event.get("payload") or {}
             if event.get("entity_type") not in {"take", "media_file"}:
                 continue
             scene = _scene_from_payload(payload)
             evidence = scenes.setdefault(scene, _SceneEvidence(scene=scene))
-            evidence.shoot_days.add(str(event.get("shoot_day") or shoot_day))
+            evidence.shoot_days.add(event_day or shoot_day)
             take_key = _take_key(payload)
             if take_key:
                 evidence.takes.add(take_key)
@@ -254,6 +387,15 @@ class AssistantEditorQueueAgent:
             if payload.get("is_wild_track"):
                 evidence.has_wild_track = True
         return scenes
+
+    def _queued_scenes(self, production_id: str) -> set[str]:
+        queued: set[str] = set()
+        for req in self.spine_writer.list_requirements(production_id=production_id):
+            if not is_assistant_queue_requirement(req):
+                continue
+            if req.get("target_type") == "scene" and req.get("target_id"):
+                queued.add(str(req["target_id"]))
+        return queued
 
     def _active_discrepancies_by_scene(
         self, discrepancies: List[Dict[str, Any]]
@@ -318,6 +460,33 @@ class AssistantEditorQueueAgent:
             score -= 6
         return float(score)
 
+    def _assignment_load(self, production_id: str, assignees: List[str]) -> Dict[str, int]:
+        load = {handle: 0 for handle in assignees}
+        for req in self.spine_writer.list_requirements(production_id=production_id):
+            if req.get("status") == "resolved":
+                continue
+            if not is_assistant_queue_requirement(req):
+                continue
+            assigned_to = req.get("assigned_to")
+            if assigned_to in load:
+                load[assigned_to] += 1
+        return load
+
+    def _assign_candidates(
+        self,
+        production_id: str,
+        candidates: List[AssistantQueueScene],
+        assignees: List[str],
+        max_scenes: int,
+    ) -> List[AssistantQueueScene]:
+        chosen = candidates[:max_scenes]
+        load = self._assignment_load(production_id, assignees)
+        for scene in chosen:
+            assigned_to = min(assignees, key=lambda handle: (load[handle], handle.lower()))
+            scene.assigned_to = assigned_to
+            load[assigned_to] += 1
+        return chosen
+
     def _apply_requirements(
         self,
         production_id: str,
@@ -331,7 +500,8 @@ class AssistantEditorQueueAgent:
             if r.get("status") != "resolved"
         ]
         for scene in scenes:
-            source = f"{ASSISTANT_QUEUE_MARKER} scene:{scene.scene}:day:{shoot_day}"
+            requirement_day = self._requirement_day(shoot_day, scene)
+            source = f"{ASSISTANT_QUEUE_MARKER} scene:{scene.scene}:day:{requirement_day}"
             description = self._description(scene, source)
             current = next(
                 (r for r in existing if source in (r.get("description") or "")),
@@ -355,7 +525,7 @@ class AssistantEditorQueueAgent:
             else:
                 updated = self.spine_writer.create_requirement({
                     "production_id": production_id,
-                    "shoot_day": shoot_day,
+                    "shoot_day": requirement_day,
                     "target_type": "scene",
                     "target_id": scene.scene,
                     "target_label": scene.target_label,
@@ -379,7 +549,14 @@ class AssistantEditorQueueAgent:
                 status=updated["status"],
                 priority=updated["priority"],
             ))
+            scene.requirement_id = updated["requirement_id"]
+            scene.status = updated["status"]
         return actions
+
+    def _requirement_day(self, selection_day: str, scene: AssistantQueueScene) -> str:
+        if selection_day != ALL_DAYS:
+            return selection_day
+        return scene.shoot_days[0] if len(scene.shoot_days) == 1 else ALL_DAYS
 
     def _description(self, scene: AssistantQueueScene, source: str) -> str:
         reasons = "; ".join(scene.reasons)
@@ -439,6 +616,7 @@ class AssistantEditorQueueAgent:
             "metadata": {
                 "actor": result.actor,
                 "assigned_to": result.assigned_to,
+                "assignees": result.assignees,
                 "agent": "assistant_editor_queue",
             },
             "timestamp": result.generated_at,
@@ -449,17 +627,19 @@ class AssistantEditorQueueAgent:
         self,
         production_id: str,
         shoot_day: str,
-        assigned_to: str,
+        assignees: List[str],
         scenes: List[AssistantQueueScene],
         actions: List[AssistantQueueAction],
     ) -> str:
         if not scenes:
-            return f"No clean scenes were ready for {assigned_to} on {production_id} Day {shoot_day}."
+            scope = "all days" if shoot_day == ALL_DAYS else f"Day {shoot_day}"
+            return f"No unassigned clean scenes were ready for assistant editorial on {production_id} {scope}."
         labels = ", ".join(scene.target_label for scene in scenes)
         created = sum(1 for action in actions if action.action == "created")
         updated = sum(1 for action in actions if action.action == "updated")
+        scope = "all pending days" if shoot_day == ALL_DAYS else f"Day {shoot_day}"
         return (
-            f"{assigned_to} has {len(scenes)} clean scene(s) for end-of-day turnover on "
-            f"{production_id} Day {shoot_day}: {labels}. "
+            f"{len(scenes)} clean scene(s) were distributed across {len(assignees)} assistant editor(s) "
+            f"for {production_id} {scope}: {labels}. "
             f"{created} requirement(s) created, {updated} updated."
         )

@@ -4,17 +4,20 @@ import {
 } from 'lucide-react';
 import {
   deleteProductionCrewMember,
+  fetchAssistantEditorQueueAssignments,
+  resolveRequirement,
   fetchProductionCrew,
   runAssistantEditorQueue,
   updateProductionCrewMember,
   upsertProductionCrewMember,
 } from '../api';
 import {
-  AssistantQueueResult, CrewDepartment, Production, ProductionCrewMember,
+  AssistantQueueResult, CrewDepartment, Production, ProductionCrewMember, Requirement,
 } from '../types';
 
 const ACTIVE_STATUSES = new Set(['Active', 'In Production', 'Principal Photography']);
 const DEFAULT_CREW_ROLE = 'Assistant Editor';
+const ALL_DAYS = 'ALL';
 
 type CrewRoleOption = {
   role: string;
@@ -142,6 +145,10 @@ function isEditorial(member: ProductionCrewMember): boolean {
   return member.department === 'editorial' || member.role.toLowerCase().includes('editor');
 }
 
+function isAssistantEditor(member: ProductionCrewMember): boolean {
+  return member.active && isEditorial(member) && member.role.toLowerCase().includes('assistant editor');
+}
+
 function defaultCrewForm() {
   return {
     handle: '',
@@ -173,28 +180,32 @@ export function AssistantEditorialPanel({
 }) {
   const [crew, setCrew] = useState<ProductionCrewMember[]>([]);
   const [crewForm, setCrewForm] = useState(defaultCrewForm);
-  const [shootDay, setShootDay] = useState(shootDays[shootDays.length - 1] ?? '31');
-  const [assignee, setAssignee] = useState(currentUserHandle);
+  const [shootDay, setShootDay] = useState(ALL_DAYS);
+  const [assignments, setAssignments] = useState<Requirement[]>([]);
   const [result, setResult] = useState<AssistantQueueResult | null>(null);
   const [isLoadingCrew, setIsLoadingCrew] = useState(false);
+  const [isLoadingAssignments, setIsLoadingAssignments] = useState(false);
   const [isSavingCrew, setIsSavingCrew] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [completingId, setCompletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const canEdit = ACTIVE_STATUSES.has(production.status ?? 'Active');
   const defaultDay = useMemo(() => shootDays[shootDays.length - 1] ?? '31', [shootDays]);
-  const eligibleEditors = useMemo(
-    () => crew.filter(member => member.active && isEditorial(member)),
+  const assistantEditors = useMemo(
+    () => crew.filter(isAssistantEditor),
     [crew],
   );
-  const canPlan = canEdit && eligibleEditors.some(
-    member => member.handle.toLowerCase() === assignee.toLowerCase(),
+  const activeAssignments = useMemo(
+    () => assignments.filter(item => item.status !== 'resolved'),
+    [assignments],
   );
+  const canPlan = canEdit && assistantEditors.length > 0;
 
   useEffect(() => {
-    setShootDay(defaultDay);
+    setShootDay(ALL_DAYS);
     setResult(null);
-  }, [defaultDay, production.production_id]);
+  }, [production.production_id]);
 
   useEffect(() => {
     let live = true;
@@ -203,14 +214,6 @@ export function AssistantEditorialPanel({
       .then(rows => {
         if (!live) return;
         setCrew(rows);
-        setAssignee(current => {
-          const currentAssignee = rows.find(
-            member => member.active && member.handle.toLowerCase() === current.toLowerCase()
-              && isEditorial(member),
-          );
-          const firstEditor = rows.find(member => member.active && isEditorial(member));
-          return (currentAssignee ?? firstEditor)?.handle ?? currentUserHandle;
-        });
       })
       .catch(err => {
         if (live) setError(messageFromError(err, 'Could not load production crew'));
@@ -219,11 +222,32 @@ export function AssistantEditorialPanel({
         if (live) setIsLoadingCrew(false);
       });
     return () => { live = false; };
-  }, [production.production_id, currentUserHandle]);
+  }, [production.production_id]);
+
+  useEffect(() => {
+    let live = true;
+    setIsLoadingAssignments(true);
+    fetchAssistantEditorQueueAssignments(production.production_id)
+      .then(rows => {
+        if (live) setAssignments(rows);
+      })
+      .catch(err => {
+        if (live) setError(messageFromError(err, 'Could not load assistant assignments'));
+      })
+      .finally(() => {
+        if (live) setIsLoadingAssignments(false);
+      });
+    return () => { live = false; };
+  }, [production.production_id]);
 
   const reloadCrew = async () => {
     const rows = await fetchProductionCrew(production.production_id);
     setCrew(rows);
+  };
+
+  const reloadAssignments = async () => {
+    const rows = await fetchAssistantEditorQueueAssignments(production.production_id);
+    setAssignments(rows);
   };
 
   const updateCrewRole = (role: string) => {
@@ -275,12 +299,12 @@ export function AssistantEditorialPanel({
     try {
       const next = await runAssistantEditorQueue({
         production_id: production.production_id,
-        shoot_day: shootDay || defaultDay,
+        shoot_day: shootDay || ALL_DAYS,
         actor: currentUserHandle,
-        assignee,
         max_scenes: 6,
       });
       setResult(next);
+      await reloadAssignments();
       onChanged();
     } catch (err: unknown) {
       setError(messageFromError(err, 'Assistant Editor Queue failed'));
@@ -288,6 +312,26 @@ export function AssistantEditorialPanel({
       setIsRunning(false);
     }
   };
+
+  const completeAssignment = async (assignment: Requirement) => {
+    setCompletingId(assignment.requirement_id);
+    setError(null);
+    try {
+      await resolveRequirement(
+        assignment.requirement_id,
+        `Pre-edit complete for ${assignment.target_label}.`,
+        currentUserHandle,
+      );
+      await reloadAssignments();
+      onChanged();
+    } catch (err: unknown) {
+      setError(messageFromError(err, 'Could not complete assistant assignment'));
+    } finally {
+      setCompletingId(null);
+    }
+  };
+
+  const dayOptions = Array.from(new Set([defaultDay, ...shootDays, '31']));
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 space-y-4">
@@ -419,7 +463,7 @@ export function AssistantEditorialPanel({
             <Wand2 className="w-3.5 h-3.5 text-cyan-300" aria-hidden />
             Assistant Editor Queue
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-[0.75fr_1fr_auto] gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
             <select
               value={shootDay}
               onChange={e => setShootDay(e.target.value)}
@@ -427,30 +471,16 @@ export function AssistantEditorialPanel({
               className="bg-slate-900 border border-slate-700 text-xs px-2 py-1.5 rounded-lg text-gray-200 disabled:opacity-40"
               aria-label="Assistant queue shoot day"
             >
-              {Array.from(new Set([defaultDay, ...shootDays, '31'])).map(day => (
+              <option value={ALL_DAYS}>All days with unassigned clean work</option>
+              {dayOptions.map(day => (
                 <option key={day} value={day}>Day {day}</option>
-              ))}
-            </select>
-            <select
-              value={assignee}
-              onChange={e => setAssignee(e.target.value)}
-              disabled={!canEdit || eligibleEditors.length === 0}
-              className="bg-slate-900 border border-slate-700 text-xs px-2 py-1.5 rounded-lg text-gray-200 disabled:opacity-40"
-              aria-label="Assistant queue responsible editor"
-            >
-              {eligibleEditors.length === 0 ? (
-                <option value={currentUserHandle}>Add editorial crew first</option>
-              ) : eligibleEditors.map(member => (
-                <option key={member.handle} value={member.handle}>
-                  {member.handle} - {member.role}
-                </option>
               ))}
             </select>
             <button
               type="button"
               onClick={runQueue}
               disabled={!canPlan || isRunning}
-              title={canPlan ? 'Plan assistant editor batch' : 'Add an active assistant editor to this production crew first'}
+              title={canPlan ? 'Plan assistant editor batches' : 'Add active assistant editors to this production crew first'}
               className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
             >
               {isRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
@@ -481,7 +511,7 @@ export function AssistantEditorialPanel({
                 ))}
                 {result.scenes.length === 0 && (
                   <p className="text-sm text-gray-400 border border-slate-800 rounded-xl p-3 bg-slate-900/50">
-                    No clean scene batch was ready for this day.
+                    No unassigned clean scene batch was ready for this selection.
                   </p>
                 )}
               </div>
@@ -500,6 +530,53 @@ export function AssistantEditorialPanel({
             </div>
           )}
 
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-300">Running pre-edit assignments</p>
+              {isLoadingAssignments && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-500" />}
+            </div>
+            {activeAssignments.length === 0 ? (
+              <p className="text-sm text-gray-400 border border-slate-800 rounded-xl p-3 bg-slate-900/50">
+                No assistant scenes are currently assigned.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {activeAssignments.map(assignment => {
+                  const canComplete = assignment.assigned_to.toLowerCase() === currentUserHandle.toLowerCase();
+                  return (
+                    <div
+                      key={assignment.requirement_id}
+                      className="border border-slate-800 rounded-xl p-3 bg-slate-900/50"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-white truncate">{assignment.target_label}</p>
+                          <p className="text-[11px] text-gray-500 truncate">
+                            {assignment.assigned_to} · {assignment.status}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => completeAssignment(assignment)}
+                          disabled={!canComplete || completingId === assignment.requirement_id}
+                          title={canComplete ? 'Mark pre-edit complete' : 'Only the assigned assistant can complete this'}
+                          className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold border border-emerald-700/60 text-emerald-200 px-2.5 py-1 rounded-lg disabled:opacity-40"
+                        >
+                          {completingId === assignment.requirement_id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5" />
+                          )}
+                          Complete
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {!result && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-gray-400">
               <div className="border border-slate-800 rounded-xl p-3 bg-slate-900/50">
@@ -512,7 +589,7 @@ export function AssistantEditorialPanel({
               </div>
               <div className="border border-slate-800 rounded-xl p-3 bg-slate-900/50">
                 <p className="text-gray-200 font-semibold">Assign</p>
-                <p>scene tasks owned by the assistant editor</p>
+                <p>scene tasks balanced across assistant editors</p>
               </div>
             </div>
           )}

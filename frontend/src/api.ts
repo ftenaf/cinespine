@@ -390,6 +390,17 @@ export async function runAssistantEditorQueue(payload: {
   return res.json();
 }
 
+export async function fetchAssistantEditorQueueAssignments(
+  productionId: string,
+  activeOnly = false,
+): Promise<import('./types').Requirement[]> {
+  const q = new URLSearchParams({ production_id: productionId });
+  if (activeOnly) q.set('active_only', 'true');
+  const res = await fetch(`${API_BASE}/agents/assistant-editor-queue/assignments?${q.toString()}`);
+  if (!res.ok) throw await apiError(res, 'Failed to fetch assistant editor queue assignments');
+  return res.json();
+}
+
 export async function fetchRequirementHistory(
   requirementId: string,
 ): Promise<import('./types').RequirementEvent[]> {

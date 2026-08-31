@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
-import { ProductionDashboard as Board, ProgressAxis, TagVocabulary } from '../types';
+import { Loader2, RefreshCw, AlertTriangle, PieChart } from 'lucide-react';
+import {
+  PreEditingProgress,
+  ProductionDashboard as Board,
+  ProgressAxis,
+  TagVocabulary,
+} from '../types';
 import { fetchDashboard } from '../api';
 import { collapseFeed } from '../tagFeed';
 
@@ -32,6 +37,93 @@ const STATUS_BAR: Record<string, string> = {
 };
 
 const NEED_ICONS: Record<string, string> = { sfx: '🔊', subtitles: '💬', translation: '🌐' };
+
+function shortDateTime(value?: string | null): string {
+  if (!value) return 'not yet';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function PreEditingProgressCard({ progress }: { progress: PreEditingProgress }) {
+  const percent = Math.max(0, Math.min(100, progress.completion_percent));
+  const chartStyle = {
+    background: `conic-gradient(#34d399 ${percent}%, #1e293b 0)`,
+  };
+
+  return (
+    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold text-white flex items-center gap-2">
+            <PieChart className="w-4 h-4 text-emerald-300" aria-hidden />
+            Pre-editing phase
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            {progress.completed} of {progress.total} assigned scene/shot card{progress.total === 1 ? '' : 's'} complete
+          </p>
+        </div>
+        <div
+          className="w-20 h-20 rounded-full border border-slate-700 grid place-items-center shrink-0"
+          style={chartStyle}
+          title={`${percent}% complete`}
+        >
+          <div className="w-14 h-14 rounded-full bg-slate-950 grid place-items-center">
+            <span className="text-sm font-mono text-white">{percent}%</span>
+          </div>
+        </div>
+      </div>
+
+      {progress.total === 0 ? (
+        <p className="mt-4 text-xs text-gray-400">
+          No assistant editor queue cards have been assigned yet.
+        </p>
+      ) : (
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+          {progress.by_assistant.map(row => (
+            <div key={row.handle} className="border border-slate-800 rounded-xl p-3 bg-slate-950/50">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-xs font-semibold text-white truncate">{row.handle}</p>
+                <p className="text-[11px] font-mono text-emerald-200">{row.completed} done</p>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-1">
+                {row.pending} running · {row.assigned} assigned
+              </p>
+              <p className="text-[11px] text-gray-400 mt-1">
+                {row.scenes_completed} scene{row.scenes_completed === 1 ? '' : 's'} · {row.shots_completed} shot{row.shots_completed === 1 ? '' : 's'}
+              </p>
+              <p className="text-[10px] text-gray-500 mt-1">
+                last completed {shortDateTime(row.last_completed_at)}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {progress.recent_completed.length > 0 && (
+        <div className="mt-4 border-t border-slate-800 pt-3">
+          <p className="text-[11px] font-semibold text-gray-300 mb-2">Recent completions</p>
+          <div className="space-y-1">
+            {progress.recent_completed.map(item => (
+              <p key={item.requirement_id} className="text-[11px] text-gray-500">
+                <span className="text-gray-300">{item.resolved_by}</span> finished{' '}
+                <span className="font-mono text-gray-300">
+                  {item.target_type === 'scene' ? 'Sc ' : ''}{item.target_id}
+                </span>{' '}
+                {shortDateTime(item.resolved_at)}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ProgressBar({ axis, label, vocabulary }: {
   axis: ProgressAxis; label: string; vocabulary: TagVocabulary;
@@ -172,6 +264,8 @@ export function ProductionDashboardPanel({ productionId, reloadKey }: {
         <ProgressBar axis={board.shots} label="Shots" vocabulary={board.vocabulary} />
         <ProgressBar axis={board.scenes} label="Scenes" vocabulary={board.vocabulary} />
       </div>
+
+      <PreEditingProgressCard progress={board.pre_editing} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
