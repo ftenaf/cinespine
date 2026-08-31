@@ -251,7 +251,7 @@ class FakeClickHouse:
         self.rows = []
         self.fail = fail
 
-    def insert(self, table, rows, column_names):
+    def insert(self, table, rows, column_names, **kwargs):
         if self.fail:
             raise ConnectionError("clickhouse is down")
         self.rows.append((table, rows, column_names))

@@ -1,16 +1,32 @@
-# Named explicitly rather than derived from the directory. Every compose file
-# here used to default to `cinespine`, so a `--remove-orphans` against one
-# reached the containers of another: testing the PostHog stack took down this
-# one's ClickHouse, along with Grafana and Prometheus.
-#
-# This one keeps the name it already had, deliberately. The project name is
-# part of a volume's name, so changing it would orphan
-# `cinespine_clickhouse_data` and the spine's analytical mirror would come back
-# empty, which looks exactly like a mirror that was never written to.
 name: cinespine
 
 services:
-  # ClickHouse OLAP Event Spine
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cinespine-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: cinespine-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=8123
+      - CLICKHOUSE_USERNAME=default
+      - CLICKHOUSE_PASSWORD=password
+      - CLICKHOUSE_MCP_URL=http://localhost:8123/mcp
+    depends_on:
+      - clickhouse
+
   clickhouse:
     image: clickhouse/clickhouse-server:24.3
     container_name: cinespine-clickhouse
@@ -23,16 +39,39 @@ services:
       CLICKHOUSE_PASSWORD: password
     volumes:
       - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/users.d:/etc/clickhouse-server/users.d
     ulimits:
       nofile:
         soft: 262144
         hard: 262144
 
-# Grafana is defined in docker-compose.observability.yml and nowhere else.
-# There used to be a second one here with the same container name and the same
-# port; a shared project name let Compose treat the two as one service, so the
-# last `up` quietly won and nobody noticed. The volume it declared,
-# cinespine_grafana_data, was never written to -- the running Grafana uses bind
-# mounts -- and is left on disk rather than removed here.
+  # Observability Stack
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: cinespine-prometheus
+    profiles: [ "observability" ]
+    volumes:
+      - ./grafana/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: cinespine-grafana
+    profiles: [ "observability" ]
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - ./grafana/provisioning/alerting:/etc/grafana/provisioning/alerting
+    environment:
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+
 volumes:
   clickhouse_data:

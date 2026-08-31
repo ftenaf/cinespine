@@ -190,7 +190,9 @@ def test_agent_uses_clickhouse_mcp_and_creates_requirement(monkeypatch):
     result = asyncio.run(agent.run("PROD", "31"))
 
     assert result.mcp_status.available is True
-    assert [call.tool for call in result.tool_calls] == ["list_tables", "run_query", "run_query"]
+    assert [call.tool for call in result.tool_calls] == [
+        "list_tables", "run_query", "run_query", "run_query", "run_query", "run_query"
+    ]
     assert result.requirement_actions[0].action == "created"
     requirements = spine.list_requirements(production_id="PROD")
     assert len(requirements) == 1

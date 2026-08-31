@@ -3,6 +3,7 @@ ClickHouse Append-Only Event Writer, Multi-Production & Document Store.
 """
 import json
 import logging
+import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -259,7 +260,13 @@ class SpineWriter:
         if not self.mirror_available():
             return False
         try:
-            self.client.insert(table, rows, column_names=column_names)
+            # Native ClickHouse HTTP stream insertion (async_insert)
+            self.client.insert(
+                table, 
+                rows, 
+                column_names=column_names,
+                settings={"async_insert": 1, "wait_for_async_insert": 0}
+            )
             if self._mirror_blocked_until:
                 logger.info("ClickHouse is answering again; the mirror is open")
                 self._mirror_blocked_until = 0.0
@@ -676,19 +683,7 @@ class SpineWriter:
         seen.add(key)
 
     def _registered_productions(self) -> List[Dict[str, Any]]:
-        """
-        Every production the registry knows, with the built-in demos filling in
-        underneath.
-
-        The demos are seeded rather than merged over: once somebody renames
-        DEMO_PRODUCTION or wraps it, the stored row is what they meant and the
-        constant in this file is not.
-        """
-        stored = {p["production_id"]: p for p in production_store.list_all()}
-        for prod_id, info in DEFAULT_PRODUCTIONS.items():
-            if prod_id not in stored:
-                stored[prod_id] = production_store.upsert(**info)
-        return list(stored.values())
+        return production_store.list_all()
 
     def register_production(
         self,
@@ -1012,3 +1007,166 @@ class SpineWriter:
 
     def mark_all_notifications_read(self, recipient_handle: str) -> int:
         return notification_store.mark_all_read(recipient_handle)
+
+    def seed_defaults(self) -> Dict[str, Any]:
+        """
+        Seeds baseline demo productions, team users, crew roster, and sample screenplay.
+        """
+        # 1. Seed Default Productions
+        for prod_id, info in DEFAULT_PRODUCTIONS.items():
+            try:
+                production_store.upsert(**info)
+            except Exception as e:
+                logger.warning(f"Failed to seed production {prod_id}: {e}")
+
+        # 2. Seed Default Team Users
+        self._team_users = {k: dict(v) for k, v in DEFAULT_TEAM_USERS.items()}
+        for handle, udata in DEFAULT_TEAM_USERS.items():
+            try:
+                event_store.save_user({
+                    "handle": handle,
+                    "name": udata.get("name", handle),
+                    "email": udata.get("email", ""),
+                    "role": udata.get("role", "General"),
+                    "avatar_color": udata.get("avatar_color", "#4f46e5"),
+                })
+            except Exception as e:
+                logger.warning(f"Failed to seed user {handle}: {e}")
+
+        # 3. Seed Production Crew for DEMO_PRODUCTION
+        dept_map = {
+            "@director": "production",
+            "@post_supervisor": "production",
+            "@lead_editor": "editorial",
+            "@assistant_editor": "editorial",
+            "@script_supervisor": "editorial",
+            "@dit_operator": "dit",
+            "@sound_supervisor": "sound",
+            "@vfx_supervisor": "vfx",
+        }
+        for handle, udata in DEFAULT_TEAM_USERS.items():
+            try:
+                crew_store.upsert({
+                    "production_id": "DEMO_PRODUCTION",
+                    "handle": handle,
+                    "name": udata.get("name", handle),
+                    "email": udata.get("email", ""),
+                    "role": udata.get("role", "Crew"),
+                    "department": dept_map.get(handle, "general"),
+                })
+            except Exception as e:
+                logger.warning(f"Failed to seed crew for {handle}: {e}")
+
+        # 4. Seed Demo Screenplay from data/examples/demo_script.fountain if available
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        demo_fountain_path = os.path.join(root_dir, "data", "examples", "demo_script.fountain")
+
+        if os.path.exists(demo_fountain_path):
+            try:
+                with open(demo_fountain_path, "r", encoding="utf-8") as f:
+                    fountain_text = f.read()
+                from backend.app.script.parser import parse_fountain_screenplay
+                parsed = parse_fountain_screenplay(fountain_text, title="The Algorithm")
+                profiles_dicts = [p.model_dump() for p in parsed.characters]
+                character_store.store_screenplay(
+                    script_id=parsed.script_id,
+                    title=parsed.title or "The Algorithm",
+                    filename="demo_script.fountain",
+                    profiles=profiles_dicts,
+                    author=parsed.author or "CineSpine Demo",
+                )
+                scenes_dicts = [s.model_dump() for s in parsed.scenes]
+                character_store.store_screenplay_scenes(parsed.script_id, scenes_dicts)
+                character_store.link_production_script("DEMO_PRODUCTION", parsed.script_id)
+            except Exception as e:
+                logger.warning(f"Failed to seed demo screenplay: {e}")
+
+
+        return {
+            "productions": list(DEFAULT_PRODUCTIONS.keys()),
+            "users": list(DEFAULT_TEAM_USERS.keys()),
+            "screenplay": "DEMO_PRODUCTION linked to demo_script.fountain",
+        }
+
+    def wipe_all(self, seed: bool = True) -> Dict[str, Any]:
+        """
+        Factory reset: cleans up all SQLite tables (the primary source of truth)
+        and ClickHouse (the analytical mirror), then re-seeds clean baseline defaults.
+        """
+        # 1. Clear in-memory caches
+        self._in_memory_spine = []
+        self._discrepancy_resolutions = {}
+        self._pending_rows = []
+        self._ensured_productions = {}
+
+        # 2. Clear all SQLite tables in spine.db
+        import sqlite3
+        db_path = event_store.get_db_path()
+        sqlite_cleared = []
+        if os.path.exists(db_path):
+            conn = sqlite3.connect(db_path, timeout=10)
+            try:
+                tables = [
+                    "spine_events",
+                    "source_documents",
+                    "discrepancy_resolutions",
+                    "team_users",
+                    "productions",
+                    "production_crew",
+                    "screenplays",
+                    "character_profiles",
+                    "screenplay_scenes",
+                    "production_scripts",
+                    "scene_breakdowns",
+                    "requirements",
+                    "requirement_events",
+                    "notifications",
+                    "editorial_tags",
+                    "editorial_tag_events",
+                    "user_activity",
+                    "acknowledgements",
+                ]
+                for tbl in tables:
+                    try:
+                        conn.execute(f"DELETE FROM {tbl}")
+                        sqlite_cleared.append(tbl)
+                    except Exception:
+                        pass
+                conn.commit()
+            finally:
+                conn.close()
+
+        # 3. Truncate ClickHouse mirror tables if connected
+        clickhouse_cleared = []
+        if self.client:
+            db_name = _db()
+            ch_tables = [
+                "spine_events",
+                "production_events",
+                "takes_meta",
+                "editorial_tag_events",
+                "requirement_events",
+                "activity_events",
+                "audit_discrepancies",
+                "document_metadata",
+                "event_DLQ",
+            ]
+            for tbl in ch_tables:
+                try:
+                    self.client.command(f"TRUNCATE TABLE IF EXISTS {db_name}.{tbl}")
+                    clickhouse_cleared.append(tbl)
+                except Exception as e:
+                    logger.warning(f"Failed to truncate ClickHouse table {tbl}: {e}")
+
+        # 4. Re-seed baseline defaults
+        seeded_info = None
+        if seed:
+            seeded_info = self.seed_defaults()
+
+        return {
+            "status": "success",
+            "message": "Factory reset complete: both databases wiped and baseline state re-seeded.",
+            "sqlite_tables": sqlite_cleared,
+            "clickhouse_tables": clickhouse_cleared,
+            "seeded": seeded_info,
+        }

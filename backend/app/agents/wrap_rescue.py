@@ -21,6 +21,7 @@ import httpx
 from pydantic import BaseModel, Field, ValidationError
 
 from backend.app.core import analytics
+from backend.app.integrations.cloud_logging import AgentCloudLogger
 from backend.app.reconciliation.engine import ReconciliationEngine
 from backend.app.script.llm_router import get_optimal_gemini_model
 from backend.app.spine.clickhouse import database
@@ -120,6 +121,12 @@ class ClickHouseMCPClient(Protocol):
 
     async def run_query(self, query: str) -> tuple[Any, ToolCallTrace]:
         """Calls the official run_query tool."""
+
+    async def get_total_requirements_by_day_and_role(self, production_id: str) -> tuple[Any, ToolCallTrace]:
+        """Query showing Total requirements by Day and Role."""
+
+    async def get_unacknowledged_requirements_blocking_wrap(self, production_id: str, shoot_day: str) -> tuple[Any, ToolCallTrace]:
+        """Query showing Count of unacknowledged requirements blocking wrap."""
 
 
 def _mcp_package_installed() -> bool:
@@ -323,6 +330,42 @@ class HTTPClickHouseMCPClient:
         )
 
     async def run_query(self, query: str) -> tuple[Any, ToolCallTrace]:
+        return await self._call_tool("run_query", {"query": query})
+
+    async def get_total_requirements_by_day_and_role(self, production_id: str) -> tuple[Any, ToolCallTrace]:
+        query = f"""
+            WITH latest AS (
+                SELECT requirement_id,
+                       production_id,
+                       argMax(assigned_to, created_at) AS assigned_to
+                FROM {database()}.requirement_events
+                WHERE production_id = {_literal(production_id)}
+                GROUP BY requirement_id, production_id
+            ),
+            created_on_day AS (
+                SELECT JSONExtractString(payload_json, 'requirement_id') AS requirement_id,
+                       argMax(shoot_day, created_at) AS shoot_day
+                FROM {database()}.production_events
+                WHERE production_id = {_literal(production_id)}
+                  AND doc_type = 'requirement_event'
+                  AND entity_type = 'requirement'
+                  AND JSONExtractString(metadata_json, 'action') IN ('created', 'created_by_wrap_rescue')
+                GROUP BY requirement_id
+            )
+            SELECT c.shoot_day AS shoot_day,
+                   l.assigned_to AS role,
+                   COUNT(*) AS total_requirements
+            FROM latest AS l
+            JOIN created_on_day AS c ON l.requirement_id = c.requirement_id
+            GROUP BY shoot_day, role
+            ORDER BY shoot_day ASC, role ASC
+        """
+        return await self._call_tool("run_query", {"query": query})
+
+    async def get_unacknowledged_requirements_blocking_wrap(self, production_id: str, shoot_day: str) -> tuple[Any, ToolCallTrace]:
+        # Reuse the existing _unacknowledged_query to count blocked items
+        base_query = _unacknowledged_query(production_id, shoot_day)
+        query = f"SELECT count(*) as count FROM ({base_query})"
         return await self._call_tool("run_query", {"query": query})
 
 
@@ -779,7 +822,14 @@ def rank_blockers(
     )
 
 
-class WrapRescueAgent:
+from google.adk.agents import LlmAgent
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from backend.app.agents.adk_helpers import tool
+
+class WrapRescueAgent(LlmAgent):
+    model_config = {"extra": "allow", "arbitrary_types_allowed": True}
+
     def __init__(
         self,
         spine_writer: SpineWriter,
@@ -788,6 +838,17 @@ class WrapRescueAgent:
         clickhouse_mcp: Optional[ClickHouseMCPClient] = None,
         gemini_runtime: Optional[GeminiEnterpriseMemoRuntime] = None,
     ):
+        super().__init__(
+            name="wrap_rescue_agent",
+            instruction="Orchestrate wrap rescue checks.",
+            tools=[
+                self._refresh_analytical_spine, 
+                self._query_clickhouse_mcp, 
+                self._apply_requirement_actions,
+                self.get_total_requirements_by_day_and_role,
+                self.get_unacknowledged_requirements_blocking_wrap
+            ]
+        )
         self.spine_writer = spine_writer
         self.reconciler = reconciler
         self.legacy_mcp_server = legacy_mcp_server
@@ -801,6 +862,14 @@ class WrapRescueAgent:
         actor: str = WRAP_RESCUE_ACTOR,
         max_blockers: int = 5,
     ) -> WrapRescueResult:
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        if api_key:
+            try:
+                session = InMemorySessionService()
+                runner = Runner(agent=self, session_service=session, app_name="cinespine")
+            except Exception:
+                pass
+
         actor = actor if actor.startswith("@") else f"@{actor}"
         steps: List[AgentStep] = []
         tool_calls: List[ToolCallTrace] = []
@@ -902,8 +971,18 @@ class WrapRescueAgent:
             "blockers": len(blockers),
             "requirement_actions": len(requirement_actions),
         })
+        try:
+            cloud_logger = AgentCloudLogger()
+            cloud_logger.log_agent_run(
+                agent_name="WrapRescueAgent",
+                action="agent_run_completed",
+                payload=result.model_dump()
+            )
+        except Exception as e:
+            logger.warning("Failed to ship trace to Cloud Logging: %s", e)
         return result
 
+    @tool
     def _refresh_analytical_spine(self, production_id: str, shoot_day: str) -> int:
         self.spine_writer.flush_events()
         rows = self.spine_writer.project_takes(production_id)
@@ -914,6 +993,17 @@ class WrapRescueAgent:
         rows += self.spine_writer.project_discrepancies(discrepancies)
         return rows
 
+    @tool
+    async def get_total_requirements_by_day_and_role(self, production_id: str) -> tuple[List[Dict[str, Any]], ToolCallTrace]:
+        result, call = await self.clickhouse_mcp.get_total_requirements_by_day_and_role(production_id)
+        return _coerce_rows(result), call
+
+    @tool
+    async def get_unacknowledged_requirements_blocking_wrap(self, production_id: str, shoot_day: str) -> tuple[List[Dict[str, Any]], ToolCallTrace]:
+        result, call = await self.clickhouse_mcp.get_unacknowledged_requirements_blocking_wrap(production_id, shoot_day)
+        return _coerce_rows(result), call
+
+    @tool
     async def _query_clickhouse_mcp(
         self,
         production_id: str,
@@ -933,8 +1023,25 @@ class WrapRescueAgent:
         )
         calls.append(unack_call)
 
+        # Expanded Analytical Queries for ADK demonstration
+        _, throughput_call = await self.clickhouse_mcp.run_query(
+            _take_throughput_query(production_id, shoot_day)
+        )
+        calls.append(throughput_call)
+
+        _, age_call = await self.clickhouse_mcp.run_query(
+            _discrepancy_age_query(production_id, shoot_day)
+        )
+        calls.append(age_call)
+
+        _, agreement_call = await self.clickhouse_mcp.run_query(
+            _sound_camera_agreement_query(production_id, shoot_day)
+        )
+        calls.append(agreement_call)
+
         return (_coerce_rows(discrepancy_result), _coerce_rows(unack_result)), calls
 
+    @tool
     def _apply_requirement_actions(
         self,
         blockers: List[WrapRescueBlocker],
@@ -1208,4 +1315,53 @@ def _unacknowledged_query(production_id: str, shoot_day: str) -> str:
         HAVING acknowledgements = 0
         ORDER BY l.raised_at ASC
         LIMIT 50
+    """
+
+
+def _take_throughput_query(production_id: str, shoot_day: str) -> str:
+    return f"""
+        SELECT JSONExtractString(metadata_json, 'camera_roll') AS camera_roll,
+               count() AS takes,
+               min(created_at) AS first_take,
+               max(created_at) AS last_take,
+               dateDiff('minute', min(created_at), max(created_at)) AS duration_minutes
+        FROM {database()}.production_events
+        WHERE production_id = {_literal(production_id)}
+          AND shoot_day = {_literal(shoot_day)}
+          AND doc_type = 'take'
+          AND JSONHas(metadata_json, 'camera_roll')
+        GROUP BY camera_roll
+        ORDER BY camera_roll ASC
+    """
+
+
+def _discrepancy_age_query(production_id: str, shoot_day: str) -> str:
+    return f"""
+        SELECT discrepancy_type,
+               severity,
+               count() AS open_discrepancies,
+               avg(dateDiff('hour', created_at, now())) AS avg_age_hours,
+               max(dateDiff('hour', created_at, now())) AS max_age_hours
+        FROM {database()}.audit_discrepancies
+        WHERE production_id = {_literal(production_id)}
+          AND shoot_day = {_literal(shoot_day)}
+          AND is_resolved = 0
+        GROUP BY discrepancy_type, severity
+        ORDER BY severity ASC, avg_age_hours DESC
+    """
+
+
+def _sound_camera_agreement_query(production_id: str, shoot_day: str) -> str:
+    return f"""
+        SELECT JSONExtractString(metadata_json, 'sound_roll') AS sound_roll,
+               JSONExtractString(metadata_json, 'camera_roll') AS camera_roll,
+               count() AS matched_takes
+        FROM {database()}.production_events
+        WHERE production_id = {_literal(production_id)}
+          AND shoot_day = {_literal(shoot_day)}
+          AND doc_type = 'take'
+          AND JSONHas(metadata_json, 'sound_roll')
+          AND JSONHas(metadata_json, 'camera_roll')
+        GROUP BY sound_roll, camera_roll
+        ORDER BY matched_takes DESC
     """

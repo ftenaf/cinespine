@@ -61,7 +61,44 @@ class LiveEventBroker:
         if cls._instance is None:
             cls._instance = super(LiveEventBroker, cls).__new__(cls)
             cls._instance._subscribers = {}
+            cls._instance._setup_pubsub()
         return cls._instance
+
+    def _setup_pubsub(self):
+        import os
+        self.project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
+        self.topic_id = os.environ.get("PUBSUB_TOPIC_ID")
+        self.subscription_id = os.environ.get("PUBSUB_SUBSCRIPTION_ID")
+        self.publisher = None
+        self.subscriber = None
+        self.topic_path = None
+        
+        if self.project_id and self.topic_id:
+            try:
+                from google.cloud import pubsub_v1
+                self.publisher = pubsub_v1.PublisherClient()
+                self.topic_path = self.publisher.topic_path(self.project_id, self.topic_id)
+                logger.info(f"Pub/Sub initialized for topic: {self.topic_path}")
+                
+                if self.subscription_id:
+                    self.subscriber = pubsub_v1.SubscriberClient()
+                    subscription_path = self.subscriber.subscription_path(self.project_id, self.subscription_id)
+                    self.subscriber.subscribe(subscription_path, callback=self._pubsub_callback)
+                    logger.info(f"Pub/Sub subscriber listening on: {subscription_path}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Pub/Sub (fallback to local): {e}")
+                self.publisher = None
+
+    def _pubsub_callback(self, message):
+        try:
+            payload = message.data.decode("utf-8")
+            event_data = json.loads(payload)
+            event = SpineLiveEvent(**event_data)
+            self._broadcast_nowait(event)
+            message.ack()
+        except Exception as exc:
+            logger.error(f"Error processing Pub/Sub message: {exc}")
+            message.nack()
 
     def register_subscriber(
         self,
@@ -92,11 +129,29 @@ class LiveEventBroker:
 
     def publish_sync(self, event: SpineLiveEvent) -> None:
         """Synchronous wrapper to publish an event from synchronous endpoints or background threads."""
-        self._broadcast_nowait(event)
+        if self.publisher and self.topic_path:
+            try:
+                data = event.model_dump_json().encode("utf-8")
+                self.publisher.publish(self.topic_path, data)
+            except Exception as exc:
+                logger.warning(f"Failed to publish to Pub/Sub: {exc}")
+                self._broadcast_nowait(event)
+        else:
+            self._broadcast_nowait(event)
 
     async def publish(self, event: SpineLiveEvent) -> None:
         """Broadcasts event to all matching subscribers."""
-        self._broadcast_nowait(event)
+        if self.publisher and self.topic_path:
+            loop = asyncio.get_running_loop()
+            try:
+                data = event.model_dump_json().encode("utf-8")
+                # Fire and forget over Pub/Sub
+                await loop.run_in_executor(None, self.publisher.publish, self.topic_path, data)
+            except Exception as exc:
+                logger.warning(f"Failed to publish to Pub/Sub: {exc}")
+                self._broadcast_nowait(event)
+        else:
+            self._broadcast_nowait(event)
 
     def _broadcast_nowait(self, event: SpineLiveEvent) -> None:
         dead_subscribers = []

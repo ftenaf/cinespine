@@ -1,0 +1,33 @@
+<clickhouse>
+    <users>
+        <!-- The default user allows managing other users/roles -->
+        <default>
+            <access_management>1</access_management>
+        </default>
+        
+        <!-- Demonstrating RBAC and 2FA (TOTP) for a specific user persona -->
+        <dit_user>
+            <!-- password is 'password' -->
+            <password_sha256_hex>5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8</password_sha256_hex>
+            <time_based_one_time_password>
+                <secret>JBSWY3DPEHPK3PXP</secret>
+            </time_based_one_time_password>
+            <granted_roles>
+                <role>read_only_role</role>
+            </granted_roles>
+        </dit_user>
+    </users>
+
+    <roles>
+        <admin_role>
+            <grants>
+                <query>GRANT ALL ON *.*</query>
+            </grants>
+        </admin_role>
+        <read_only_role>
+            <grants>
+                <query>GRANT SELECT ON cinespine.*</query>
+            </grants>
+        </read_only_role>
+    </roles>
+</clickhouse>

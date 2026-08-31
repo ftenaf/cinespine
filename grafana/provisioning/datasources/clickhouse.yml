@@ -1,0 +1,13 @@
+apiVersion: 1
+datasources:
+  - name: ClickHouse
+    uid: clickhouse_ds
+    type: grafana-clickhouse-datasource
+    access: proxy
+    url: http://cinespine-clickhouse:8123
+    user: default
+    secureJsonData:
+      password: "password"
+    jsonData:
+      defaultDatabase: "cinespine"
+      timeout: 30

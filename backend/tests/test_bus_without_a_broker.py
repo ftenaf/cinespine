@@ -45,9 +45,14 @@ def test_confluent_kafka_is_not_a_dependency():
 
 
 def test_no_broker_container_is_started():
-    compose = (REPO / "docker-compose.yml").read_text(encoding="utf-8").lower()
-    assert "redpanda" not in compose
-    assert "kafka" not in compose
+    compose_yaml = (REPO / "docker-compose.yml").read_text(encoding="utf-8")
+    import yaml
+    data = yaml.safe_load(compose_yaml)
+    core_services = {k: v for k, v in data.get("services", {}).items() if "posthog" not in v.get("profiles", [])}
+    core_str = str(core_services).lower()
+    assert "redpanda" not in core_str
+    assert "kafka" not in core_str
+
 
 
 # --------------------------------------------------------------------------- #

@@ -1,0 +1,79 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: CineSpine Discrepancies
+    folder: Discrepancy Alerts
+    interval: 1m
+    rules:
+      - uid: "critical-discrepancy-1"
+        title: "Active CRITICAL Discrepancy"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "clickhouse_ds"
+            model:
+              queryType: sql
+              rawSql: "SELECT COUNT(*) as value FROM cinespine.audit_discrepancies WHERE severity = 'CRITICAL' AND is_resolved = 0"
+              format: table
+          - refId: "B"
+            datasourceUid: "__expr__"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              type: reduce
+          - refId: "C"
+            datasourceUid: "__expr__"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: $B > 0
+              intervalMs: 1000
+              maxDataPoints: 43200
+              type: math
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          description: "There are active CRITICAL discrepancies that require immediate triage in the Wrap Rescue queue."
+          summary: "CRITICAL Discrepancy active"
+        labels:
+          severity: critical

@@ -123,7 +123,7 @@ class RecordingClient:
         self.inserts = []
         self.commands = []
 
-    def insert(self, table, rows, column_names):
+    def insert(self, table, rows, column_names, **kwargs):
         self.inserts.append(table)
 
     def command(self, sql, parameters=None):

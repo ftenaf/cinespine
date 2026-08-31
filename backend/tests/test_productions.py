@@ -71,9 +71,13 @@ def test_a_production_is_marked_as_registered_by_a_person():
     assert production_store.get(PROD)["origin"] == "registered"
 
 
-def test_the_built_in_demos_are_there_without_being_registered():
+def test_the_built_in_demos_are_seeded():
+    from backend.app.api.routes import spine_writer
+    spine_writer.seed_defaults()
     listed = [p["production_id"] for p in client.get("/api/productions").json()]
     assert "DEMO_PRODUCTION" in listed
+
+
 
 
 # --------------------------------------------------------------------------- #

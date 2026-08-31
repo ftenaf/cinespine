@@ -1033,14 +1033,24 @@ def seed_real_day_data(req: SeedRequest):
     Seeds production documents (ZoeLog Camera A/B/C, Sound Reports, Silverstack & Script Logs)
     from local examples directory or embedded fallback demo dataset into the spine.
     """
-    examples_dir = os.environ.get("CINESPINE_EXAMPLES_DIR", "data/examples")
+    custom_dir = os.environ.get("CINESPINE_EXAMPLES_DIR")
+    if custom_dir:
+        examples_dir = custom_dir
+        use_dir = os.path.exists(examples_dir)
+    else:
+        examples_dir = "data/examples"
+        use_dir = (
+            os.path.exists(examples_dir)
+            and any(f.startswith("DemoProduction") for f in os.listdir(examples_dir))
+        )
+
     ingested_files = []
     skipped_files: List[str] = []
     # Files whose events did not reach the spine. Distinct from skipped, which
     # means "already here": these are failures, and they need chasing.
     failed_files: List[str] = []
 
-    if os.path.exists(examples_dir):
+    if use_dir:
         files = sorted(os.listdir(examples_dir))
         for fn in files:
             fp = os.path.join(examples_dir, fn)
@@ -3273,4 +3283,115 @@ async def generate_storyboard_frame(req: GenerateStoryboardRequest):
         "provider": res.get("provider", "AI Generative Engine"),
         "aspect_ratio": req.aspect_ratio,
     }
+
+# --- Demo Endpoints ---
+
+@router.get("/events/demo")
+async def demo_inject_events():
+    """Injects sample events into the event spine for the end-to-end demo."""
+    import os
+    import hashlib
+    from backend.app.parsers.classifier import classify_document
+    from backend.app.parsers.pdf_parsers import extract_text_from_pdf
+    
+    EXAMPLES_DIR = os.environ.get("CINESPINE_EXAMPLES_DIR", "data/examples")
+    
+    # 1. Screenplay
+    fountain_path = os.path.join(EXAMPLES_DIR, "demo_script.fountain")
+    if os.path.exists(fountain_path):
+        with open(fountain_path, "rb") as f:
+            content_bytes = f.read()
+            raw_text = content_bytes.decode("utf-8", errors="ignore")
+            classification = classify_document("demo_script.fountain", raw_text)
+            checksum = hashlib.sha256(content_bytes).hexdigest()
+            
+            doc_id = spine_writer.store_document(
+                production_id="DEMO_PRODUCTION",
+                shoot_day="31",
+                filename="demo_script.fountain",
+                doc_type=classification.doc_type.value,
+                department=classification.department.value,
+                content=raw_text,
+                checksum=checksum,
+                metadata={"demo": True},
+            )
+            
+            envelope = EventEnvelope(
+                production_id="DEMO_PRODUCTION",
+                shoot_day="31",
+                axis=classification.axis,
+                department=classification.department,
+                doc_type=classification.doc_type,
+                raw_content=raw_text,
+                filename="demo_script.fountain",
+                metadata={"doc_id": doc_id, "demo": True},
+            )
+            topic = f"production.raw.{classification.department.value}"
+            event_bus.publish(topic, envelope)
+            
+    # 2. TCLog
+    tclog_path = os.path.join(EXAMPLES_DIR, "DEMO_TCLog_Synthetic.pdf")
+    if os.path.exists(tclog_path):
+        with open(tclog_path, "rb") as f:
+            content_bytes = f.read()
+            try:
+                raw_text = extract_text_from_pdf(content_bytes)
+            except Exception:
+                raw_text = content_bytes.decode("utf-8", errors="ignore")
+            classification = classify_document("DEMO_TCLog_Synthetic.pdf", raw_text)
+            checksum = hashlib.sha256(content_bytes).hexdigest()
+            
+            doc_id = spine_writer.store_document(
+                production_id="DEMO_PRODUCTION",
+                shoot_day="31",
+                filename="DEMO_TCLog_Synthetic.pdf",
+                doc_type=classification.doc_type.value,
+                department=classification.department.value,
+                content=raw_text,
+                checksum=checksum,
+                metadata={"demo": True},
+            )
+            
+            envelope = EventEnvelope(
+                production_id="DEMO_PRODUCTION",
+                shoot_day="31",
+                axis=classification.axis,
+                department=classification.department,
+                doc_type=classification.doc_type,
+                raw_content=raw_text,
+                filename="DEMO_TCLog_Synthetic.pdf",
+                metadata={"doc_id": doc_id, "demo": True},
+            )
+            topic = f"production.raw.{classification.department.value}"
+            event_bus.publish(topic, envelope)
+
+    spine_writer.flush_events()
+    _project_analytics("DEMO_PRODUCTION", "31")
+
+    return {"status": "success", "message": "Demo events injected"}
+
+@router.get("/wrap-rescue/demo")
+async def demo_wrap_rescue():
+    """Endpoint for a quick agent query."""
+    agent = WrapRescueAgent(
+        spine_writer=spine_writer,
+        reconciler=reconciler,
+        legacy_mcp_server=mcp_server,
+    )
+    result = await agent.run(production_id="DEMO_PRODUCTION", shoot_day="31")
+    memo = result.final_memo or "Wrap Rescue evaluation complete. 0 critical blockers."
+    return {
+        "status": "success",
+        "response": {
+            "response": memo,
+            "result": result.model_dump(),
+        }
+    }
+
+@router.post("/demo/wipe")
+def demo_wipe():
+    """Factory reset the demo state across both SQLite and ClickHouse."""
+    return spine_writer.wipe_all()
+
+
 

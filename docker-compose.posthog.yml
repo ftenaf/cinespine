@@ -1,45 +1,3 @@
-# Self-hosted PostHog. Opt-in, never part of the default `up`.
-#
-#   docker compose -f docker-compose.posthog.yml up -d
-#
-# Why a separate file. This is seven containers, and it brings its own
-# ClickHouse and its own Kafka -- PostHog's internal architecture, not this
-# project's. Starting it alongside the app would roughly double what has to
-# come up before anything can be shown, in exchange for telemetry nobody
-# watches during a demo. So it is here, opt-in, and the app runs without it:
-# unconfigured analytics are a no-op by design.
-#
-# Why self-hosted at all. This product's telemetry says which surfaces are used
-# on which production. Shipping that to a third party is a bigger disclosure
-# than the raw-document endpoint the privacy gate exists to guard. Both clients
-# refuse a host on posthog.com outright -- see backend/app/core/analytics.py and
-# frontend/src/analytics.ts.
-#
-# Ports. Nothing here is published except the web UI, on 8010: PostHog's own
-# default is 8000, which is this app's backend. Its ClickHouse, Kafka, Postgres
-# and Redis are reachable only inside this stack, so they cannot collide with
-# the ClickHouse on 8123/9000 that the spine mirrors to.
-#
-# After it is up, create a project in the UI and put its key in .env:
-#
-#   POSTHOG_API_KEY=phc_...
-#   POSTHOG_HOST=http://localhost:8010
-#   VITE_POSTHOG_KEY=phc_...
-#   VITE_POSTHOG_HOST=http://localhost:8010
-#
-# The VITE_ pair is read at build time, so the frontend needs a rebuild.
-#
-# On first load PostHog shows a preflight page and warns that it is running
-# without TLS. That is expected here: it is bound to localhost and is not
-# reachable from outside the machine. A deployment anyone else can reach needs
-# a certificate and SITE_URL changed to match.
-#
-# Verified end to end on 2026-08-30: all seven containers healthy, /_health
-# returning ok, the preflight page served, and the plugin server reporting
-# "All systems go". Six things were wrong before it did -- see references/log.md.
-
-# Its own project, so `docker compose -f docker-compose.posthog.yml down`
-# cannot reach the ClickHouse and Grafana started by docker-compose.yml.
 name: cinespine-posthog
 
 x-posthog-environment: &posthog_environment
@@ -48,9 +6,6 @@ x-posthog-environment: &posthog_environment
   CLICKHOUSE_DATABASE: posthog
   CLICKHOUSE_SECURE: "false"
   CLICKHOUSE_VERIFY: "false"
-  # Stated on both sides. PostHog sends a non-empty password by default, and a
-  # ClickHouse started without one refuses it -- "Authentication failed" during
-  # the migrations, which reads like a missing user rather than a mismatch.
   CLICKHOUSE_USER: default
   CLICKHOUSE_PASSWORD: posthog
   KAFKA_HOSTS: posthog-kafka:9092
@@ -59,28 +14,13 @@ x-posthog-environment: &posthog_environment
   OBJECT_STORAGE_ENDPOINT: http://posthog-objectstorage:19000
   OBJECT_STORAGE_ACCESS_KEY_ID: object_storage_root_user
   OBJECT_STORAGE_SECRET_ACCESS_KEY: object_storage_root_password
-  # Local deployment over plain HTTP. Both are required or the app redirects
-  # to https and the login page never loads.
   DISABLE_SECURE_SSL_REDIRECT: "true"
   SECURE_COOKIES: "false"
   SITE_URL: http://localhost:8010
-  # Not a secret worth protecting: this instance holds which surfaces of a
-  # demo production were opened, and it is not reachable from outside the host.
   SECRET_KEY: cinespine-local-posthog-not-a-production-secret
 
 services:
   posthog-db:
-    # 12, which is what PostHog's own hobby deploy ships and what this release
-    # is tested against. Its version check refuses anything above 14.1, and no
-    # maintained 14.x patch is below that ceiling -- 14.24 fails it too. The
-    # alternative is SKIP_SERVICE_VERSION_REQUIREMENTS=1 with a newer image,
-    # which overrides an assertion the vendor made about their own schema.
-    #
-    # Postgres 12 is end-of-life, and that is a real cost. It is accepted here
-    # because this container publishes no ports: it is reachable only from
-    # inside this stack's network, and it holds which surfaces of a production
-    # were opened. If you would rather run a patched Postgres, set
-    # SKIP_SERVICE_VERSION_REQUIREMENTS=1 in the environment above and use 16.
     image: postgres:12-alpine
     container_name: cinespine-posthog-db
     environment:
@@ -90,7 +30,7 @@ services:
     volumes:
       - posthog_postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U posthog"]
+      test: [ "CMD-SHELL", "pg_isready -U posthog" ]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -101,17 +41,12 @@ services:
     volumes:
       - posthog_redis:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 5s
       retries: 20
 
-  # PostHog's own ClickHouse, not the spine's. It owns its schema and runs its
-  # own migrations against it, so the two must not share an instance.
   posthog-clickhouse:
-    # 22.8, not the 24.3 the spine mirrors to. This PostHog release declares
-    # >=21.6,<22.9 and refuses outside it. Another reason the two ClickHouses
-    # cannot be one: they do not even want the same version.
     image: clickhouse/clickhouse-server:22.8
     container_name: cinespine-posthog-clickhouse
     environment:
@@ -120,21 +55,17 @@ services:
       - posthog-kafka
     volumes:
       - posthog_clickhouse:/var/lib/clickhouse
-      # Defines the `posthog` cluster its migrations run ON CLUSTER against.
       - ./docker/posthog-clickhouse/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
     ulimits:
       nofile:
         soft: 262144
         hard: 262144
     healthcheck:
-      test: ["CMD", "clickhouse-client", "--password", "posthog", "--query", "SELECT 1"]
+      test: [ "CMD", "clickhouse-client", "--password", "posthog", "--query", "SELECT 1" ]
       interval: 10s
       timeout: 5s
       retries: 30
 
-  # PostHog ingests through Kafka. This one is its own and internal to this
-  # stack -- unlike the Redpanda container that used to sit in the base compose
-  # file with nothing connected to it, which is why that one was removed.
   posthog-kafka:
     image: docker.redpanda.com/redpandadata/redpanda:v23.3.11
     container_name: cinespine-posthog-kafka
@@ -148,7 +79,7 @@ services:
       - --kafka-addr PLAINTEXT://0.0.0.0:9092
       - --advertise-kafka-addr PLAINTEXT://posthog-kafka:9092
     healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      test: [ "CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'" ]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -163,33 +94,19 @@ services:
     volumes:
       - posthog_objectstorage:/data
     healthcheck:
-      # Not curl: this image has no shell utilities, only `mc`. And `mc ready
-      # local` assumes port 9000, so the alias has to be set explicitly --
-      # otherwise the check never passes and posthog-web waits forever on a
-      # dependency that is actually up.
       test:
         - CMD-SHELL
         - >-
-          mc alias set hc http://localhost:19000
-          "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null 2>&1
-          && mc ready hc
+          mc alias set hc http://localhost:19000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null 2>&1 && mc ready hc
       interval: 10s
       timeout: 5s
       retries: 20
 
-  # The image's own entrypoint, `./bin/docker`, runs the migrations, starts the
-  # celery worker and then serves. One container rather than three, and the
-  # migrations cannot race a worker that assumes they are done.
-  #
-  # Not `/compose/start`: that path is mounted from PostHog's own repo by their
-  # hobby compose file and does not exist in the image. Written from memory the
-  # first time, and the container would not start.
   posthog-web:
     image: posthog/posthog:release-1.43.0
     container_name: cinespine-posthog-web
     environment: *posthog_environment
     ports:
-      # 8010, not PostHog's default 8000: that is this app's backend.
       - "8010:8000"
     depends_on:
       posthog-db:
@@ -203,25 +120,17 @@ services:
       posthog-objectstorage:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/_health || exit 1"]
-      # The migrations run before it serves, and on a cold volume they take a
-      # few minutes. start_period, not more retries: a failure during that
-      # window is not a failure.
+      test: [ "CMD-SHELL", "curl -fsS http://localhost:8000/_health || exit 1" ]
       start_period: 600s
       interval: 10s
       timeout: 5s
       retries: 10
 
-  # Ingestion: consumes from Kafka and writes to PostHog's ClickHouse. Without
-  # it the API accepts events and none of them are ever processed.
   posthog-plugins:
     image: posthog/posthog:release-1.43.0
     container_name: cinespine-posthog-plugins
     command: ./bin/plugin-server --no-restart-loop
     environment: *posthog_environment
-    # Waits for the web container to be serving, not merely started: the
-    # plugin server exits immediately against a database the migrations have
-    # not reached yet.
     depends_on:
       posthog-web:
         condition: service_healthy

@@ -133,7 +133,7 @@ class FakeClickHouse:
         self.commands = []
         self.rows = []
 
-    def insert(self, table, rows, column_names):
+    def insert(self, table, rows, column_names, **kwargs):
         self.rows.append((table, rows, column_names))
 
     def command(self, sql, parameters=None):

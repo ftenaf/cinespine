@@ -441,7 +441,7 @@ class FakeClickHouse:
         self.rows = []
         self.fail = fail
 
-    def insert(self, table, rows, column_names):
+    def insert(self, table, rows, column_names, **kwargs):
         if self.fail:
             raise ConnectionError("clickhouse is down")
         self.rows.append((table, rows, column_names))
@@ -937,7 +937,7 @@ class CountingClickHouse(FakeClickHouse):
         super().__init__(fail=fail)
         self.attempts = 0
 
-    def insert(self, table, rows, column_names):
+    def insert(self, table, rows, column_names, **kwargs):
         self.attempts += 1
         super().insert(table, rows, column_names)
 

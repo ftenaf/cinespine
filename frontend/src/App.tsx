@@ -8,7 +8,6 @@ import {
   Maximize2, ExternalLink, Video, Mic, MapPin,
   Bell, CheckCheck, PlusCircle, ChevronDown, Send, ShieldAlert,
   Radio, ListTodo, ArrowRight
-, BarChart3
 } from 'lucide-react';
 import { 
   TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, SequenceRecord,
@@ -32,6 +31,7 @@ import { ScriptSceneButton } from './components/ScriptContextPanel';
 import { RequirementRow } from './components/RequirementsBoard';
 import { identify, startAnalytics, trackView } from './analytics';
 import { ProductionsHub } from './components/ProductionsHub';
+import { HackathonDemo } from './components/HackathonDemo';
 
 
 
@@ -128,8 +128,8 @@ export default function App() {
   const [reqFilterCategory, setReqFilterCategory] = useState<string>('ALL');
   const [reqSearchQuery, setReqSearchQuery] = useState<string>('');
 
-  // Top-Level Pillar Navigation: Pre-Production Studio vs Set & Editorial Spine
-  const [currentPillar, setCurrentPillar] = useState<'studio' | 'spine' | 'productions'>('studio');
+  // Top-Level Pillar Navigation: Pre-Production Studio vs Set & Editorial Spine vs Hackathon Demo
+  const [currentPillar, setCurrentPillar] = useState<'studio' | 'spine' | 'productions' | 'demo'>('demo');
 
   // Active View & Filters for Set & Editorial Spine
   const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents' | 'requirements'>('master');
@@ -885,6 +885,8 @@ export default function App() {
               <p className="text-[10px] text-gray-300">
                 {currentPillar === 'studio'
                   ? 'AI Screenplay Breakdown, Cast Profiler & Tri-Modal DoP Previz'
+                  : currentPillar === 'demo'
+                    ? 'Google Cloud Partner Showcase Demo'
                   : currentPillar === 'productions'
                     ? 'Production Registry & Progress'
                     : `${activeProduction.name} — Assistant Editor Card & Discrepancy Hub`}
@@ -927,8 +929,18 @@ export default function App() {
                 : 'text-gray-300 hover:text-white hover:bg-slate-900'
             }`}
           >
-            <BarChart3 className="w-4 h-4 text-white" />
-            🗂️ Productions
+            Productions
+          </button>
+          
+          <button
+            onClick={() => setCurrentPillar('demo')}
+            className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold transition shadow-sm ${
+              currentPillar === 'demo'
+                ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/30'
+                : 'text-gray-300 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            Hackathon Demo
           </button>
         </div>
 
@@ -1137,6 +1149,15 @@ export default function App() {
             team={teamUsers}
             currentUserHandle={currentUser.handle}
           />
+        </main>
+      )}
+
+      {/* ===================================================================== */}
+      {/* PILLAR 4: HACKATHON DEMO                                              */}
+      {/* ===================================================================== */}
+      {currentPillar === 'demo' && (
+        <main className="flex-1 w-full h-[calc(100vh-65px)] overflow-y-auto bg-[#090D16]">
+          <HackathonDemo />
         </main>
       )}
 

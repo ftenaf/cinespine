@@ -64,6 +64,7 @@ htmlcov/
 # Point CINESPINE_EXAMPLES_DIR at a local copy instead.
 data/raw/
 data/staging/
+
 data/examples/
 *.pdf
 *.cif
@@ -74,6 +75,8 @@ spine.db
 # data that has not been checkpointed yet, so they are as local as the db.
 *.db-wal
 *.db-shm
+backups/
+
 
 # Local code-intelligence indexes (rebuilt on demand, machine-specific)
 .codegraph/

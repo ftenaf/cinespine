@@ -38,10 +38,49 @@ logger = logging.getLogger(__name__)
 SLATE_TOKEN = r"(?:\d+[A-Z]{0,2}(?:[+-]\d+[A-Z]{0,2})*/(?:\d+[A-Z]?|WT)|\d+WT)"
 
 
+def _extract_text_with_document_ai(pdf_bytes: bytes) -> Optional[str]:
+    import os
+    try:
+        from google.cloud import documentai
+        from google.api_core.exceptions import GoogleAPIError
+    except ImportError:
+        return None
+
+    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
+    location = os.environ.get("DOCUMENTAI_LOCATION", "us-central1")
+    processor_id = os.environ.get("DOCUMENTAI_PROCESSOR_ID")
+
+    if not project_id or not processor_id:
+        return None
+
+    try:
+        client_options = {"api_endpoint": f"{location}-documentai.googleapis.com"}
+        client = documentai.DocumentProcessorServiceClient(client_options=client_options)
+        
+        name = client.processor_path(project_id, location, processor_id)
+        
+        raw_document = documentai.RawDocument(
+            content=pdf_bytes,
+            mime_type="application/pdf"
+        )
+        
+        request = documentai.ProcessRequest(
+            name=name,
+            raw_document=raw_document
+        )
+        
+        result = client.process_document(request=request)
+        return result.document.text
+    except Exception as exc:
+        logger.warning(f"Document AI extraction failed, falling back to local PDF parser: {exc}")
+        return None
+
+
 def extract_text_from_pdf(pdf_bytes_or_file) -> str:
     """
     Extracts concatenated text from all pages of a PDF, detecting both text characters
-    and graphical vector circle curves drawn over circled takes.
+    and graphical vector circle curves drawn over circled takes. Uses Document AI
+    if configured, otherwise falls back to pypdf/pdfplumber.
     """
     if isinstance(pdf_bytes_or_file, bytes):
         pdf_bytes = pdf_bytes_or_file
@@ -49,6 +88,13 @@ def extract_text_from_pdf(pdf_bytes_or_file) -> str:
         pdf_bytes = pdf_bytes_or_file.read()
     else:
         pdf_bytes = bytes(pdf_bytes_or_file)
+
+    # 1. Attempt Cloud Document AI OCR Pipeline
+    doc_ai_text = _extract_text_with_document_ai(pdf_bytes)
+    if doc_ai_text:
+        return doc_ai_text
+
+    # 2. Fallback to local parsing (pypdf/pdfplumber)
 
     reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
     raw_pages = [p.extract_text() or "" for p in reader.pages]

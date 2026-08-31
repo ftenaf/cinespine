@@ -311,9 +311,8 @@ export const ScriptStudio: React.FC = () => {
         // The studio works without a production list; only the attach control
         // needs it, and it says so itself when there is nothing to attach to.
       });
-
-    handleParseScript(DEMO_FOUNTAIN_SCRIPT);
   }, []);
+
 
   const globalDopSettings: DopSettings = {
     dopMode, aspectRatio, selectedPreset, customFocalLength, customAperture,

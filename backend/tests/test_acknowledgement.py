@@ -162,7 +162,7 @@ class FakeClickHouse:
     def __init__(self):
         self.rows = []
 
-    def insert(self, table, rows, column_names):
+    def insert(self, table, rows, column_names, **kwargs):
         self.rows.append((table, rows, column_names))
 
     def command(self, sql, parameters=None):
@@ -191,7 +191,7 @@ def test_a_mirror_that_is_down_does_not_fail_the_acknowledgement():
     from backend.app.spine.writer import SpineWriter
 
     class Broken(FakeClickHouse):
-        def insert(self, table, rows, column_names):
+        def insert(self, table, rows, column_names, **kwargs):
             raise ConnectionError("clickhouse went away")
 
     writer = SpineWriter(clickhouse_client=Broken())
