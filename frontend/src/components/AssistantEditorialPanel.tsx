@@ -13,113 +13,130 @@ import {
   AssistantQueueResult, CrewDepartment, Production, ProductionCrewMember,
 } from '../types';
 
-const DEPARTMENTS: CrewDepartment[] = ['editorial', 'camera', 'sound', 'dit', 'vfx', 'production', 'general'];
 const ACTIVE_STATUSES = new Set(['Active', 'In Production', 'Principal Photography']);
+const DEFAULT_CREW_ROLE = 'Assistant Editor';
+
+type CrewRoleOption = {
+  role: string;
+  department: CrewDepartment;
+};
 
 type CrewRoleGroup = {
   phase: 'Preproduction' | 'Production' | 'Postproduction';
-  roles: string[];
+  roles: CrewRoleOption[];
 };
+
+function crewRole(role: string, department: CrewDepartment): CrewRoleOption {
+  return { role, department };
+}
 
 const ROLE_GROUPS: CrewRoleGroup[] = [
   {
+    phase: 'Postproduction',
+    roles: [
+      crewRole('Post-Production Supervisor', 'editorial'),
+      crewRole('Post-Production Coordinator', 'editorial'),
+      crewRole('Editor', 'editorial'),
+      crewRole('Assistant Editor', 'editorial'),
+      crewRole('Additional Editor', 'editorial'),
+      crewRole('Online Editor', 'editorial'),
+      crewRole('Conform Editor', 'editorial'),
+      crewRole('Colorist', 'editorial'),
+      crewRole('Dailies Colorist', 'editorial'),
+      crewRole('VFX Producer', 'vfx'),
+      crewRole('VFX Editor', 'vfx'),
+      crewRole('Compositor', 'vfx'),
+      crewRole('Motion Graphics Artist', 'vfx'),
+      crewRole('Supervising Sound Editor', 'sound'),
+      crewRole('Dialogue Editor', 'sound'),
+      crewRole('ADR Supervisor', 'sound'),
+      crewRole('Foley Artist', 'sound'),
+      crewRole('Sound Designer', 'sound'),
+      crewRole('Re-recording Mixer', 'sound'),
+      crewRole('Music Supervisor', 'sound'),
+      crewRole('Composer', 'sound'),
+      crewRole('Music Editor', 'sound'),
+      crewRole('Deliverables Coordinator', 'editorial'),
+    ],
+  },
+  {
     phase: 'Preproduction',
     roles: [
-      'Executive Producer',
-      'Producer',
-      'Co-Producer',
-      'Line Producer',
-      'Unit Production Manager',
-      'Production Coordinator',
-      'Production Accountant',
-      'Screenwriter',
-      'Casting Director',
-      'Casting Associate',
-      'Casting Assistant',
-      'Location Manager',
-      'Location Scout',
-      'Production Designer',
-      'Art Director',
-      'Set Decorator',
-      'Costume Designer',
-      'Hair Department Head',
-      'Makeup Department Head',
-      'Storyboard Artist',
-      'Previsualization Artist',
-      'VFX Supervisor',
-      'Stunt Coordinator',
-      'Intimacy Coordinator',
+      crewRole('Executive Producer', 'production'),
+      crewRole('Producer', 'production'),
+      crewRole('Co-Producer', 'production'),
+      crewRole('Line Producer', 'production'),
+      crewRole('Unit Production Manager', 'production'),
+      crewRole('Production Coordinator', 'production'),
+      crewRole('Production Accountant', 'production'),
+      crewRole('Screenwriter', 'production'),
+      crewRole('Casting Director', 'production'),
+      crewRole('Casting Associate', 'production'),
+      crewRole('Casting Assistant', 'production'),
+      crewRole('Location Manager', 'production'),
+      crewRole('Location Scout', 'production'),
+      crewRole('Production Designer', 'production'),
+      crewRole('Art Director', 'production'),
+      crewRole('Set Decorator', 'production'),
+      crewRole('Costume Designer', 'production'),
+      crewRole('Hair Department Head', 'production'),
+      crewRole('Makeup Department Head', 'production'),
+      crewRole('Storyboard Artist', 'production'),
+      crewRole('Previsualization Artist', 'vfx'),
+      crewRole('VFX Supervisor', 'vfx'),
+      crewRole('Stunt Coordinator', 'production'),
+      crewRole('Intimacy Coordinator', 'production'),
     ],
   },
   {
     phase: 'Production',
     roles: [
-      'Director',
-      '1st Assistant Director',
-      '2nd Assistant Director',
-      '2nd 2nd Assistant Director',
-      'Script Supervisor',
-      'Production Assistant',
-      'Director of Photography',
-      'Camera Operator',
-      'Steadicam Operator',
-      '1st Assistant Camera',
-      '2nd Assistant Camera',
-      'Digital Imaging Technician',
-      'Video Assist Operator',
-      'Still Photographer',
-      'Gaffer',
-      'Best Boy Electric',
-      'Electrician',
-      'Key Grip',
-      'Best Boy Grip',
-      'Dolly Grip',
-      'Production Sound Mixer',
-      'Boom Operator',
-      'Sound Utility',
-      'Prop Master',
-      'Wardrobe Supervisor',
-      'Set Costumer',
-      'Key Makeup Artist',
-      'Makeup Artist',
-      'Key Hair Stylist',
-      'Hair Stylist',
-      'Special Effects Supervisor',
-      'Stunt Performer',
-      'Location Assistant',
-      'Transportation Coordinator',
-      'Craft Services',
-    ],
-  },
-  {
-    phase: 'Postproduction',
-    roles: [
-      'Post-Production Supervisor',
-      'Post-Production Coordinator',
-      'Editor',
-      'Assistant Editor',
-      'Additional Editor',
-      'Online Editor',
-      'Conform Editor',
-      'Colorist',
-      'Dailies Colorist',
-      'VFX Producer',
-      'VFX Editor',
-      'Compositor',
-      'Motion Graphics Artist',
-      'Supervising Sound Editor',
-      'Dialogue Editor',
-      'ADR Supervisor',
-      'Foley Artist',
-      'Sound Designer',
-      'Re-recording Mixer',
-      'Music Supervisor',
-      'Composer',
-      'Music Editor',
-      'Deliverables Coordinator',
+      crewRole('Director', 'production'),
+      crewRole('1st Assistant Director', 'production'),
+      crewRole('2nd Assistant Director', 'production'),
+      crewRole('2nd 2nd Assistant Director', 'production'),
+      crewRole('Script Supervisor', 'production'),
+      crewRole('Production Assistant', 'production'),
+      crewRole('Director of Photography', 'camera'),
+      crewRole('Camera Operator', 'camera'),
+      crewRole('Steadicam Operator', 'camera'),
+      crewRole('1st Assistant Camera', 'camera'),
+      crewRole('2nd Assistant Camera', 'camera'),
+      crewRole('Digital Imaging Technician', 'dit'),
+      crewRole('Video Assist Operator', 'camera'),
+      crewRole('Still Photographer', 'camera'),
+      crewRole('Gaffer', 'camera'),
+      crewRole('Best Boy Electric', 'camera'),
+      crewRole('Electrician', 'camera'),
+      crewRole('Key Grip', 'camera'),
+      crewRole('Best Boy Grip', 'camera'),
+      crewRole('Dolly Grip', 'camera'),
+      crewRole('Production Sound Mixer', 'sound'),
+      crewRole('Boom Operator', 'sound'),
+      crewRole('Sound Utility', 'sound'),
+      crewRole('Prop Master', 'production'),
+      crewRole('Wardrobe Supervisor', 'production'),
+      crewRole('Set Costumer', 'production'),
+      crewRole('Key Makeup Artist', 'production'),
+      crewRole('Makeup Artist', 'production'),
+      crewRole('Key Hair Stylist', 'production'),
+      crewRole('Hair Stylist', 'production'),
+      crewRole('Special Effects Supervisor', 'production'),
+      crewRole('Stunt Performer', 'production'),
+      crewRole('Location Assistant', 'production'),
+      crewRole('Transportation Coordinator', 'production'),
+      crewRole('Craft Services', 'production'),
     ],
   },
 ];
+
+function departmentForRole(role: string): CrewDepartment {
+  for (const group of ROLE_GROUPS) {
+    const option = group.roles.find(candidate => candidate.role === role);
+    if (option) return option.department;
+  }
+  return 'general';
+}
 
 function isEditorial(member: ProductionCrewMember): boolean {
   return member.department === 'editorial' || member.role.toLowerCase().includes('editor');
@@ -130,8 +147,8 @@ function defaultCrewForm() {
     handle: '',
     name: '',
     email: '',
-    role: 'Assistant Editor',
-    department: 'editorial' as CrewDepartment,
+    role: DEFAULT_CREW_ROLE,
+    department: departmentForRole(DEFAULT_CREW_ROLE),
   };
 }
 
@@ -207,6 +224,10 @@ export function AssistantEditorialPanel({
   const reloadCrew = async () => {
     const rows = await fetchProductionCrew(production.production_id);
     setCrew(rows);
+  };
+
+  const updateCrewRole = (role: string) => {
+    setCrewForm({ ...crewForm, role, department: departmentForRole(role) });
   };
 
   const addCrew = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -313,7 +334,7 @@ export function AssistantEditorialPanel({
                 <div className="min-w-0">
                   <p className="text-sm text-white truncate">{member.name}</p>
                   <p className="text-[10px] text-gray-500 truncate">
-                    {member.handle} · {member.role} · {member.department}
+                    {member.handle} · {member.role}
                   </p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -362,27 +383,17 @@ export function AssistantEditorialPanel({
             />
             <select
               value={crewForm.role}
-              onChange={e => setCrewForm({ ...crewForm, role: e.target.value })}
+              onChange={e => updateCrewRole(e.target.value)}
               disabled={!canEdit}
-              className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-gray-200 disabled:opacity-40"
+              className="sm:col-span-2 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-gray-200 disabled:opacity-40"
               aria-label="Crew role"
             >
               {ROLE_GROUPS.map(group => (
                 <optgroup key={group.phase} label={group.phase}>
-                  {group.roles.map(role => (
+                  {group.roles.map(({ role }) => (
                     <option key={`${group.phase}-${role}`} value={role}>{role}</option>
                   ))}
                 </optgroup>
-              ))}
-            </select>
-            <select
-              value={crewForm.department}
-              onChange={e => setCrewForm({ ...crewForm, department: e.target.value as CrewDepartment })}
-              disabled={!canEdit}
-              className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-gray-200 disabled:opacity-40"
-            >
-              {DEPARTMENTS.map(department => (
-                <option key={department} value={department}>{department}</option>
               ))}
             </select>
             <input
