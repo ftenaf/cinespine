@@ -5,7 +5,7 @@
 
 [![CI Test Suite](https://img.shields.io/badge/Pytest-173%20passed-brightgreen.svg)](https://github.com/ftenaf/cinespine/actions)
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11%20%7C%203.14-blue.svg)](https://python.org)
-[![Google Cloud: Gemini & Imagen 3](https://img.shields.io/badge/Google%20Cloud-Gemini%20Flash%20%26%20Imagen%203-4285F4.svg)](https://cloud.google.com/vertex-ai)
+[![Google Cloud: Gemini Enterprise & Imagen 3](https://img.shields.io/badge/Google%20Cloud-Gemini%20Enterprise%20%26%20Imagen%203-4285F4.svg)](https://cloud.google.com/vertex-ai)
 [![Event Spine: ClickHouse](https://img.shields.io/badge/Event%20Spine-ClickHouse%20OLAP-FEE000.svg)](https://clickhouse.com)
 [![Observability: Grafana](https://img.shields.io/badge/Observability-Grafana%20Labs-F46800.svg)](https://grafana.com)
 [![Frontend: React 18 + Vite](https://img.shields.io/badge/Frontend-React%2018%20%2B%20Vite%20%2B%20Tailwind-61DAFB.svg)](https://vitejs.dev)
@@ -56,7 +56,7 @@ C4Context
   System_Ext(silverstack, "Pomfort Silverstack Lab", "Generates offload volume XMLs and thumbnail contact sheets")
   System_Ext(gemini_api, "Google Cloud Gemini & Imagen 3", "Extracts semantic narrative tension & synthesizes 35mm concept stills")
   System_Ext(gcs_bucket, "Google Cloud Storage (GCS)", "Archives screenplay PDFs and verified production media assets")
-  System_Ext(clickhouse_cloud, "ClickHouse Cloud", "Analytical OLAP storage for historical event replays & audit logs")
+  System_Ext(clickhouse_cloud, "ClickHouse Cloud + mcp-clickhouse", "Operational memory queried by the Wrap Rescue Agent")
   System_Ext(grafana_cloud, "Grafana Cloud Lighthouse", "Real-time production sync lag and telemetry dashboards")
 
   Rel(script_sup, cinespine, "Uploads Daily Timecode Logs & Lined Pages", "PDF/Text")
@@ -68,7 +68,7 @@ C4Context
 
   Rel(cinespine, gemini_api, "Executes semantic breakdown & Imagen 3 synthesis", "google.genai SDK")
   Rel(cinespine, gcs_bucket, "Archives source scripts & media bytes", "google.cloud.storage SDK")
-  Rel(cinespine, clickhouse_cloud, "Appends immutable production events", "Native / HTTPS")
+  Rel(cinespine, clickhouse_cloud, "Appends event projections and runs agent queries", "Native / HTTPS + MCP")
   Rel(cinespine, grafana_cloud, "Pushes operational telemetry & lag metrics", "Prometheus / OTLP")
 ```
 
@@ -136,7 +136,7 @@ Every department on a film set acts as an **independent witness**. When a user i
 
 | User Type / Role | Emitted Event Types | Description & Semantic Payload | Target Subsystems |
 | :--- | :--- | :--- | :--- |
-| **🎬 Director & DoP** | `SCREENPLAY_PARSED`<br/>`CHARACTER_LOOK_LOCKED`<br/>`3CAM_PREVIZ_RENDERED`<br/>`CAMERA_ANGLE_ADDED`<br/>`CAMERA_ANGLE_DELETED`<br/>`DOP_OPTICS_CONFIGURED` | Uploads script (`.fountain`, `.md`, `.pdf`), extracts cast profiles, adjusts optical framing ($2.39:1$), spawns extra angles (Crane Cam D, Macro Cam E), and renders FLUX.1/Imagen 3 concept stills. | Screenplay Previz Studio, Cast Profiler, Optical Viewfinder |
+| **🎬 Director & DoP** | `SCREENPLAY_PARSED`<br/>`CHARACTER_LOOK_LOCKED`<br/>`3CAM_PREVIZ_RENDERED`<br/>`CAMERA_ANGLE_ADDED`<br/>`CAMERA_ANGLE_DELETED`<br/>`DOP_OPTICS_CONFIGURED` | Uploads script (`.fountain`, `.md`, `.pdf`), extracts cast profiles, adjusts optical framing ($2.39:1$), spawns extra angles (Crane Cam D, Macro Cam E), and renders Imagen 3 concept stills. | Screenplay Previz Studio, Cast Profiler, Optical Viewfinder |
 | **📝 Script Supervisor** | `SCRIPT_REPORT_INGESTED`<br/>`TAKE_LOGGED`<br/>`CIRCLED_TAKE_FLAGGED`<br/>`FALSE_START_RECORDED`<br/>`DIRECTOR_NOTE_APPENDED` | Logs lined pages, continuity notes, False Starts, and circled takes on set. Asserts the "Set Belief" axis. | 3-Axis Reconciliation Engine, Composed Master Sheet |
 | **🎙️ Sound Mixer** | `SOUND_ALE_INGESTED`<br/>`POLY_WAV_TRACKS_MAPPED`<br/>`WILD_TRACK_LOGGED`<br/>`TIMECODE_SYNC_ASSERTED` | Ingests Sound Devices 8-Series BEXT logs, maps ISO tracks (Boom, Lav 1, Lav 2), logs Wild Tracks (`WT 104`), asserts audio existence. | Card & Roll Map, Sequences Matrix, Audio Verifier |
 | **💾 DIT & Data Manager** | `CARD_OFFLOAD_VERIFIED`<br/>`SILVERSTACK_MANIFEST_INGESTED`<br/>`CHECKSUM_VALIDATED`<br/>`RAW_CLIP_REGISTERED` | Offloads camera magazines ($A031$), computes MD5/XXHash64 checksums, parses Silverstack XML manifests, asserts "Physical Existence" axis. | Master Sheet, Roll Map, Storage Verifier |
@@ -236,13 +236,24 @@ flowchart LR
   * Output is **validated, not trusted**: descriptions are checked for filler words, placeholder phrasing, minimum length and the presence of at least one concrete noun. Anything too generic to render gets one targeted retry, and anything still vague is reported rather than passed off as good.
   * Profiles are **editable and durable** — stored in SQLite against a script identity derived from the screenplay text, so hand-authored looks survive a re-upload *and* a backend restart. Structural data (dialogue counts, scene presence, relationships) refreshes from each parse while your edits win.
   * Every generated frame is prompted with **only the characters present in that scene**.
-* **Dynamic LLM Routing for Optimal Token Cost:**
-  * To run cost-effectively, especially during intensive hackathons, CineSpine implements a dynamic LLM router. Trivial semantic tasks (like suggesting preset names or generating short DoP summaries) automatically route to ultra-lightweight models (e.g., **Gemini Flash** or local models like **Gemma 2B** via Ollama), while massive context analysis (like deep script character profiling) scales up to **Pro** models only when required. See our research on [Deploying Tiny LLMs on Google Cloud](docs/research/tiny_llms_gcp.md).
+* **Dynamic Gemini Routing for Optimal Token Cost:**
+  * To run cost-effectively, especially during intensive hackathons, CineSpine implements a dynamic Gemini router. Trivial semantic tasks route to Flash models, while massive context analysis can opt into Pro models only when required.
 
 ### 3. 🔍 3-Axis Discrepancy Reconciliation Engine
 * Reconciles Intent (Planned), Belief (Logged on set), and Existence (Stored on disk) with sub-millisecond precision.
 * Catches silent false starts, unlinked audio tracks, timecode drift, roll name collisions, and missing coverage.
 * Features an interactive **Consensus & Resolution Triage Hub** for Assistant Editors, DITs, and Post Supervisors.
+
+### 3.5 🤖 Wrap Rescue Agent for the ClickHouse Track
+The production hub includes a **Run Wrap Rescue Agent** action built for the ClickHouse hackathon track.
+It projects the latest CineSpine state into ClickHouse, calls the official `mcp-clickhouse` server for
+`list_tables` and `run_query`, ranks active blockers by severity, age and missing acknowledgement, then
+creates or updates requirement cards with notifications and an append-only audit event.
+
+The UI shows the judge-visible trace: MCP connection status, SQL/tool calls, ranked blockers,
+requirement actions, and the final Gemini Enterprise handoff memo. In the demo story, Day 31 has a
+paperwork conflict, missing offload, and unacknowledged sound blocker; ClickHouse is the operational
+memory the agent queries before deciding who must act.
 
 ### 4. 📡 Append-Only Event Spine & Real-Time SSE Bus
 * Backed by **ClickHouse** and SQLite for zero-data-loss event streaming.
@@ -289,10 +300,10 @@ blob.upload_from_string(file_bytes, content_type="application/pdf")
 
 | Partner / Service | Role in CineSpine | Verification |
 | :--- | :--- | :--- |
-| **Google Cloud (Gemini Flash)** | Screenplay semantic analysis, cast inference & DoP prompt compilation | Runtime via `google-genai` SDK; model chosen by `llm_router` |
+| **Google Cloud (Gemini Enterprise)** | Screenplay semantic analysis, cast inference, DoP prompt compilation, and Wrap Rescue memo drafting | Wrap Rescue prefers `google-adk` / Gemini Enterprise Agent Platform runtime, with Vertex AI or Gemini credentials for model calls |
 | **Google Cloud (Imagen 3)** | Photorealistic 35mm cinematic concept art generation | Model `imagen-3.0-generate-002` |
 | **Google Cloud Storage (GCS)** | Screenplay PDF & high-res media archival | Bucket `gs://cinespine-production-media/` |
-| **ClickHouse** | Immutable high-throughput append-only event spine | Time-series event logging & replay |
+| **ClickHouse** | Agent-queryable operational memory | Official `mcp-clickhouse` tool calls plus event projections |
 | **Grafana Labs** | Real-time production sync lag, take throughput telemetry | Metrics exporter (`GET /metrics`) |
 
 ---
@@ -343,6 +354,9 @@ any of it, degrading gracefully rather than failing.
 | `CINESPINE_DB_PATH` | `spine.db` | SQLite file holding screenplays and character profiles. Relative to the working directory, so set an absolute path for a deployment. |
 | `CINESPINE_EXAMPLES_DIR` | `data/examples` | Local folder of example production paperwork. Nothing is committed — see the note below. |
 | `GOOGLE_CLOUD_PROJECT` / `GCS_BUCKET_NAME` | demo values | Google Cloud Storage archival target. |
+| `CLICKHOUSE_MCP_URL` | *unset* | Official `mcp-clickhouse` HTTP endpoint for the Wrap Rescue Agent, for example `http://localhost:4200/mcp`. |
+| `GOOGLE_GENAI_USE_VERTEXAI` | *unset* | Set to `TRUE` to run Gemini calls through Vertex AI / Gemini Enterprise credentials. |
+| `CINESPINE_WRAP_RESCUE_MODEL` | `gemini-flash-latest` | Gemini model used for the Wrap Rescue handoff memo. |
 
 > **Production paperwork is never committed.** Real call sheets, camera reports and script logs are
 > third-party copyrighted material and routinely carry crew personal data. `data/examples/`, `data/raw/`
@@ -450,7 +464,7 @@ cinespine/
 │   ├── app/
 │   │   ├── main.py                      # FastAPI application gateway
 │   │   ├── api/routes.py                # REST & SSE gateway
-│   │   ├── agents/                      # MCP server, multimodal agent
+│   │   ├── agents/                      # multimodal extractors and Wrap Rescue Agent
 │   │   ├── core/telemetry.py            # Prometheus metrics
 │   │   ├── integrations/
 │   │   │   └── google_cloud.py          # google-genai & GCS client
@@ -462,7 +476,7 @@ cinespine/
 │   │   │   ├── character_ai.py          # AI character inference + vagueness validator
 │   │   │   ├── breakdown_engine.py      # Multi-camera coverage engine
 │   │   │   ├── dop_presets.py           # Master DoP style presets
-│   │   │   ├── ai_image_service.py      # Imagen / DALL·E generation
+│   │   │   ├── ai_image_service.py      # Google Imagen generation
 │   │   │   └── storyboard_generator.py  # 35mm still generator
 │   │   ├── spine/
 │   │   │   ├── writer.py                # Append-only event & document store

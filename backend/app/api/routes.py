@@ -22,6 +22,7 @@ from backend.app.spine import breakdown_store
 from backend.app.spine import tag_store
 from backend.app.reconciliation.engine import ReconciliationEngine
 from backend.app.agents.mcp_server import ClickHouseMCPServer, GeminiDiscrepancyAssistant
+from backend.app.agents.wrap_rescue import WRAP_RESCUE_ACTOR, WrapRescueAgent
 from backend.app.parsers.classifier import classify_document, infer_production_and_day
 from backend.app.agents.multimodal import extract_lined_page_if_enabled
 from backend.app.agents.camera_report_vision import read_camera_report_if_enabled
@@ -193,6 +194,13 @@ class UpdateRequirementRequest(BaseModel):
 class ResolveRequirementRequest(BaseModel):
     resolution_note: str
     resolved_by: str = "@user"
+
+
+class RunWrapRescueRequest(BaseModel):
+    production_id: str = "DEMO_PRODUCTION"
+    shoot_day: str = "31"
+    actor: str = WRAP_RESCUE_ACTOR
+    max_blockers: int = Field(default=5, ge=1, le=12)
 
 
 
@@ -1657,6 +1665,53 @@ def get_current_user(handle: Optional[str] = None):
     # Fallback to default user
     users = spine_writer.list_users()
     return users[0] if users else {"handle": "@director", "name": "Director", "role": "Director"}
+
+
+# ==========================================
+# Wrap Rescue Agent
+# ==========================================
+@router.post("/agents/wrap-rescue/run")
+async def run_wrap_rescue_agent(req: RunWrapRescueRequest):
+    """
+    Runs the hackathon-facing multi-step agent.
+
+    The workflow first projects the analytical mirror, then queries ClickHouse
+    through the official mcp-clickhouse server when configured. Requirement
+    writes are schema-validated by the same store the UI uses.
+    """
+    agent = WrapRescueAgent(
+        spine_writer=spine_writer,
+        reconciler=reconciler,
+        legacy_mcp_server=mcp_server,
+    )
+    result = await agent.run(
+        production_id=req.production_id,
+        shoot_day=req.shoot_day,
+        actor=req.actor,
+        max_blockers=req.max_blockers,
+    )
+
+    event_broker.publish_sync(SpineLiveEvent(
+        event_type="WRAP_RESCUE_RUN",
+        production_id=result.production_id,
+        shoot_day=result.shoot_day,
+        actor_handle=result.actor,
+        target_type="production",
+        target_id=result.production_id,
+        target_label=result.production_id,
+        summary=(
+            f"Wrap Rescue ranked {len(result.blockers)} blockers and recorded "
+            f"{len(result.requirement_actions)} requirement actions"
+        ),
+        data={
+            "mcp_available": result.mcp_status.available,
+            "tool_calls": len(result.tool_calls),
+            "blockers": len(result.blockers),
+            "requirement_actions": len(result.requirement_actions),
+        },
+    ))
+
+    return result.model_dump()
 
 
 # ==========================================

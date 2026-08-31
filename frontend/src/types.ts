@@ -232,6 +232,85 @@ export interface Requirement {
   updated_at: string;
 }
 
+export interface ToolCallTrace {
+  tool: string;
+  arguments: Record<string, unknown>;
+  ok: boolean;
+  rows: number;
+  error?: string | null;
+}
+
+export interface AgentStep {
+  step: string;
+  status: 'ok' | 'warning' | 'error';
+  detail: string;
+  tool_call?: ToolCallTrace | null;
+}
+
+export interface ClickHouseMCPStatus {
+  configured: boolean;
+  available: boolean;
+  server_url?: string | null;
+  health_url?: string | null;
+  transport: string;
+  package_installed: boolean;
+  reason?: string | null;
+}
+
+export interface GeminiEnterpriseStatus {
+  configured: boolean;
+  genai_available: boolean;
+  adk_available: boolean;
+  model: string;
+  provider: string;
+  reason?: string | null;
+}
+
+export interface WrapRescueBlocker {
+  source: 'discrepancy' | 'unacknowledged_requirement';
+  source_key: string;
+  production_id: string;
+  shoot_day: string;
+  target_type: string;
+  target_id: string;
+  target_label: string;
+  title: string;
+  description: string;
+  priority: RequirementPriority;
+  category: RequirementCategory;
+  assigned_to: string;
+  status: Exclude<RequirementStatus, 'resolved'>;
+  severity: string;
+  score: number;
+  age_hours?: number | null;
+  missing_acknowledgement: boolean;
+  evidence: Record<string, unknown>;
+}
+
+export interface WrapRequirementAction {
+  action: 'created' | 'updated' | 'unchanged';
+  requirement_id: string;
+  blocker_source: string;
+  target_label: string;
+  assigned_to: string;
+  status: string;
+  priority: string;
+}
+
+export interface WrapRescueResult {
+  production_id: string;
+  shoot_day: string;
+  actor: string;
+  mcp_status: ClickHouseMCPStatus;
+  gemini_status: GeminiEnterpriseStatus;
+  steps: AgentStep[];
+  tool_calls: ToolCallTrace[];
+  blockers: WrapRescueBlocker[];
+  requirement_actions: WrapRequirementAction[];
+  final_memo: string;
+  generated_at: string;
+}
+
 /** One recorded transition of a requirement. Append-only; never edited. */
 export interface RequirementEvent {
   event_id: string;

@@ -111,7 +111,7 @@ flowchart TB
   - High-performance, append-only time-series storage storing millions of immutable events (takes, checksums, logs, reconciliation diffs) with zero data mutation.
 - **Backend Architecture (Python 3.14 + FastAPI + Pydantic v2):**
   - High-performance asynchronous API gateway with SSE event broadcasting.
-  - Multi-provider AI image generation service (`FLUX.1 Diffusion`, `Imagen 3`, `DALL-E 3`).
+  - Google Imagen 3 image generation service for hackathon-safe concept frames.
   - Strict 3-axis reconciliation algorithms.
 - **Frontend Experience (React 18 + Vite + Tailwind CSS + Lucide Icons):**
   - High-contrast, dark-mode cinematic interface engineered for set monitors and DIT carts.

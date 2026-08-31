@@ -44,6 +44,13 @@ questions, all of them "every day of a production at once, grouped and counted":
 - where every shot has got to
 - how long work sits before somebody deals with it
 
+The Wrap Rescue Agent adds the first judge-visible operational read path. `POST /api/agents/wrap-rescue/run`
+flushes pending events, refreshes take and discrepancy projections, then asks ClickHouse only through the
+official `mcp-clickhouse` tool surface: `list_tables` proves the adapter is alive, `run_query` reads
+`audit_discrepancies`, and a second `run_query` reads unacknowledged `requirement_events` joined back to
+`production_events` and `user_activity`. Requirement and activity rows are already append-only mirrors when
+those writes happen, so this step does not invent a second requirement projector.
+
 ## Two decisions inside those queries
 
 **`argMax`, not `FINAL`.** Deriving the current answer from an append-only log is what `argMax` is for. It
@@ -60,6 +67,10 @@ No ClickHouse means every query returns `None`, the endpoint answers `available:
 and the panel prints it. `None` and `[]` are kept distinct throughout: "could not be asked" and "asked,
 and the answer is nothing". A panel that cannot fill looks exactly like a production with nothing in it,
 and those need opposite responses.
+
+For Wrap Rescue, absent is also non-mutating. If the official MCP server is unavailable, or any MCP tool call
+fails, the agent records the connection/tool trace and a failed run event, but it does not rank blockers,
+create requirement cards, update assignments, or ask Gemini to draft from an empty row set.
 
 ## Two properties worth knowing
 

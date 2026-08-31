@@ -12,6 +12,7 @@ import { summarizeRequirements } from '../requirementsBoard';
 import { ProductionDashboardPanel } from './ProductionDashboard';
 import { AnalyticsPanel } from './AnalyticsPanel';
 import { RequirementsBoard } from './RequirementsBoard';
+import { WrapRescueAgentPanel } from './WrapRescueAgentPanel';
 
 /**
  * The productions section: every production in one place, with the progress
@@ -525,6 +526,13 @@ export function ProductionsHub({
           {/* The board reads a whole production, not one shoot day, which is
               why it belongs here rather than beside the day-by-day views. */}
           <ProductionDashboardPanel productionId={selected.production_id} reloadKey={tagRevision} />
+
+          <WrapRescueAgentPanel
+            productionId={selected.production_id}
+            shootDays={selected.shoot_days}
+            currentUserHandle={currentUserHandle}
+            onChanged={() => setRequirementRevision(v => v + 1)}
+          />
 
           <div className="flex items-baseline gap-2 pt-2">
             <h3 className="text-sm font-bold text-white">Requirements</h3>

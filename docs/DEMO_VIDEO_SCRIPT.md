@@ -36,7 +36,7 @@
   3. Switch to **3-Camera Multi-View Grid** showing all three synchronized camera angles side-by-side.
   4. In the editable prompt console, type: *"+ Volumetric Haze, + Anamorphic Streak Flare, + Extreme Close-Up Eyes"*.
   5. Press **Ctrl + Enter** or click **"Execute & Render Camera C AI Concept"**.
-  6. Watch the live generation spinner resolve to a new photorealistic AI still powered by **Google Imagen 3 / FLUX.1 Diffusion**.
+  6. Watch the live generation spinner resolve to a new photorealistic AI still powered by **Google Imagen 3**.
 * **Voiceover:**
   > *"Now, let's step onto the director's floor. CineSpine's Script Studio ingests Fountain and PDF screenplays, autonomously breaking down every scene into a synchronized 3-camera rig: Camera A for the master spatial architecture, Camera B for over-the-shoulder character performance, and Camera C for intense tactile inserts. Using our Director of Photography matrix—featuring Roger Deakins, David Fincher, and Greig Fraser presets—CineSpine calculates true optical physics, lighting contrast ratios, and film stock LUTs. You can edit the camera prompt live, tap one-click cinematography chips, and render photorealistic 35mm film stills in real-time powered by Google Cloud Gemini and Imagen 3."*
 

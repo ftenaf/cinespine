@@ -106,7 +106,7 @@ C4Component
     Component(char_store, "Character Profile Store", "backend.app.spine.character_store", "SQLite persistence of screenplays and hand-edited character profiles")
     Component(breakdown, "Multi-Camera Previz Engine", "backend.app.script.breakdown_engine", "Calculates synchronized camera rigs per setup")
     Component(dop_presets, "DoP Style Presets", "backend.app.script.dop_presets", "Master cinematographer style profiles and override resolution")
-    Component(ai_service, "AI Generative Service", "backend.app.script.ai_image_service", "Calls Imagen / DALL-E with the compiled DoP prompt")
+    Component(ai_service, "AI Generative Service", "backend.app.script.ai_image_service", "Calls Google Imagen with the compiled DoP prompt")
     Component(gcp_client, "Google Cloud Integration Client", "backend.app.integrations.google_cloud", "Wraps google.genai and google.cloud.storage clients")
     Component(recon, "3-Axis Reconciliation Engine", "backend.app.reconciliation.engine", "Executes multi-witness diffing algorithms")
     Component(spine, "Append-Only Event Spine", "backend.app.spine.writer", "ClickHouse / in-memory append-only event and document store")
@@ -258,4 +258,3 @@ flowchart LR
 1. **Zero Mutation Invariant:** Events are append-only. Takes and slates are never updated in place; state is computed as a fold over historical events.
 2. **Auditability & Traceability:** Every discrepancy resolution, consensus vote, and prompt modification records the originating practitioner handle (`@assistant_editor`, `@director`) and UTC timestamp.
 3. **Non-Blocking Real-Time Fan-Out:** The FastAPI `LiveEventBroker` utilizes asynchronous Server-Sent Events (SSE) scoped by `production_id`, `shoot_day`, and user handle to push live updates with sub-millisecond latency and zero browser polling.
-

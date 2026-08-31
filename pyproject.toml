@@ -38,6 +38,10 @@ dev = [
     "ruff>=0.3.0",
     "mypy>=1.9.0",
 ]
+hackathon = [
+    "google-adk>=1.0.0",
+    "mcp-clickhouse>=0.1.0",
+]
 
 [tool.pytest.ini_options]
 minversion = "8.0"

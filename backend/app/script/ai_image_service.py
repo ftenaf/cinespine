@@ -1,8 +1,6 @@
 import base64
 import logging
 import os
-import random
-import urllib.parse
 from typing import Dict, Any, Optional
 
 import httpx
@@ -67,7 +65,7 @@ async def generate_ai_cinematic_image(
 ) -> Dict[str, Any]:
     """
     Main router for generating images. It caches identical requests using SQLite.
-    If economy_mode=True, it skips paid APIs and uses FLUX.1.
+    If economy_mode=True, it skips external generation and uses a bundled still.
     """
     compiled_prompt = build_cinematic_prompt(
         prompt, shot_size, focal_length, aperture, dop_preset,
@@ -95,35 +93,8 @@ async def generate_ai_cinematic_image(
         set_cached_response(req_hash, result)
         return result
 
-    # 2. Paid APIs (DALL-E 3, Imagen 3) - Skip if economy_mode is True
+    # 2. Google Imagen 3 only for the hackathon branch.
     if not economy_mode:
-        openai_key = os.getenv("OPENAI_API_KEY")
-        if openai_key:
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    res = await client.post(
-                        "https://api.openai.com/v1/images/generations",
-                        headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
-                        json={
-                            "model": "dall-e-3",
-                            "prompt": compiled_prompt[:950],
-                            "n": 1,
-                            "size": "1792x1024" if aspect_ratio in ["2.39:1", "16:9"] else "1024x1024",
-                            "quality": "hd",
-                            "response_format": "b64_json"
-                        }
-                    )
-                    if res.status_code == 200:
-                        data = res.json()
-                        b64_img = data["data"][0]["b64_json"]
-                        return _finalize({
-                            "image_url": f"data:image/jpeg;base64,{b64_img}",
-                            "compiled_prompt": compiled_prompt,
-                            "provider": "OpenAI DALL-E 3 (HD)"
-                        })
-            except Exception as e:
-                logger.warning("OpenAI DALL-E 3 error: %s", e)
-
         gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if gemini_key:
             try:
@@ -180,38 +151,7 @@ async def generate_ai_cinematic_image(
                 except Exception as e2:
                     logger.warning("Google Imagen 3 REST error: %s", e2)
 
-    # 3. Real-Time Cloud Flux.1 / SD Engine (Economy Mode / Fallback)
-    try:
-        clean_encoded_prompt = urllib.parse.quote(compiled_prompt[:600])
-        if aspect_ratio == "2.39:1":
-            w, h = 1152, 480
-        elif aspect_ratio == "1.85:1":
-            w, h = 960, 520
-        elif aspect_ratio == "4:3":
-            w, h = 800, 600
-        else:
-            w, h = 960, 540
-
-        seed = random.randint(1000, 999999)
-        flux_url = f"https://image.pollinations.ai/prompt/{clean_encoded_prompt}?width={w}&height={h}&model=flux&nologo=true&seed={seed}"
-
-        async with httpx.AsyncClient(timeout=35.0) as client:
-            res = await client.get(
-                flux_url,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) CineSpine/0.1.0"}
-            )
-            if res.status_code == 200 and len(res.content) > 5000:
-                b64_img = base64.b64encode(res.content).decode("utf-8")
-                provider = "FLUX.1 Cinematic Diffusion (Economy Mode)" if economy_mode else "FLUX.1 Cinematic Diffusion (Real-Time)"
-                return _finalize({
-                    "image_url": f"data:image/jpeg;base64,{b64_img}",
-                    "compiled_prompt": compiled_prompt,
-                    "provider": provider
-                })
-    except Exception as e:
-        logger.warning("Cloud Flux.1 engine error: %s", e)
-
-    # 4. Local placeholder. Deliberately NOT cached: it means every generator
+    # 3. Local placeholder. Deliberately NOT cached: it means every generator
     #    was unavailable, which is a transient condition the next request should
     #    be free to retry.
     return {

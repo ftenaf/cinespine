@@ -305,6 +305,21 @@ export async function deleteRequirement(requirementId: string, deletedBy?: strin
   return res.json();
 }
 
+export async function runWrapRescueAgent(payload: {
+  production_id: string;
+  shoot_day: string;
+  actor?: string;
+  max_blockers?: number;
+}): Promise<import('./types').WrapRescueResult> {
+  const res = await fetch(`${API_BASE}/agents/wrap-rescue/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw await apiError(res, 'Wrap Rescue Agent failed');
+  return res.json();
+}
+
 export async function fetchRequirementHistory(
   requirementId: string,
 ): Promise<import('./types').RequirementEvent[]> {
