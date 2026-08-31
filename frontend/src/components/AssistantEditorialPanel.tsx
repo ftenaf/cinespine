@@ -52,6 +52,7 @@ export function AssistantEditorialPanel({
   const [crew, setCrew] = useState<ProductionCrewMember[]>([]);
   const [crewForm, setCrewForm] = useState(defaultCrewForm);
   const [shootDay, setShootDay] = useState(shootDays[shootDays.length - 1] ?? '31');
+  const [assignee, setAssignee] = useState(currentUserHandle);
   const [result, setResult] = useState<AssistantQueueResult | null>(null);
   const [isLoadingCrew, setIsLoadingCrew] = useState(false);
   const [isSavingCrew, setIsSavingCrew] = useState(false);
@@ -60,11 +61,12 @@ export function AssistantEditorialPanel({
 
   const canEdit = ACTIVE_STATUSES.has(production.status ?? 'Active');
   const defaultDay = useMemo(() => shootDays[shootDays.length - 1] ?? '31', [shootDays]);
-  const loggedEditorIsCrewed = useMemo(
-    () => crew.some(member => member.active
-      && member.handle.toLowerCase() === currentUserHandle.toLowerCase()
-      && isEditorial(member)),
-    [crew, currentUserHandle],
+  const eligibleEditors = useMemo(
+    () => crew.filter(member => member.active && isEditorial(member)),
+    [crew],
+  );
+  const canPlan = canEdit && eligibleEditors.some(
+    member => member.handle.toLowerCase() === assignee.toLowerCase(),
   );
 
   useEffect(() => {
@@ -79,6 +81,14 @@ export function AssistantEditorialPanel({
       .then(rows => {
         if (!live) return;
         setCrew(rows);
+        setAssignee(current => {
+          const currentAssignee = rows.find(
+            member => member.active && member.handle.toLowerCase() === current.toLowerCase()
+              && isEditorial(member),
+          );
+          const firstEditor = rows.find(member => member.active && isEditorial(member));
+          return (currentAssignee ?? firstEditor)?.handle ?? currentUserHandle;
+        });
       })
       .catch(err => {
         if (live) setError(messageFromError(err, 'Could not load production crew'));
@@ -141,7 +151,7 @@ export function AssistantEditorialPanel({
         production_id: production.production_id,
         shoot_day: shootDay || defaultDay,
         actor: currentUserHandle,
-        assignee: currentUserHandle,
+        assignee,
         max_scenes: 6,
       });
       setResult(next);
@@ -297,18 +307,26 @@ export function AssistantEditorialPanel({
                 <option key={day} value={day}>Day {day}</option>
               ))}
             </select>
-            <div className={`border rounded-lg px-2 py-1.5 text-xs ${
-              loggedEditorIsCrewed
-                ? 'border-emerald-800 bg-emerald-950/20 text-emerald-200'
-                : 'border-amber-800 bg-amber-950/20 text-amber-200'
-            }`}>
-              Responsible: {currentUserHandle}
-            </div>
+            <select
+              value={assignee}
+              onChange={e => setAssignee(e.target.value)}
+              disabled={!canEdit || eligibleEditors.length === 0}
+              className="bg-slate-900 border border-slate-700 text-xs px-2 py-1.5 rounded-lg text-gray-200 disabled:opacity-40"
+              aria-label="Assistant queue responsible editor"
+            >
+              {eligibleEditors.length === 0 ? (
+                <option value={currentUserHandle}>Add editorial crew first</option>
+              ) : eligibleEditors.map(member => (
+                <option key={member.handle} value={member.handle}>
+                  {member.handle} - {member.role}
+                </option>
+              ))}
+            </select>
             <button
               type="button"
               onClick={runQueue}
-              disabled={!canEdit || isRunning || !loggedEditorIsCrewed}
-              title={loggedEditorIsCrewed ? 'Plan assistant editor batch' : 'Add the logged editor to this production crew first'}
+              disabled={!canPlan || isRunning}
+              title={canPlan ? 'Plan assistant editor batch' : 'Add an active assistant editor to this production crew first'}
               className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
             >
               {isRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}

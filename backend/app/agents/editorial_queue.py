@@ -170,15 +170,13 @@ class AssistantEditorQueueAgent:
         assignee: Optional[str],
     ) -> str:
         requested = _normalize_handle(assignee or actor, actor)
-        if requested.lower() != actor.lower():
-            raise ValueError("Assistant editor batches must be assigned to the logged editor.")
         crew = self.spine_writer.list_production_crew(production_id, active_only=True)
         by_handle = {m["handle"].lower(): m for m in crew}
         if requested.lower() in by_handle and _is_editorial_member(by_handle[requested.lower()]):
             return requested
 
         raise ValueError(
-            f"{requested} is not active editorial crew on {production_id}. Add them to the production crew first."
+            f"{requested} is not active editorial crew on {production_id}. Add the responsible assistant to the production crew first."
         )
 
     def _candidate_scenes(

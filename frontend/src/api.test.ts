@@ -114,11 +114,11 @@ describe('assistant editorial API', () => {
     expect(result.handle).toBe('@night_ae');
   });
 
-  it('posts the logged editor to the assistant queue endpoint', async () => {
+  it('posts the logged director and responsible assistant to the queue endpoint', async () => {
     const response = {
       production_id: 'DEMO_PRODUCTION',
       shoot_day: '31',
-      actor: '@night_ae',
+      actor: '@director',
       assigned_to: '@night_ae',
       production_status: 'In Production',
       scenes: [],
@@ -135,7 +135,7 @@ describe('assistant editorial API', () => {
     const result = await runAssistantEditorQueue({
       production_id: 'DEMO_PRODUCTION',
       shoot_day: '31',
-      actor: '@night_ae',
+      actor: '@director',
       assignee: '@night_ae',
       max_scenes: 6,
     });
@@ -146,7 +146,7 @@ describe('assistant editorial API', () => {
       body: JSON.stringify({
         production_id: 'DEMO_PRODUCTION',
         shoot_day: '31',
-        actor: '@night_ae',
+        actor: '@director',
         assignee: '@night_ae',
         max_scenes: 6,
       }),

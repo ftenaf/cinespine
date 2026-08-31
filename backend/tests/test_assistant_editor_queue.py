@@ -96,7 +96,7 @@ def test_crew_cannot_be_changed_after_production_is_finished():
     assert "read-only after the production is finished" in response.json()["detail"]
 
 
-def test_assistant_queue_agent_assigns_clean_scene_to_logged_editor():
+def test_director_can_assign_clean_scene_batch_to_assistant_editor():
     writer = SpineWriter(clickhouse_client=False)
     writer.register_production("QUEUE", "Queue")
     writer.upsert_production_crew_member({
@@ -112,10 +112,12 @@ def test_assistant_queue_agent_assigns_clean_scene_to_logged_editor():
     result = AssistantEditorQueueAgent(writer, NoDiscrepancies()).run(
         "QUEUE",
         "31",
-        actor="@night_ae",
+        actor="@director",
+        assignee="@night_ae",
     )
 
     assert result.assigned_to == "@night_ae"
+    assert result.actor == "@director"
     assert result.scenes[0].scene == "27"
     assert result.requirement_actions[0].action == "created"
     reqs = writer.list_requirements(production_id="QUEUE", assigned_to="@night_ae")
@@ -145,7 +147,7 @@ def test_assistant_queue_agent_skips_scene_with_active_discrepancy():
     assert result.requirement_actions == []
 
 
-def test_assistant_queue_requires_logged_editor_to_be_active_crew():
+def test_assistant_queue_requires_responsible_editor_to_be_active_crew():
     writer = SpineWriter(clickhouse_client=False)
     writer.register_production("QUEUE_NO_CREW", "Queue No Crew")
     _clean_scene(writer, production_id="QUEUE_NO_CREW")
@@ -154,9 +156,10 @@ def test_assistant_queue_requires_logged_editor_to_be_active_crew():
         AssistantEditorQueueAgent(writer, NoDiscrepancies()).run(
             "QUEUE_NO_CREW",
             "31",
-            actor="@night_ae",
+            actor="@director",
+            assignee="@night_ae",
         )
     except ValueError as exc:
         assert "not active editorial crew" in str(exc)
     else:
-        raise AssertionError("queue should require the logged editor to be crewed")
+        raise AssertionError("queue should require the responsible editor to be crewed")
