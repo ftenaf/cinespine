@@ -16,6 +16,111 @@ import {
 const DEPARTMENTS: CrewDepartment[] = ['editorial', 'camera', 'sound', 'dit', 'vfx', 'production', 'general'];
 const ACTIVE_STATUSES = new Set(['Active', 'In Production', 'Principal Photography']);
 
+type CrewRoleGroup = {
+  phase: 'Preproduction' | 'Production' | 'Postproduction';
+  roles: string[];
+};
+
+const ROLE_GROUPS: CrewRoleGroup[] = [
+  {
+    phase: 'Preproduction',
+    roles: [
+      'Executive Producer',
+      'Producer',
+      'Co-Producer',
+      'Line Producer',
+      'Unit Production Manager',
+      'Production Coordinator',
+      'Production Accountant',
+      'Screenwriter',
+      'Casting Director',
+      'Casting Associate',
+      'Casting Assistant',
+      'Location Manager',
+      'Location Scout',
+      'Production Designer',
+      'Art Director',
+      'Set Decorator',
+      'Costume Designer',
+      'Hair Department Head',
+      'Makeup Department Head',
+      'Storyboard Artist',
+      'Previsualization Artist',
+      'VFX Supervisor',
+      'Stunt Coordinator',
+      'Intimacy Coordinator',
+    ],
+  },
+  {
+    phase: 'Production',
+    roles: [
+      'Director',
+      '1st Assistant Director',
+      '2nd Assistant Director',
+      '2nd 2nd Assistant Director',
+      'Script Supervisor',
+      'Production Assistant',
+      'Director of Photography',
+      'Camera Operator',
+      'Steadicam Operator',
+      '1st Assistant Camera',
+      '2nd Assistant Camera',
+      'Digital Imaging Technician',
+      'Video Assist Operator',
+      'Still Photographer',
+      'Gaffer',
+      'Best Boy Electric',
+      'Electrician',
+      'Key Grip',
+      'Best Boy Grip',
+      'Dolly Grip',
+      'Production Sound Mixer',
+      'Boom Operator',
+      'Sound Utility',
+      'Prop Master',
+      'Wardrobe Supervisor',
+      'Set Costumer',
+      'Key Makeup Artist',
+      'Makeup Artist',
+      'Key Hair Stylist',
+      'Hair Stylist',
+      'Special Effects Supervisor',
+      'Stunt Performer',
+      'Location Assistant',
+      'Transportation Coordinator',
+      'Craft Services',
+    ],
+  },
+  {
+    phase: 'Postproduction',
+    roles: [
+      'Post-Production Supervisor',
+      'Post-Production Coordinator',
+      'Editor',
+      'Assistant Editor',
+      'Additional Editor',
+      'Online Editor',
+      'Conform Editor',
+      'Colorist',
+      'Dailies Colorist',
+      'VFX Producer',
+      'VFX Editor',
+      'Compositor',
+      'Motion Graphics Artist',
+      'Supervising Sound Editor',
+      'Dialogue Editor',
+      'ADR Supervisor',
+      'Foley Artist',
+      'Sound Designer',
+      'Re-recording Mixer',
+      'Music Supervisor',
+      'Composer',
+      'Music Editor',
+      'Deliverables Coordinator',
+    ],
+  },
+];
+
 function isEditorial(member: ProductionCrewMember): boolean {
   return member.department === 'editorial' || member.role.toLowerCase().includes('editor');
 }
@@ -255,13 +360,21 @@ export function AssistantEditorialPanel({
               placeholder="@handle"
               className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white disabled:opacity-40"
             />
-            <input
+            <select
               value={crewForm.role}
               onChange={e => setCrewForm({ ...crewForm, role: e.target.value })}
               disabled={!canEdit}
-              placeholder="Role"
               className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-gray-200 disabled:opacity-40"
-            />
+              aria-label="Crew role"
+            >
+              {ROLE_GROUPS.map(group => (
+                <optgroup key={group.phase} label={group.phase}>
+                  {group.roles.map(role => (
+                    <option key={`${group.phase}-${role}`} value={role}>{role}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
             <select
               value={crewForm.department}
               onChange={e => setCrewForm({ ...crewForm, department: e.target.value as CrewDepartment })}
