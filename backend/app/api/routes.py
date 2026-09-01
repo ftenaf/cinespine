@@ -3305,7 +3305,9 @@ async def demo_inject_events():
         "DEMO_Day1_ScriptLog.txt",
         "DEMO_Day1_SoundLog.txt",
         "DEMO_Day1_CamReport.txt",
+        "DEMO_Day1_Silverstack_Offload.txt",
         "DEMO_Day2_ScriptLog.txt",
+        "DEMO_Day2_Silverstack_Offload.txt",
     ]
     
     for filename in demo_files:
