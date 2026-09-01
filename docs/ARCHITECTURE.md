@@ -2,6 +2,15 @@
 
 > Comprehensive structural, container, component, and runtime sequence architecture documentation for **CineSpine** following the **C4 Model**.
 
+**Companion documents:**
+
+- [CLICKHOUSE_MCP.md](CLICKHOUSE_MCP.md) — the contract between the Wrap Rescue
+  Agent and the official `mcp-clickhouse` server: tool names, result shapes,
+  and why a failed call there can look like a successful one.
+- [DEMO_DATA.md](DEMO_DATA.md) — the relationships the demo fixtures in
+  `data/examples/` must satisfy for reconciliation and the editorial queue to
+  show anything.
+
 ---
 
 ## 🎬 Animated System Architecture & User Event Flows (SMIL SVG)
@@ -75,8 +84,12 @@ C4Container
     Container(parsers, "Deterministic & Screenplay Extractors", "Python, pdfplumber, pypdf, Fountain parser", "Normalizes slates, takes, rolls, timecodes, and screenplay scenes")
     Container(recon_engine, "3-Axis Reconciliation Engine", "Python Rule Engine", "Cross-references Intent, Belief, and Existence to flag conflicts")
     Container(previz_engine, "AI Multi-Camera Previz Synthesizer", "google.genai SDK, DoP Matrix", "Compiles 3-camera setups (Cam A/B/C) and renders photorealistic stills")
+    Container(wrap_agent, "Wrap Rescue Agent", "Google ADK, backend.app.agents.wrap_rescue", "Ranks end-of-day blockers from the analytical mirror and files them as requirements")
+    Container(queue_agent, "Assistant Editor Queue Agent", "Google ADK, backend.app.agents.editorial_queue", "Proposes discrepancy-free scenes for assistant editorial turnover")
     ContainerDb(event_store, "Append-Only Event Spine", "SQLite / ClickHouse DB", "Immutable store for raw documents, parsed take facts, discrepancies, and audit trails")
   }
+
+  System_Ext(mcp_clickhouse, "mcp-clickhouse", "Official ClickHouse MCP server (FastMCP streamable HTTP). The agent's only route to the analytical mirror")
 
   Rel(user, spa, "Edits camera prompts, views dailies, resolves conflicts", "HTTPS")
   Rel(spa, api_gateway, "Queries takes, sequences, requirements, script breakdown", "JSON / HTTPS")
@@ -88,7 +101,20 @@ C4Container
   Rel(recon_engine, event_store, "Scans multi-witness facts, appends discrepancies")
   Rel(api_gateway, previz_engine, "Dispatches multi-camera breakdown & image generation")
   Rel(previz_engine, event_store, "Persists generated camera coverage packs")
+  Rel(api_gateway, wrap_agent, "Runs end-of-day rescue for a production/day")
+  Rel(wrap_agent, mcp_clickhouse, "list_tables, run_select_query", "JSON-RPC / HTTP")
+  Rel(mcp_clickhouse, event_store, "SELECT against the analytical mirror")
+  Rel(wrap_agent, event_store, "Appends ranked blockers as requirements")
+  Rel(api_gateway, queue_agent, "Plans assistant editorial batches")
+  Rel(queue_agent, event_store, "Reads scene evidence, appends turnover requirements")
 ```
+
+> The Wrap Rescue Agent reaches ClickHouse **only** through `mcp-clickhouse`;
+> there is no direct driver on that path. That indirection is deliberate — the
+> partner component has to be on the runtime path, not beside it — but it means
+> a broken tool call is the difference between "the day is clear" and "nothing
+> was read". [CLICKHOUSE_MCP.md](CLICKHOUSE_MCP.md) records the contract and the
+> guarantees that keep those two apart.
 
 ---
 

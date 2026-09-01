@@ -25,6 +25,16 @@ You can directly interact with the Wrap Rescue Agent (built on Google ADK) witho
 1. Run `curl -X GET http://localhost:8000/api/wrap-rescue/demo`.
 2. The agent will analyze the event spine, identify critical blockers, and generate a structured Gemini-authored memo for the producers.
 
+The agent reads ClickHouse through the official `mcp-clickhouse` server, which
+runs as its own compose service — `docker compose up -d` starts it alongside
+the backend. Against the seeded demo it should report **3 blockers and 3
+requirement actions** on shoot day 31.
+
+If it reports a clean day, check `tool_calls` in the response before believing
+it: every call showing `ok=true` with `rows=0` means the query path is broken,
+not that the day is clear. See [CLICKHOUSE_MCP.md](CLICKHOUSE_MCP.md) for why
+those two states look identical from the outside.
+
 ## 🧹 5. Factory Reset
 To wipe the slate clean and drop all ClickHouse discrepancy events and SQLite state:
 - Click the red **"Factory Reset"** button on the `/hackathon` route, OR
