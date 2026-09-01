@@ -3296,56 +3296,38 @@ async def demo_inject_events():
     
     EXAMPLES_DIR = os.environ.get("CINESPINE_EXAMPLES_DIR", "data/examples")
     
-    # 1. Screenplay
-    fountain_path = os.path.join(EXAMPLES_DIR, "demo_script.fountain")
-    if os.path.exists(fountain_path):
-        with open(fountain_path, "rb") as f:
-            content_bytes = f.read()
-            raw_text = content_bytes.decode("utf-8", errors="ignore")
-            classification = classify_document("demo_script.fountain", raw_text)
-            checksum = hashlib.sha256(content_bytes).hexdigest()
+    demo_files = [
+        "demo_script.fountain",
+        "DEMO_TCLog_Synthetic.pdf",
+        "DEMO_Day1_ScriptLog.txt",
+        "DEMO_Day1_SoundLog.txt",
+        "DEMO_Day1_CamReport.txt",
+        "DEMO_Day2_ScriptLog.txt",
+    ]
+    
+    for filename in demo_files:
+        filepath = os.path.join(EXAMPLES_DIR, filename)
+        if not os.path.exists(filepath):
+            continue
             
-            doc_id = spine_writer.store_document(
-                production_id="DEMO_PRODUCTION",
-                shoot_day="31",
-                filename="demo_script.fountain",
-                doc_type=classification.doc_type.value,
-                department=classification.department.value,
-                content=raw_text,
-                checksum=checksum,
-                raw_bytes=content_bytes,
-                metadata={"demo": True, "synthetic": True},
-            )
-            
-            envelope = EventEnvelope(
-                production_id="DEMO_PRODUCTION",
-                shoot_day="31",
-                axis=classification.axis,
-                department=classification.department,
-                doc_type=classification.doc_type,
-                raw_content=raw_text,
-                filename="demo_script.fountain",
-                metadata={"doc_id": doc_id, "demo": True, "synthetic": True},
-            )
-            topic = f"production.raw.{classification.department.value}"
-            event_bus.publish(topic, envelope)
-            
-    # 2. TCLog
-    tclog_path = os.path.join(EXAMPLES_DIR, "DEMO_TCLog_Synthetic.pdf")
-    if os.path.exists(tclog_path):
-        with open(tclog_path, "rb") as f:
+        with open(filepath, "rb") as f:
             content_bytes = f.read()
             try:
-                raw_text = extract_text_from_pdf(content_bytes)
+                if filename.endswith(".pdf"):
+                    raw_text = extract_text_from_pdf(content_bytes)
+                else:
+                    raw_text = content_bytes.decode("utf-8", errors="ignore")
             except Exception:
                 raw_text = content_bytes.decode("utf-8", errors="ignore")
-            classification = classify_document("DEMO_TCLog_Synthetic.pdf", raw_text)
+                
+            classification = classify_document(filename, raw_text)
             checksum = hashlib.sha256(content_bytes).hexdigest()
+            shoot_day = "32" if "Day2" in filename else "31"
             
             doc_id = spine_writer.store_document(
                 production_id="DEMO_PRODUCTION",
-                shoot_day="31",
-                filename="DEMO_TCLog_Synthetic.pdf",
+                shoot_day=shoot_day,
+                filename=filename,
                 doc_type=classification.doc_type.value,
                 department=classification.department.value,
                 content=raw_text,
@@ -3356,12 +3338,12 @@ async def demo_inject_events():
             
             envelope = EventEnvelope(
                 production_id="DEMO_PRODUCTION",
-                shoot_day="31",
+                shoot_day=shoot_day,
                 axis=classification.axis,
                 department=classification.department,
                 doc_type=classification.doc_type,
                 raw_content=raw_text,
-                filename="DEMO_TCLog_Synthetic.pdf",
+                filename=filename,
                 metadata={"doc_id": doc_id, "demo": True, "synthetic": True},
             )
             topic = f"production.raw.{classification.department.value}"
@@ -3369,6 +3351,7 @@ async def demo_inject_events():
 
     spine_writer.flush_events()
     _project_analytics("DEMO_PRODUCTION", "31")
+    _project_analytics("DEMO_PRODUCTION", "32")
 
     return {"status": "success", "message": "Demo events injected"}
 

@@ -1,0 +1,22 @@
+Shoot Day: 31
+Department: Camera
+Date: 2026-08-31
+
+Camera A (ARRI Alexa 35)
+Lens: 35mm Prime
+Scene 1
+Take 1: Good.
+Take 2: Focus soft.
+Take 3: Good.
+
+Camera B (ARRI Alexa Mini)
+Lens: 50mm Prime
+Scene 1
+Take 1: Good.
+Take 2: Cut early.
+Take 3: Good.
+
+Camera A
+Scene 2
+Take 1: Lens mismatch! Used 24mm instead of 35mm. Good shot though.
+Take 2: False start.

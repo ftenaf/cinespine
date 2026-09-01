@@ -58,6 +58,12 @@ export const HackathonDemo: React.FC = () => {
       if (!res.ok) throw new Error(`Backend error (${res.status}): Make sure the backend server is running.`);
       const data = await res.json();
       addLog(`Factory Reset: ${data.message}`);
+      
+      // The backend wipe drops all sqlite tables, but the frontend React
+      // context doesn't know. Reload to ensure the productions list is updated.
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
     } catch (err: any) {
       addLog(`Error during reset: ${err.message}`);
     } finally {
