@@ -4,7 +4,8 @@ modules = ["python-3.11", "nodejs-20"]
 channel = "stable-23_11"
 
 [deployment]
-run = ["sh", "-c", "python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt && cd frontend && npm install && npm run build && cd .. && .venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"]
+build = ["sh", "-c", "python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt && cd frontend && npm install && npm run build"]
+run = ["sh", "-c", ".venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"]
 deploymentTarget = "autoscale"
 
 [workflows]
