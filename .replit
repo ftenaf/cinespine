@@ -17,7 +17,7 @@ autoInstall = false
 
 
 [deployment]
-build = ["sh", "-c", "python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt && cd frontend && npm install && npm run build"]
+build = ["sh", "-c", "python3 -m venv .venv && PIP_USER=0 .venv/bin/pip install -r backend/requirements.txt && cd frontend && npm install && npm run build"]
 run = ["sh", "-c", ".venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"]
 deploymentTarget = "autoscale"
 
@@ -31,7 +31,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt && cd frontend && npm install && npm run build && cd .. && .venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"
+args = "python3 -m venv .venv && PIP_USER=0 .venv/bin/pip install -r backend/requirements.txt && cd frontend && npm install && npm run build && cd .. && .venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"
 
 [[ports]]
 localPort = 8000
