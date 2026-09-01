@@ -12,8 +12,8 @@ WORKDIR /app
 RUN pip install --no-cache-dir uv
 
 # Copy dependency files
-COPY pyproject.toml ./
-COPY backend/uv.lock* ./uv.lock
+COPY .deployment/pyproject.toml ./pyproject.toml
+COPY .deployment/uv.lock ./uv.lock
 
 # Install dependencies (system-wide for docker)
 RUN uv sync --frozen --no-install-project

@@ -33,7 +33,7 @@ jobs:
           # backend/requirements.txt is the pinned lock compiled from pyproject.toml.
           # --no-deps keeps the editable install from resolving past those pins.
           pip install -r backend/requirements.txt
-          pip install -e . --no-deps
+          pip install -e .deployment --no-deps
 
       - name: Run Ruff
         run: ruff check backend
