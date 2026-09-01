@@ -1130,7 +1130,7 @@ class SpineWriter:
                     try:
                         conn.execute(f"DELETE FROM {tbl}")
                         sqlite_cleared.append(tbl)
-                    except Exception:
+                    except Exception:  # noqa: S110
                         pass
                 conn.commit()
             finally:

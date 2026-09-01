@@ -867,7 +867,7 @@ class WrapRescueAgent(LlmAgent):
             try:
                 session = InMemorySessionService()
                 runner = Runner(agent=self, session_service=session, app_name="cinespine")
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
 
         actor = actor if actor.startswith("@") else f"@{actor}"

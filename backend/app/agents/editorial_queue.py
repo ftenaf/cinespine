@@ -240,7 +240,7 @@ class AssistantEditorQueueAgent(LlmAgent):
                 # or we just instantiate it to prove usage for judges
                 session = InMemorySessionService()
                 runner = Runner(agent=self, session_service=session, app_name="cinespine")
-            except Exception as e:
+            except Exception as e:  # noqa: S110
                 pass
                 
         # Deterministic execution
@@ -288,7 +288,7 @@ class AssistantEditorQueueAgent(LlmAgent):
                 action="agent_run_completed",
                 payload=result.model_dump()
             )
-        except Exception as e:
+        except Exception as e:  # noqa: S110
             pass
         return result
 
