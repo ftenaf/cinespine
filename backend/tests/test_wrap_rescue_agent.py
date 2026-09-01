@@ -11,6 +11,7 @@ from backend.app.agents.wrap_rescue import (
     WrapRescueAgent,
     WrapRescueResult,
     _mcp_response_json,
+    _RUN_QUERY_TOOL,
     _unwrap_mcp_result,
     rank_blockers,
 )
@@ -72,6 +73,17 @@ def test_ranks_critical_and_unacknowledged_blockers_first():
 
 
 class FakeClickHouseMCP:
+    """
+    Stands in for the MCP client, and labels its traces with the tool name the
+    real client sends.
+
+    The label used to be spelled out here as `run_query`, which the official
+    server has never exported. The real client asked for that name, got
+    `Unknown tool` back for every query it ever made, and this suite stayed
+    green throughout -- it was asserting against a name only the fake used.
+    Taking it from the same constant is what stops the two drifting again.
+    """
+
     def __init__(self):
         self.queries = []
 
@@ -106,11 +118,11 @@ class FakeClickHouseMCP:
                     "is_resolved": 0,
                     "created_at": _ago(4),
                 }],
-                ToolCallTrace(tool="run_query", arguments={"query": query}, ok=True, rows=1),
+                ToolCallTrace(tool=_RUN_QUERY_TOOL, arguments={"query": query}, ok=True, rows=1),
             )
         return (
             [],
-            ToolCallTrace(tool="run_query", arguments={"query": query}, ok=True, rows=0),
+            ToolCallTrace(tool=_RUN_QUERY_TOOL, arguments={"query": query}, ok=True, rows=0),
         )
 
 
@@ -191,7 +203,7 @@ def test_agent_uses_clickhouse_mcp_and_creates_requirement(monkeypatch):
 
     assert result.mcp_status.available is True
     assert [call.tool for call in result.tool_calls] == [
-        "list_tables", "run_query", "run_query", "run_query", "run_query", "run_query"
+        "list_tables", *([_RUN_QUERY_TOOL] * 5),
     ]
     assert result.requirement_actions[0].action == "created"
     requirements = spine.list_requirements(production_id="PROD")
