@@ -16,7 +16,7 @@ COPY pyproject.toml ./pyproject.toml
 COPY uv.lock ./uv.lock
 
 # Install dependencies (system-wide for docker)
-RUN uv sync --frozen --no-install-project
+RUN uv sync --frozen --no-install-project --all-extras
 
 # Copy application code
 COPY backend/ ./backend/
@@ -24,7 +24,7 @@ COPY clickhouse/ ./clickhouse/
 COPY data/ ./data/
 
 # Install the project itself
-RUN uv sync --frozen
+RUN uv sync --frozen --all-extras
 
 EXPOSE 8000
 

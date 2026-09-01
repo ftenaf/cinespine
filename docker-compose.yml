@@ -25,7 +25,30 @@ services:
       - CLICKHOUSE_PORT=8123
       - CLICKHOUSE_USERNAME=default
       - CLICKHOUSE_PASSWORD=password
-      - CLICKHOUSE_MCP_URL=http://localhost:8123/mcp
+      - CLICKHOUSE_SECURE=false
+      - CLICKHOUSE_MCP_URL=http://mcp-clickhouse:4200/mcp
+    depends_on:
+      - clickhouse
+      - mcp-clickhouse
+
+  mcp-clickhouse:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: cinespine-mcp-clickhouse
+    ports:
+      - "4200:4200"
+    environment:
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=8123
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=password
+      - CLICKHOUSE_SECURE=false
+      - CLICKHOUSE_MCP_SERVER_TRANSPORT=http
+      - CLICKHOUSE_MCP_BIND_HOST=0.0.0.0
+      - CLICKHOUSE_MCP_BIND_PORT=4200
+      - CLICKHOUSE_MCP_AUTH_DISABLED=true
+    command: ["uv", "run", "mcp-clickhouse"]
     depends_on:
       - clickhouse
 
