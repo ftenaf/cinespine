@@ -3313,7 +3313,8 @@ async def demo_inject_events():
                 department=classification.department.value,
                 content=raw_text,
                 checksum=checksum,
-                metadata={"demo": True},
+                raw_bytes=content_bytes,
+                metadata={"demo": True, "synthetic": True},
             )
             
             envelope = EventEnvelope(
@@ -3324,7 +3325,7 @@ async def demo_inject_events():
                 doc_type=classification.doc_type,
                 raw_content=raw_text,
                 filename="demo_script.fountain",
-                metadata={"doc_id": doc_id, "demo": True},
+                metadata={"doc_id": doc_id, "demo": True, "synthetic": True},
             )
             topic = f"production.raw.{classification.department.value}"
             event_bus.publish(topic, envelope)
@@ -3349,7 +3350,8 @@ async def demo_inject_events():
                 department=classification.department.value,
                 content=raw_text,
                 checksum=checksum,
-                metadata={"demo": True},
+                raw_bytes=content_bytes,
+                metadata={"demo": True, "synthetic": True},
             )
             
             envelope = EventEnvelope(
@@ -3360,7 +3362,7 @@ async def demo_inject_events():
                 doc_type=classification.doc_type,
                 raw_content=raw_text,
                 filename="DEMO_TCLog_Synthetic.pdf",
-                metadata={"doc_id": doc_id, "demo": True},
+                metadata={"doc_id": doc_id, "demo": True, "synthetic": True},
             )
             topic = f"production.raw.{classification.department.value}"
             event_bus.publish(topic, envelope)

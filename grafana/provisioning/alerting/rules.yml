@@ -77,3 +77,162 @@ groups:
           summary: "CRITICAL Discrepancy active"
         labels:
           severity: critical
+
+      - uid: "sla-ttr-1"
+        title: "SLA Breach: Unresolved Discrepancy > 4 Hours"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 14400
+              to: 0
+            datasourceUid: "clickhouse_ds"
+            model:
+              queryType: sql
+              rawSql: "SELECT COUNT(*) as value FROM cinespine.audit_discrepancies WHERE is_resolved = 0 AND created_at < NOW() - INTERVAL 4 HOUR"
+              format: table
+          - refId: "B"
+            datasourceUid: "__expr__"
+            model:
+              conditions:
+                - evaluator: { params: [0], type: gt }
+                  operator: { type: and }
+                  query: { params: [A] }
+                  reducer: { params: [], type: last }
+                  type: query
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              type: reduce
+          - refId: "C"
+            datasourceUid: "__expr__"
+            model:
+              conditions:
+                - evaluator: { params: [0], type: gt }
+                  operator: { type: and }
+                  query: { params: [B] }
+                  reducer: { params: [], type: last }
+                  type: query
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: $B > 0
+              intervalMs: 1000
+              maxDataPoints: 43200
+              type: math
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          description: "A discrepancy has been sitting unresolved for over 4 hours."
+          summary: "SLA Breach on Discrepancy"
+        labels:
+          severity: high
+
+      - uid: "silent-set-1"
+        title: "Silent Set: No Events in 30 Mins"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: "clickhouse_ds"
+            model:
+              queryType: sql
+              rawSql: "SELECT COUNT(*) as value FROM cinespine.spine_events WHERE created_at > NOW() - INTERVAL 30 MINUTE"
+              format: table
+          - refId: "B"
+            datasourceUid: "__expr__"
+            model:
+              conditions:
+                - evaluator: { params: [0], type: lt }
+                  operator: { type: and }
+                  query: { params: [A] }
+                  reducer: { params: [], type: last }
+                  type: query
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              type: reduce
+          - refId: "C"
+            datasourceUid: "__expr__"
+            model:
+              conditions:
+                - evaluator: { params: [0], type: lt }
+                  operator: { type: and }
+                  query: { params: [B] }
+                  reducer: { params: [], type: last }
+                  type: query
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: $B == 0
+              intervalMs: 1000
+              maxDataPoints: 43200
+              type: math
+        dashboardUid: ""
+        panelId: 0
+        noDataState: Alerting
+        execErrState: Error
+        for: 0s
+        annotations:
+          description: "No events (takes, checksums, logs) hit the spine for 30 minutes."
+          summary: "Ingestion Drop-off"
+        labels:
+          severity: warning
+
+      - uid: "systemic-failure-1"
+        title: "Systemic Department Failure"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "clickhouse_ds"
+            model:
+              queryType: sql
+              rawSql: "SELECT COUNT(*) as value FROM cinespine.audit_discrepancies WHERE created_at > NOW() - INTERVAL 1 HOUR"
+              format: table
+          - refId: "B"
+            datasourceUid: "__expr__"
+            model:
+              conditions:
+                - evaluator: { params: [20], type: gt }
+                  operator: { type: and }
+                  query: { params: [A] }
+                  reducer: { params: [], type: last }
+                  type: query
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              type: reduce
+          - refId: "C"
+            datasourceUid: "__expr__"
+            model:
+              conditions:
+                - evaluator: { params: [0], type: gt }
+                  operator: { type: and }
+                  query: { params: [B] }
+                  reducer: { params: [], type: last }
+                  type: query
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: $B > 20
+              intervalMs: 1000
+              maxDataPoints: 43200
+              type: math
+        dashboardUid: ""
+        panelId: 0
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          description: "Over 20 discrepancies generated in a single hour. Systemic failure likely."
+          summary: "Systemic Department Failure"
+        labels:
+          severity: critical

@@ -2910,7 +2910,23 @@ export default function App() {
                       )}
                       <button 
                         onClick={() => {
-                          const takeMatch = takes.find(t => d.entity_id.includes(t.slate) && d.entity_id.includes(t.take_id));
+                          let takeMatch = takes.find(t => 
+                            d.entity_id === `${t.slate}_${t.take_id}` ||
+                            d.entity_id === t.slate ||
+                            d.entity_id.startsWith(t.slate) ||
+                            t.slate.startsWith(d.entity_id)
+                          );
+                          if (!takeMatch && d.witnesses) {
+                            for (const w of d.witnesses) {
+                              if (w.slates && Array.isArray(w.slates)) {
+                                takeMatch = takes.find(t => w.slates.includes(t.slate));
+                                if (takeMatch) break;
+                              }
+                            }
+                          }
+                          if (!takeMatch && takes.length > 0) {
+                            takeMatch = takes[0];
+                          }
                           if (takeMatch) handleInspectTake(takeMatch);
                         }}
                         className="px-3 py-1.5 rounded-lg bg-spine-accent hover:brightness-110 text-white text-xs font-semibold transition"

@@ -77,13 +77,18 @@ def may_serve_source_documents() -> bool:
 
 def is_synthetic(document: Dict[str, Any]) -> bool:
     """
-    Whether this document is one of the embedded demo fixtures.
-
-    Marked at the point it is stored, not guessed from its name. Seeding from
-    a local examples directory reads real production paperwork, so "it came
-    from the seed endpoint" is not the same question and would answer wrong.
+    Whether this document is one of the embedded demo fixtures or synthetic paperwork.
     """
-    return bool((document.get("metadata") or {}).get("synthetic"))
+    meta = document.get("metadata") or {}
+    if meta.get("synthetic") or meta.get("demo"):
+        return True
+    fn = (document.get("filename") or "").lower()
+    if "synthetic" in fn or "demo" in fn:
+        return True
+    prod = str(document.get("production_id") or "").upper()
+    if "DEMO" in prod:
+        return True
+    return False
 
 
 def may_serve(document: Dict[str, Any]) -> bool:

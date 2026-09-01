@@ -200,23 +200,56 @@ class GeminiDiscrepancyAssistant:
         Generates a plain-English explanation of witness claims and discrepancies for a take.
         """
         witnesses = self.mcp_server.get_take_witnesses(production_id, shoot_day, slate, take_id)
-        if not witnesses:
-            return f"No records found for {slate} Take {take_id} on Day {shoot_day}."
+        discs = self.mcp_server.query_production_discrepancies(production_id, shoot_day)
+        
+        # Match discrepancies relevant to this slate/take or shoot day
+        matching_discs = [
+            d for d in discs 
+            if slate in str(d.get("entity_id", "")) 
+            or f"{slate}_{take_id}" in str(d.get("entity_id", ""))
+            or (d.get("entity_type") == "shoot_day" and d.get("entity_id") == shoot_day)
+        ]
 
-        lines = [f"### Witness Report for {slate} Take {take_id} (Day {shoot_day}):"]
-        for w in witnesses:
-            dept = w["department"].capitalize()
-            p = w["payload"]
-            details = []
-            if p.get("camera_roll"):
-                details.append(f"Camera Roll: {p['camera_roll']}")
-            if p.get("sound_roll"):
-                details.append(f"Sound Roll: {p['sound_roll']}")
-            if p.get("timecode_in"):
-                details.append(f"TC: {p['timecode_in']} - {p.get('timecode_out', '')}")
-            if p.get("is_starred"):
-                details.append("Circled: YES")
+        if not witnesses and not matching_discs:
+            return f"No records or discrepancies found for {slate} Take {take_id} on Day {shoot_day}."
 
-            lines.append(f"- **{dept}** ({w['axis']}): {', '.join(details)}")
+        lines = [f"### 🔍 3-Axis Diagnosis for Slate {slate} Take {take_id} (Day {shoot_day}):"]
+        
+        if witnesses:
+            lines.append("\n**Department Evidence Across 3 Axes:**")
+            for w in witnesses:
+                dept = w["department"].capitalize()
+                p = w["payload"]
+                details = []
+                if p.get("camera_roll"):
+                    details.append(f"Camera Roll `{p['camera_roll']}`")
+                if p.get("sound_roll"):
+                    details.append(f"Sound Roll `{p['sound_roll']}`")
+                if p.get("timecode_in"):
+                    details.append(f"Timecode: `{p['timecode_in']}` - `{p.get('timecode_out', '')}`")
+                if p.get("is_starred"):
+                    details.append("⭐ Circled / Starred")
+                if p.get("is_false_start"):
+                    details.append("⚠️ False Start")
+                if p.get("note"):
+                    details.append(f"Note: \"{p['note']}\"")
+
+                lines.append(f"- **{dept}** ({w['axis']}): {', '.join(details) if details else 'Record logged'}")
+        else:
+            lines.append("\n*No direct take witnesses found in event spine.*")
+
+        if matching_discs:
+            lines.append("\n**Discrepancy Analysis:**")
+            for d in matching_discs:
+                status = "✅ RESOLVED" if d.get("is_resolved") else "🚨 ACTIVE DISCREPANCY"
+                dtype = d.get("discrepancy_type", "DISCREPANCY")
+                desc = d.get("description", "Discrepancy detected between production axes.")
+                lines.append(f"- **[{status}] {dtype}**: {desc}")
+                if d.get("is_resolved") and d.get("resolution_note"):
+                    lines.append(f"  *Resolution:* {d['resolution_note']} (Assigned to `{d.get('resolved_card') or 'manual'}` by {d.get('resolved_by')})")
+                elif not d.get("is_resolved"):
+                    lines.append(f"  *Action Required:* Verify with DIT for offload status or use the 'Resolve' button to assign card mapping.")
+        else:
+            lines.append("\n✅ **Status:** All witnesses across Intent, Belief, and Existence are 100% reconciled.")
 
         return "\n".join(lines)

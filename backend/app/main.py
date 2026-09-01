@@ -27,6 +27,8 @@ app.add_middleware(
 
 import os
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from fastapi import Request
 
 app.include_router(router)
 
@@ -38,6 +40,29 @@ if os.path.exists(static_dir):
     if os.path.exists(previz_dir):
         app.mount("/previz", StaticFiles(directory=previz_dir), name="previz")
 
+# Serve frontend build for Replit unified deployment
+frontend_dist = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
+if os.path.exists(frontend_dist):
+    assets_dir = os.path.join(frontend_dist, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend_assets")
+        
+    @app.get("/{full_path:path}")
+    async def serve_frontend(request: Request, full_path: str):
+        # We don't want this catching /api/ routes, but since router is included above, 
+        # /api/ routes take precedence.
+        
+        # Check if the requested file exists (like favicon.ico, robots.txt, etc.)
+        file_path = os.path.join(frontend_dist, full_path)
+        if os.path.isfile(file_path) and full_path:
+            return FileResponse(file_path)
+            
+        # Fallback to index.html for React Router
+        index_path = os.path.join(frontend_dist, "index.html")
+        if os.path.isfile(index_path):
+            return FileResponse(index_path)
+            
+        return {"detail": "Not Found"}
 
 if __name__ == "__main__":
     import uvicorn
