@@ -1,0 +1,95 @@
+Pomfort Silverstack Thumbnail Report
+Production: DEMO PRODUCTION
+260831_SD31
+Offloads started 31 August 2026
+
+Name A001C001_260831.MOV
+Reel/Tape A_0001_1EIC
+Scene 1
+Shot 1
+Take 1
+Camera ARRI ALEXA 35
+Sensor FPS 24.000
+EI/ISO (clip) 800
+T-Stop 2.8
+Codec Apple ProRes 4444
+Recording Date 2026-08-31
+Duration 00:01:30:00
+
+Name A001C002_260831.MOV
+Reel/Tape A_0001_1EIC
+Scene 1
+Shot 1
+Take 2
+Camera ARRI ALEXA 35
+Sensor FPS 24.000
+EI/ISO (clip) 800
+T-Stop 2.8
+Codec Apple ProRes 4444
+Recording Date 2026-08-31
+Duration 00:01:10:00
+
+Name A001C003_260831.MOV
+Reel/Tape A_0001_1EIC
+Scene 1
+Shot 1
+Take 3
+Camera ARRI ALEXA 35
+Sensor FPS 24.000
+EI/ISO (clip) 800
+T-Stop 2.8
+Codec Apple ProRes 4444
+Recording Date 2026-08-31
+Duration 00:01:40:00
+
+Name A001C004_260831.MOV
+Reel/Tape A_0001_1EIC
+Scene 1
+Shot 2
+Take 1
+Camera ARRI ALEXA 35
+Sensor FPS 24.000
+EI/ISO (clip) 800
+T-Stop 4.0
+Codec Apple ProRes 4444
+Recording Date 2026-08-31
+Duration 00:01:20:00
+
+Name A001C005_260831.MOV
+Reel/Tape A_0001_1EIC
+Scene 1
+Shot 2
+Take 2
+Camera ARRI ALEXA 35
+Sensor FPS 24.000
+EI/ISO (clip) 800
+T-Stop 4.0
+Codec Apple ProRes 4444
+Recording Date 2026-08-31
+Duration 00:01:30:00
+
+Name A001C007_260831.MOV
+Reel/Tape A_0001_1EIC
+Scene 2
+Shot 1
+Take 2
+Camera ARRI ALEXA 35
+Sensor FPS 24.000
+EI/ISO (clip) 400
+T-Stop 5.6
+Codec Apple ProRes 4444
+Recording Date 2026-08-31
+Duration 00:01:30:00
+
+Name A001C099_260831.MOV
+Reel/Tape A_0001_1EIC
+Scene 2
+Shot 1
+Take 9
+Camera ARRI ALEXA 35
+Sensor FPS 24.000
+EI/ISO (clip) 400
+T-Stop 5.6
+Codec Apple ProRes 4444
+Recording Date 2026-08-31
+Duration 00:00:20:00

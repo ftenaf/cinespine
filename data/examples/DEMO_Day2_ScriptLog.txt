@@ -1,14 +1,19 @@
 Shoot Day: 32
 Department: Script Supervisor
 Date: 2026-09-01
+Production: DEMO_PRODUCTION
 
 Scene 3
-Take 1: Circle (Good). Notes: Pilot line delivered well.
+Take 1: Circle (Good). Notes: Pilot asks where to go.
+Take 2: Incomplete. Wind noise.
 
 Scene 4
-Take 1: Circle (Good). Notes: Bob bursts through door.
-Take 2: Good. Commander timing was slightly off.
+Take 1: Circle (Good). Commander gets the news about sector 7.
+Take 2: Circle (Good). Bob and Alice enter.
 
 Scene 5
-Take 1: Incomplete. Rain machine malfunctioned.
-Take 2: Circle (Good). Shadow slipped past effectively.
+Take 1: Circle (Good). Security patrol.
+
+Scene 6
+Take 1: Incomplete. Alice trips in corridor.
+Take 2: Circle (Good). Blast doors seal perfectly.

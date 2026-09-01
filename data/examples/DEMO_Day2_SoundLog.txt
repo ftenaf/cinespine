@@ -1,0 +1,20 @@
+Shoot Day: 32
+Department: Sound
+Date: 2026-09-01
+Production: DEMO_PRODUCTION
+Mixer: Gary
+
+Scene 3
+Take 1: Circle (Good). Levels good.
+Take 2: NG - Wind noise hitting boom.
+
+Scene 4
+Take 1: Circle (Good).
+Take 2: Circle (Good).
+
+Scene 5
+Take 1: Circle (Good). Ambient rain noise captured well.
+
+Scene 6
+Take 1: NG - Actor tripped.
+Take 2: Circle (Good). Loud bang on doors recorded perfectly.

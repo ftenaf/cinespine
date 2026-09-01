@@ -1,12 +1,10 @@
-Shoot Day: 31
-Department: Script Supervisor
-Date: 2026-08-31
+DAILY TIMECODE LOG
+Date: 31/08/2026
 
-Scene 1
-Take 1: Circle (Good). Notes: Alice types fast, Bob panicked.
-Take 2: Incomplete. Notes: Boom in shot.
-Take 3: Circle (Good). Notes: Better energy.
-
-Scene 2
-Take 1: Circle (Good). Notes: Beautiful wide shot of helicopter landing.
-Take 2: False start. Pilot missed mark.
+1/1 1 09:00:00:00 A001 310826 Alice at the terminal, Bob over her shoulder
+1/1 2 09:04:00:00 A001 310826 Boom dipped into frame
+1/1 3* 09:08:00:00 A001 310826 Circled. Better energy on the panic beat
+1/2 1 09:20:00:00 A001 310826 Reverse on Bob
+1/2 2* 09:24:00:00 A001 310826 Circled. Alice slams the enter key
+2/1 1* 14:00:00:00 A001 310826 Circled. Helicopter lands, snow wash
+2/1 2 14:05:00:00 A001 310826 Second pass, wider

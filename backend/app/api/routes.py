@@ -3286,6 +3286,54 @@ async def generate_storyboard_frame(req: GenerateStoryboardRequest):
 
 # --- Demo Endpoints ---
 
+# Written into the description so re-injecting finds the requirement it raised
+# last time instead of raising a second one. The demo endpoint is re-run freely
+# during a walkthrough, and a board that grows a duplicate on every run is a
+# board nobody trusts to be showing the day's real outstanding work.
+DEMO_REQUIREMENT_MARKER = "DemoSeed: scene:2:day:31"
+
+
+def _seed_demo_requirement() -> Dict[str, Any]:
+    """
+    Raises the one requirement the demo needs on the board, once.
+
+    It names what Day 1 actually shows: A001C006_260831 is the circled take of
+    Scene 2 in the camera report, and it is absent from the Silverstack offload
+    -- the same gap the existence axis reports as a critical discrepancy. A
+    requirement that named something no document mentions would be the one
+    piece of the board that no amount of digging could explain.
+    """
+    existing = next(
+        (
+            r for r in spine_writer.list_requirements(production_id="DEMO_PRODUCTION")
+            if DEMO_REQUIREMENT_MARKER in (r.get("description") or "")
+        ),
+        None,
+    )
+    if existing:
+        return existing
+
+    return spine_writer.create_requirement({
+        "production_id": "DEMO_PRODUCTION",
+        "shoot_day": "31",
+        "title": "Scene 2 circled take is missing from the offload",
+        "description": (
+            f"{DEMO_REQUIREMENT_MARKER}\n"
+            "Clip A001C006_260831 is the circled take of Scene 2 in the Day 1 camera "
+            "report, and it does not appear in the Silverstack offload. Confirm with "
+            "DIT whether the card was fully offloaded before the media is wiped."
+        ),
+        "category": "edit",
+        "target_type": "scene",
+        "target_id": "2",
+        "target_label": "Scene 2",
+        "status": "open",
+        "priority": "high",
+        "created_by": "@script_supervisor",
+        "assigned_to": "@assistant_editor",
+    })
+
+
 @router.get("/events/demo")
 async def demo_inject_events():
     """Injects sample events into the event spine for the end-to-end demo."""
@@ -3307,6 +3355,8 @@ async def demo_inject_events():
         "DEMO_Day1_CamReport.txt",
         "DEMO_Day1_Silverstack_Offload.txt",
         "DEMO_Day2_ScriptLog.txt",
+        "DEMO_Day2_CamReport.txt",
+        "DEMO_Day2_SoundLog.txt",
         "DEMO_Day2_Silverstack_Offload.txt",
     ]
     
@@ -3355,6 +3405,9 @@ async def demo_inject_events():
             event_bus.publish(topic, envelope)
 
     spine_writer.flush_events()
+    
+    _seed_demo_requirement()
+
     _project_analytics("DEMO_PRODUCTION", "31")
     _project_analytics("DEMO_PRODUCTION", "32")
 

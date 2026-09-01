@@ -65,7 +65,10 @@ htmlcov/
 data/raw/
 data/staging/
 
-data/examples/
+# The contents rather than the directory itself, so the synthetic fixtures
+# below can be named back in. Git never looks inside a directory it has
+# excluded, and an exception underneath one is silently dead.
+data/examples/*
 *.pdf
 *.cif
 *.kdm
@@ -76,6 +79,18 @@ spine.db
 *.db-wal
 *.db-shm
 backups/
+
+# The demo fixtures are the exception, and only these: we generate them, they
+# describe an invented production, and no clause about real paperwork applies.
+# Last in the file so they survive the extension rules above -- the timecode
+# log is a .pdf.
+#
+# Excluded, they were skipped in silence. `demo_inject_events` reads the
+# examples directory by filename and passes over what is not there, so a clone
+# without a local copy ingested no offload evidence at all and still reported
+# the demo injected successfully.
+!data/examples/DEMO_*
+!data/examples/demo_*
 
 
 # Local code-intelligence indexes (rebuilt on demand, machine-specific)
