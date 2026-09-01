@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from starlette.testclient import TestClient
 from backend.app.main import app
 from backend.app.integrations import google_cloud
+from backend.app.script.ai_image_service import image_models
 from backend.app.script.llm_router import get_optimal_gemini_model
 from backend.app.integrations.google_cloud import (
     get_google_cloud_runtime_status,
@@ -39,8 +40,11 @@ def test_google_cloud_status_function():
     assert status["gcs_sdk_installed"] is True
     # The status endpoint must name the model the code would actually call.
     assert status["gemini_model"] == get_optimal_gemini_model("", "simple")
-    assert status["imagen_model"] == "imagen-3.0-generate-002"
-    assert "google.genai SDK (Gemini 2.0 & Imagen 3)" in status["active_features"]
+    # Whatever ai_image_service would actually call, never a name pinned here:
+    # this field claimed Imagen 3 for the whole of the run in which no Imagen
+    # model was reachable on the key at all.
+    assert status["image_model"] == image_models()[0]
+    assert "google.genai SDK (Gemini text and image models)" in status["active_features"]
 
 
 def test_google_cloud_status_endpoint(client):

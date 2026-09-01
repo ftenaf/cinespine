@@ -3,7 +3,8 @@ Google Cloud & Gemini Enterprise Agent Platform Runtime Integration.
 Demonstrates direct runtime usage of:
 1. Google GenAI SDK (`google.genai.Client`) for screenplay analysis & DoP prompt
    compilation. The model is chosen by `backend.app.script.llm_router`, not pinned here.
-2. Google Imagen 3 (`imagen-3.0-generate-002`) for photorealistic concept generation.
+2. Google's Gemini image models for photorealistic concept generation. The model
+   is chosen by `backend.app.script.ai_image_service`, not pinned here.
 3. Google Cloud Storage (`google.cloud.storage.Client`) for production media assets, script PDFs, and previz stills.
 """
 import base64
@@ -16,6 +17,7 @@ from typing import Optional, Dict, Any, List
 
 from pydantic import BaseModel
 
+from backend.app.script.ai_image_service import image_models
 from backend.app.script.llm_router import get_optimal_gemini_model
 
 logger = logging.getLogger(__name__)
@@ -65,7 +67,7 @@ class GoogleCloudStatus(BaseModel):
     genai_sdk_installed: bool
     gcs_sdk_installed: bool
     gemini_model: str
-    imagen_model: str
+    image_model: str
     project_id: Optional[str]
     gcs_bucket_name: Optional[str]
     is_authenticated: bool
@@ -82,7 +84,7 @@ def get_google_cloud_runtime_status() -> Dict[str, Any]:
 
     active_features = []
     if GENAI_AVAILABLE:
-        active_features.append("google.genai SDK (Gemini 2.0 & Imagen 3)")
+        active_features.append("google.genai SDK (Gemini text and image models)")
     if GCS_AVAILABLE:
         active_features.append("google.cloud.storage (Production Media Bucket)")
     if api_key:
@@ -95,7 +97,9 @@ def get_google_cloud_runtime_status() -> Dict[str, Any]:
         # Reported from the router rather than hardcoded: a status endpoint that
         # names a model the code no longer calls is worse than no field at all.
         "gemini_model": get_optimal_gemini_model("", task_complexity="simple"),
-        "imagen_model": "imagen-3.0-generate-002",
+        # Same reason as above. This said "imagen-3.0-generate-002" while no
+        # Imagen model was reachable on a Developer API key at all.
+        "image_model": image_models()[0],
         "project_id": project_id,
         "gcs_bucket_name": gcs_bucket,
         "is_authenticated": bool(api_key),

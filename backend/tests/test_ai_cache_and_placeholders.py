@@ -70,17 +70,61 @@ def test_generation_failure_is_not_cached(monkeypatch):
         lambda h, p: stored.__setitem__(h, p),
     )
 
-    def unreachable(*args, **kwargs):
-        raise RuntimeError("network down")
-
-    monkeypatch.setattr(ai_image_service.httpx, "AsyncClient", unreachable)
-
     result = asyncio.run(ai_image_service.generate_ai_cinematic_image(
         prompt="INT. RECORDING BOOTH - NIGHT", camera_letter="A",
     ))
 
     assert result["image_url"].startswith("/previz/")
     assert stored == {}, "a fallback must never be written to the cache"
+
+
+def test_a_placeholder_says_why_it_is_a_placeholder(monkeypatch):
+    """
+    The button says "Execute & Render AI Concept". When nothing rendered, the
+    payload has to say so -- this fell through silently on any non-200 answer
+    and served a bundled still with nothing anywhere marking it as one.
+    """
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-used")
+    monkeypatch.setattr(ai_image_service, "get_cached_response", lambda h: None)
+    monkeypatch.setattr(ai_image_service, "image_models", lambda: ["model-x", "model-y"])
+
+    async def refused(model, api_key, compiled_prompt):
+        raise RuntimeError(f"429 from {model}")
+
+    monkeypatch.setattr(ai_image_service, "_generate_with", refused)
+
+    result = asyncio.run(ai_image_service.generate_ai_cinematic_image(
+        prompt="INT. RECORDING BOOTH - NIGHT", camera_letter="A",
+    ))
+
+    assert result["image_url"].startswith("/previz/")
+    assert "Placeholder" in result["provider"]
+    assert [f.split(":")[0] for f in result["generator_failures"]] == ["model-x", "model-y"]
+
+
+def test_the_second_model_is_tried_when_the_first_declines(monkeypatch):
+    """A list of models nothing ever falls through is a longer way to name one."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-used")
+    monkeypatch.setattr(ai_image_service, "get_cached_response", lambda h: None)
+    monkeypatch.setattr(ai_image_service, "set_cached_response", lambda h, p: None)
+    monkeypatch.setattr(ai_image_service, "image_models", lambda: ["first", "second"])
+
+    async def only_second(model, api_key, compiled_prompt):
+        if model == "first":
+            raise ai_image_service._NoImageReturned("I can't draw that")
+        return {
+            "image_url": "data:image/png;base64,AAAA",
+            "compiled_prompt": compiled_prompt,
+            "provider": f"Google Gemini image ({model})",
+        }
+
+    monkeypatch.setattr(ai_image_service, "_generate_with", only_second)
+
+    result = asyncio.run(ai_image_service.generate_ai_cinematic_image(
+        prompt="INT. RECORDING BOOTH - NIGHT", camera_letter="A",
+    ))
+
+    assert result["provider"] == "Google Gemini image (second)"
 
 
 def test_a_real_generation_is_cached(monkeypatch):
@@ -96,15 +140,23 @@ def test_a_real_generation_is_cached(monkeypatch):
     )
     monkeypatch.setattr(ai_image_service, "get_cached_response", lambda h: None)
 
-    class _Image:
-        image_bytes = b"\xff\xd8\xff\xe0 fake jpeg"
+    # generate_content, not generate_images: the SDK refuses the latter outside
+    # Gemini Enterprise Agent Platform mode, which is how this shipped serving
+    # a bundled still under a button that claims to render one.
+    class _Blob:
+        mime_type = "image/png"
+        data = b"\x89PNG fake"
 
-    class _Generated:
-        image = _Image()
+    class _Part:
+        inline_data = _Blob()
+        text = None
+
+    class _Candidate:
+        content = type("C", (), {"parts": [_Part()]})()
 
     class _Models:
-        def generate_images(self, **kwargs):
-            return type("R", (), {"generated_images": [_Generated()]})()
+        def generate_content(self, **kwargs):
+            return type("R", (), {"candidates": [_Candidate()]})()
 
     class _Client:
         def __init__(self, **kwargs):
@@ -117,7 +169,8 @@ def test_a_real_generation_is_cached(monkeypatch):
         prompt="INT. RECORDING BOOTH - NIGHT", camera_letter="A",
     ))
 
-    assert result["image_url"].startswith("data:image/jpeg;base64,")
+    assert result["image_url"].startswith("data:image/png;base64,")
+    assert result["provider"].startswith("Google Gemini image (")
     assert len(stored) == 1
 
 

@@ -3,11 +3,70 @@ import logging
 import os
 from typing import Dict, Any, Optional
 
-import httpx
-
 from backend.app.script.cache_service import get_cached_response, set_cached_response, generate_hash
 
 logger = logging.getLogger(__name__)
+
+# Tried in order until one returns an image.
+#
+# Imagen is not among them any more. `imagen-3.0-generate-002` was called two
+# ways here and neither could ever have worked on a Gemini Developer API key:
+# the SDK refuses `generate_images` outside Gemini Enterprise Agent Platform
+# mode, and the REST `:predict` endpoint 404s because ListModels does not offer
+# any Imagen model to this key at all. Google's own deprecation notice points
+# the same way -- image generation goes through `generate_content` now.
+#
+# Overridable because the right model is a deployment question, not a fact
+# about this code: a Vertex-backed deployment may have models this list does
+# not name, and a preview name can be retired between hackathons.
+DEFAULT_IMAGE_MODELS = "gemini-3.1-flash-image,gemini-3-pro-image,gemini-2.5-flash-image"
+
+
+def image_models() -> list[str]:
+    """The image models to try, fastest first."""
+    raw = os.getenv("CINESPINE_IMAGE_MODELS") or DEFAULT_IMAGE_MODELS
+    return [m.strip() for m in raw.split(",") if m.strip()]
+
+
+class _NoImageReturned(Exception):
+    """The model answered, but with no image in it."""
+
+
+async def _generate_with(model: str, api_key: str, compiled_prompt: str) -> Dict[str, Any]:
+    """One generate_content call, returning the first inline image part."""
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model=model,
+        contents=compiled_prompt,
+        # TEXT stays in the list because some image models refuse an
+        # IMAGE-only response and answer with an error instead of a picture.
+        config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
+    )
+
+    for candidate in response.candidates or []:
+        for part in (getattr(candidate.content, "parts", None) or []):
+            blob = getattr(part, "inline_data", None)
+            if blob is not None and blob.data:
+                mime = blob.mime_type or "image/png"
+                b64_img = base64.b64encode(blob.data).decode("utf-8")
+                return {
+                    "image_url": f"data:{mime};base64,{b64_img}",
+                    "compiled_prompt": compiled_prompt,
+                    "provider": f"Google Gemini image ({model})",
+                }
+
+    # A text-only answer is usually the model explaining a refusal, and that
+    # sentence is worth more in the log than "no image".
+    said = " ".join(
+        (part.text or "").strip()
+        for candidate in (response.candidates or [])
+        for part in (getattr(candidate.content, "parts", None) or [])
+        if getattr(part, "text", None)
+    )
+    raise _NoImageReturned(said[:200] or "no image part in the response")
 
 def build_cinematic_prompt(
     prompt: str,
@@ -93,71 +152,42 @@ async def generate_ai_cinematic_image(
         set_cached_response(req_hash, result)
         return result
 
-    # 2. Google Imagen 3 only for the hackathon branch.
+    # 2. Google's image models, tried in order.
+    failures: list[str] = []
     if not economy_mode:
         gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if gemini_key:
-            try:
-                from google import genai
-                client = genai.Client(api_key=gemini_key)
-                result = client.models.generate_images(
-                    model="imagen-3.0-generate-002",
-                    prompt=compiled_prompt[:950],
-                    config=dict(
-                        number_of_images=1,
-                        aspect_ratio="16:9" if aspect_ratio in ["2.39:1", "16:9", "1.85:1"] else "4:3",
-                        person_generation="ALLOW_ADULT"
-                    )
-                )
-                if result.generated_images:
-                    img_bytes = result.generated_images[0].image.image_bytes
-                    b64_img = base64.b64encode(img_bytes).decode("utf-8")
-                    return _finalize({
-                        "image_url": f"data:image/jpeg;base64,{b64_img}",
-                        "compiled_prompt": compiled_prompt,
-                        "provider": "Google Cloud Imagen 3 (google.genai SDK)"
-                    })
-            except Exception as e:
-                logger.warning("google.genai Imagen 3 SDK error (falling back to REST): %s", e)
+            for model in image_models():
                 try:
-                    async with httpx.AsyncClient(timeout=30.0) as client:
-                        # The key goes in a header, never the query string: httpx
-                        # embeds the request URL in its exception messages, so a
-                        # key in the URL ends up in the logs on any failure.
-                        url = "https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict"
-                        res = await client.post(
-                            url,
-                            headers={
-                                "Content-Type": "application/json",
-                                "x-goog-api-key": gemini_key,
-                            },
-                            json={
-                                "instances": [{"prompt": compiled_prompt[:950]}],
-                                "parameters": {
-                                    "sampleCount": 1,
-                                    "aspectRatio": "16:9" if aspect_ratio in ["2.39:1", "16:9", "1.85:1"] else "4:3",
-                                    "personGeneration": "ALLOW_ADULT"
-                                }
-                            }
-                        )
-                        if res.status_code == 200:
-                            data = res.json()
-                            b64_img = data["predictions"][0]["bytesBase64Encoded"]
-                            return _finalize({
-                                "image_url": f"data:image/jpeg;base64,{b64_img}",
-                                "compiled_prompt": compiled_prompt,
-                                "provider": "Google Cloud Imagen 3 (Gemini Enterprise)"
-                            })
-                except Exception as e2:
-                    logger.warning("Google Imagen 3 REST error: %s", e2)
+                    return _finalize(await _generate_with(model, gemini_key, compiled_prompt))
+                except _NoImageReturned as e:
+                    failures.append(f"{model}: {e}")
+                except Exception as e:
+                    failures.append(f"{model}: {type(e).__name__}: {e}")
+        else:
+            failures.append("no GEMINI_API_KEY or GOOGLE_API_KEY in the environment")
 
     # 3. Local placeholder. Deliberately NOT cached: it means every generator
     #    was unavailable, which is a transient condition the next request should
     #    be free to retry.
+    #
+    # Logged at ERROR and named in the payload. The previous version fell
+    # through here silently whenever the REST call answered anything but 200,
+    # so a bundled still was served under a button that says "Execute & Render
+    # AI Concept" with nothing anywhere saying it had not been rendered.
+    if not economy_mode:
+        logger.error(
+            "No image generator answered; serving a bundled placeholder. Tried: %s",
+            "; ".join(failures) or "nothing",
+        )
     return {
         "image_url": _placeholder_asset(prompt, camera_letter),
         "compiled_prompt": compiled_prompt,
-        "provider": "CineSpine Previz Placeholder (no generator available)"
+        "provider": (
+            "CineSpine Previz Placeholder (economy mode)" if economy_mode
+            else "CineSpine Previz Placeholder (no generator available)"
+        ),
+        "generator_failures": failures,
     }
 
 
