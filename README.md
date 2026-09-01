@@ -8,8 +8,11 @@
 [![Google Cloud: Gemini Enterprise & Imagen 3](https://img.shields.io/badge/Google%20Cloud-Gemini%20Enterprise%20%26%20Imagen%203-4285F4.svg)](https://cloud.google.com/vertex-ai)
 [![Event Spine: ClickHouse](https://img.shields.io/badge/Event%20Spine-ClickHouse%20OLAP-FEE000.svg)](https://clickhouse.com)
 [![Observability: Grafana](https://img.shields.io/badge/Observability-Grafana%20Labs-F46800.svg)](https://grafana.com)
+[![Deploy on Replit](https://img.shields.io/badge/Deploy-Replit-red.svg?logo=replit)](https://replit.com/new/github/ftenaf/cinespine)
 [![Frontend: React 18 + Vite](https://img.shields.io/badge/Frontend-React%2018%20%2B%20Vite%20%2B%20Tailwind-61DAFB.svg)](https://vitejs.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](https://opensource.org/licenses/MIT)
+
+[![Run on Replit](https://replit.com/badge/github/ftenaf/cinespine)](https://replit.com/new/github/ftenaf/cinespine)
 
 ---
 
