@@ -32,6 +32,13 @@ logger = logging.getLogger(__name__)
 WRAP_RESCUE_ACTOR = "@wrap_rescue_agent"
 SOURCE_MARKER = "WrapRescueSource:"
 
+# What `mcp-clickhouse` calls the tool that runs a SELECT. It was addressed as
+# `run_query`, which that server has never exported, so every query the agent
+# ran came back `Unknown tool: 'run_query'` -- and came back as a successful
+# call with no rows. Named once here because three call sites had it spelled
+# out separately and all three were wrong together.
+_RUN_QUERY_TOOL = "run_select_query"
+
 
 class ClickHouseMCPStatus(BaseModel):
     configured: bool
@@ -120,7 +127,7 @@ class ClickHouseMCPClient(Protocol):
         """Calls the official list_tables tool."""
 
     async def run_query(self, query: str) -> tuple[Any, ToolCallTrace]:
-        """Calls the official run_query tool."""
+        """Calls the official run_select_query tool."""
 
     async def get_total_requirements_by_day_and_role(self, production_id: str) -> tuple[Any, ToolCallTrace]:
         """Query showing Total requirements by Day and Role."""
@@ -151,6 +158,26 @@ def _unwrap_mcp_result(payload: Dict[str, Any]) -> Any:
         raise RuntimeError(str(message))
 
     result = payload.get("result", payload)
+
+    # A tool that failed answers at the JSON-RPC layer like one that worked:
+    # HTTP 200, no "error" key, and the reason written as content text. Read
+    # for data, `Unknown tool: 'run_query'` is a string, and a string coerces
+    # to zero rows -- so the call was recorded ok with nothing in it, the agent
+    # saw every tool succeed, and it wrote a memo saying the day had no
+    # blockers. It had not looked at one.
+    #
+    # `isError` is the server saying so, and it is the only thing that
+    # distinguishes the two cases before the shape is read.
+    if isinstance(result, dict) and result.get("isError"):
+        content = result.get("content")
+        detail = ""
+        if isinstance(content, list):
+            detail = " ".join(
+                str(item["text"]) for item in content
+                if isinstance(item, dict) and "text" in item
+            ).strip()
+        raise RuntimeError(detail or "The MCP tool reported an error without saying what.")
+
     if isinstance(result, dict):
         if "structuredContent" in result:
             return _jsonish(result["structuredContent"])
@@ -187,6 +214,20 @@ def _coerce_rows(result: Any) -> List[Dict[str, Any]]:
     if isinstance(result, list):
         return [row for row in result if isinstance(row, dict)]
     if isinstance(result, dict):
+        # `run_select_query` answers columnar: {"columns": ["n"], "rows": [[139]]}.
+        # Every row is a list, and the loop below keeps only dicts, so a result
+        # with rows in it measured as no rows at all -- and the caller reads no
+        # rows as a day with nothing wrong on it. The column names are right
+        # here; the callers want them on each row, so put them there.
+        columns = result.get("columns")
+        rows = result.get("rows")
+        if isinstance(columns, list) and isinstance(rows, list) and columns:
+            named = [str(c) for c in columns]
+            return [
+                dict(zip(named, row)) for row in rows
+                if isinstance(row, (list, tuple))
+            ] or [row for row in rows if isinstance(row, dict)]
+
         for key in ("rows", "data", "result", "results"):
             nested = result.get(key)
             if isinstance(nested, list):
@@ -330,7 +371,7 @@ class HTTPClickHouseMCPClient:
         )
 
     async def run_query(self, query: str) -> tuple[Any, ToolCallTrace]:
-        return await self._call_tool("run_query", {"query": query})
+        return await self._call_tool(_RUN_QUERY_TOOL, {"query": query})
 
     async def get_total_requirements_by_day_and_role(self, production_id: str) -> tuple[Any, ToolCallTrace]:
         query = f"""
@@ -360,13 +401,13 @@ class HTTPClickHouseMCPClient:
             GROUP BY shoot_day, role
             ORDER BY shoot_day ASC, role ASC
         """
-        return await self._call_tool("run_query", {"query": query})
+        return await self._call_tool(_RUN_QUERY_TOOL, {"query": query})
 
     async def get_unacknowledged_requirements_blocking_wrap(self, production_id: str, shoot_day: str) -> tuple[Any, ToolCallTrace]:
         # Reuse the existing _unacknowledged_query to count blocked items
         base_query = _unacknowledged_query(production_id, shoot_day)
         query = f"SELECT count(*) as count FROM ({base_query})"
-        return await self._call_tool("run_query", {"query": query})
+        return await self._call_tool(_RUN_QUERY_TOOL, {"query": query})
 
 
 class GeminiEnterpriseMemoRuntime:
@@ -1256,11 +1297,17 @@ class WrapRescueAgent(LlmAgent):
 
 
 def _discrepancy_query(production_id: str, shoot_day: str) -> str:
+    # FINAL because audit_discrepancies is a ReplacingMergeTree and every
+    # projection re-raises the same finding under a fresh discrepancy_id. The
+    # engine's key collapses those, but only once it has merged, which it does
+    # on its own schedule -- so a read without FINAL sees one problem as two,
+    # ranks it twice and files a second requirement for it. The demo projects
+    # twice on the way in, which is enough for it to show every time.
     return f"""
         SELECT discrepancy_id, production_id, shoot_day, entity_type, entity_id,
                discrepancy_type, severity, description, witnesses_json,
                is_resolved, created_at
-        FROM {database()}.audit_discrepancies
+        FROM {database()}.audit_discrepancies FINAL
         WHERE production_id = {_literal(production_id)}
           AND shoot_day = {_literal(shoot_day)}
           AND is_resolved = 0
@@ -1342,7 +1389,7 @@ def _discrepancy_age_query(production_id: str, shoot_day: str) -> str:
                count() AS open_discrepancies,
                avg(dateDiff('hour', created_at, now())) AS avg_age_hours,
                max(dateDiff('hour', created_at, now())) AS max_age_hours
-        FROM {database()}.audit_discrepancies
+        FROM {database()}.audit_discrepancies FINAL
         WHERE production_id = {_literal(production_id)}
           AND shoot_day = {_literal(shoot_day)}
           AND is_resolved = 0
