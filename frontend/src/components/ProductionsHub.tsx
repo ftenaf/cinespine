@@ -12,7 +12,6 @@ import { summarizeRequirements } from '../requirementsBoard';
 import { ProductionDashboardPanel } from './ProductionDashboard';
 import { AnalyticsPanel } from './AnalyticsPanel';
 import { RequirementsBoard } from './RequirementsBoard';
-import { AssistantEditorialPanel } from './AssistantEditorialPanel';
 import { WrapRescueAgentPanel } from './WrapRescueAgentPanel';
 
 /**
@@ -527,13 +526,6 @@ export function ProductionsHub({
           {/* The board reads a whole production, not one shoot day, which is
               why it belongs here rather than beside the day-by-day views. */}
           <ProductionDashboardPanel productionId={selected.production_id} reloadKey={tagRevision} />
-
-          <AssistantEditorialPanel
-            production={selected}
-            shootDays={selected.shoot_days}
-            currentUserHandle={currentUserHandle}
-            onChanged={() => setRequirementRevision(v => v + 1)}
-          />
 
           <WrapRescueAgentPanel
             productionId={selected.production_id}

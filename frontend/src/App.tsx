@@ -7,7 +7,7 @@ import {
   Image as ImageIcon, ChevronLeft, ChevronRight, LayoutGrid,
   Maximize2, ExternalLink, Video, Mic, MapPin,
   Bell, CheckCheck, PlusCircle, ChevronDown, Send, ShieldAlert,
-  Radio, ListTodo, ArrowRight
+  Radio, ListTodo, ArrowRight, UsersRound
 } from 'lucide-react';
 import { 
   TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, SequenceRecord,
@@ -32,6 +32,7 @@ import { RequirementRow } from './components/RequirementsBoard';
 import { identify, startAnalytics, trackView } from './analytics';
 import { ProductionsHub } from './components/ProductionsHub';
 import { HackathonDemo } from './components/HackathonDemo';
+import { AssistantEditorialPanel } from './components/AssistantEditorialPanel';
 
 
 
@@ -130,9 +131,9 @@ export default function App() {
 
   // Top-Level Pillar Navigation: Pre-Production Studio vs Set & Editorial Spine vs Hackathon Demo
   const [currentPillar, setCurrentPillar] = useState<'studio' | 'spine' | 'productions' | 'demo'>('demo');
-
   // Active View & Filters for Set & Editorial Spine
-  const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents' | 'requirements'>('master');
+  const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents' | 'requirements' | 'assistant'>('master');
+
   // Bumped whenever a tag changes so the board reloads without a full refetch
   // of the spine behind it.
   const [tagRevision, setTagRevision] = useState(0);
@@ -1244,7 +1245,7 @@ export default function App() {
 
           {/* Spine Sub-Navigation Tabs & Search Bar */}
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => setActiveTab('master')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
@@ -1331,6 +1332,18 @@ export default function App() {
                     {reqMetrics.open} open
                   </span>
                 )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('assistant')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  activeTab === 'assistant'
+                    ? 'bg-spine-accent text-white shadow-lg shadow-purple-600/30'
+                    : 'text-gray-300 hover:text-white hover:bg-slate-900 border border-transparent'
+                }`}
+              >
+                <UsersRound className="w-4 h-4 text-cyan-400" />
+                Assistant Editorial
               </button>
             </div>
 
@@ -3402,6 +3415,17 @@ export default function App() {
                 })}
               </div>
             )}
+          </section>
+        )}
+        {/* TAB 5: ASSISTANT EDITORIAL */}
+        {activeTab === 'assistant' && (
+          <section className="space-y-4">
+            <AssistantEditorialPanel
+              production={activeProduction}
+              shootDays={activeProduction.shoot_days}
+              currentUserHandle={currentUser.handle}
+              onChanged={() => loadSpineData()}
+            />
           </section>
         )}
       </main>

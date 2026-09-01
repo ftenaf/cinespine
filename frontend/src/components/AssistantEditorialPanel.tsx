@@ -190,6 +190,8 @@ export function AssistantEditorialPanel({
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [showOnlyMine, setShowOnlyMine] = useState(false);
+
   const canEdit = ACTIVE_STATUSES.has(production.status ?? 'Active');
   const defaultDay = useMemo(() => shootDays[shootDays.length - 1] ?? '31', [shootDays]);
   const assistantEditors = useMemo(
@@ -197,8 +199,14 @@ export function AssistantEditorialPanel({
     [crew],
   );
   const activeAssignments = useMemo(
-    () => assignments.filter(item => item.status !== 'resolved'),
-    [assignments],
+    () => {
+      const active = assignments.filter(item => item.status !== 'resolved');
+      if (showOnlyMine) {
+        return active.filter(item => item.assigned_to.toLowerCase() === currentUserHandle.toLowerCase());
+      }
+      return active;
+    },
+    [assignments, showOnlyMine, currentUserHandle],
   );
   const canPlan = canEdit && assistantEditors.length > 0;
 
@@ -532,12 +540,27 @@ export function AssistantEditorialPanel({
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-gray-300">Running pre-edit assignments</p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold text-gray-300">Running pre-edit assignments</p>
+                {assignments.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowOnlyMine(!showOnlyMine)}
+                    className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                      showOnlyMine
+                        ? 'bg-blue-900/50 border-blue-700 text-blue-200'
+                        : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    {showOnlyMine ? 'My Assignments' : 'All'}
+                  </button>
+                )}
+              </div>
               {isLoadingAssignments && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-500" />}
             </div>
             {activeAssignments.length === 0 ? (
               <p className="text-sm text-gray-400 border border-slate-800 rounded-xl p-3 bg-slate-900/50">
-                No assistant scenes are currently assigned.
+                {showOnlyMine ? 'You have no assigned scenes.' : 'No assistant scenes are currently assigned.'}
               </p>
             ) : (
               <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
@@ -546,12 +569,18 @@ export function AssistantEditorialPanel({
                   return (
                     <div
                       key={assignment.requirement_id}
-                      className="border border-slate-800 rounded-xl p-3 bg-slate-900/50"
+                      className={`border rounded-xl p-3 transition-colors ${
+                        canComplete
+                          ? 'border-blue-800/50 bg-blue-950/20'
+                          : 'border-slate-800 bg-slate-900/50'
+                      }`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-white truncate">{assignment.target_label}</p>
-                          <p className="text-[11px] text-gray-500 truncate">
+                          <p className={`text-sm font-semibold truncate ${canComplete ? 'text-blue-100' : 'text-white'}`}>
+                            {assignment.target_label}
+                          </p>
+                          <p className={`text-[11px] truncate ${canComplete ? 'text-blue-300/80' : 'text-gray-500'}`}>
                             {assignment.assigned_to} · {assignment.status}
                           </p>
                         </div>
@@ -560,7 +589,11 @@ export function AssistantEditorialPanel({
                           onClick={() => completeAssignment(assignment)}
                           disabled={!canComplete || completingId === assignment.requirement_id}
                           title={canComplete ? 'Mark pre-edit complete' : 'Only the assigned assistant can complete this'}
-                          className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold border border-emerald-700/60 text-emerald-200 px-2.5 py-1 rounded-lg disabled:opacity-40"
+                          className={`inline-flex items-center justify-center gap-1.5 text-xs font-semibold border px-2.5 py-1 rounded-lg disabled:opacity-40 ${
+                            canComplete
+                              ? 'border-emerald-700/60 text-emerald-200 hover:bg-emerald-950/40'
+                              : 'border-slate-700 text-slate-500'
+                          }`}
                         >
                           {completingId === assignment.requirement_id ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
