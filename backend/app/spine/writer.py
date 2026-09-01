@@ -81,20 +81,6 @@ DEFAULT_PRODUCTIONS = {
         "status": "In Production",
         "description": "Sample feature production used for demos and tests",
     },
-    "PROD_02": {
-        "production_id": "PROD_02",
-        "name": "Demo Production 02",
-        "director": "Demo Unit",
-        "status": "Principal Photography",
-        "description": "Second sample production for multi-production testing",
-    },
-    "PROD_01": {
-        "production_id": "PROD_01",
-        "name": "Demo Production 01",
-        "director": "Demo Unit",
-        "status": "Active",
-        "description": "Hackathon sandbox production",
-    },
 }
 
 

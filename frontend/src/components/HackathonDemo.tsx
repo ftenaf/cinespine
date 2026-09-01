@@ -43,6 +43,9 @@ export const HackathonDemo: React.FC = () => {
       addLog(`Agent Response:\n\n${agentData.response.response}`);
       
       addLog("Demo Completed Successfully!");
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
     } catch (err: any) {
       addLog(`Error during demo: ${err.message}`);
     } finally {

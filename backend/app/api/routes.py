@@ -3294,6 +3294,9 @@ async def demo_inject_events():
     from backend.app.parsers.classifier import classify_document
     from backend.app.parsers.pdf_parsers import extract_text_from_pdf
     
+    # Ensure the DEMO_PRODUCTION and demo script are seeded before we inject events
+    spine_writer.seed_defaults()
+    
     EXAMPLES_DIR = os.environ.get("CINESPINE_EXAMPLES_DIR", "data/examples")
     
     demo_files = [
@@ -3376,7 +3379,7 @@ async def demo_wrap_rescue():
 @router.post("/demo/wipe")
 def demo_wipe():
     """Factory reset the demo state across both SQLite and ClickHouse."""
-    return spine_writer.wipe_all()
+    return spine_writer.wipe_all(seed=False)
 
 
 
