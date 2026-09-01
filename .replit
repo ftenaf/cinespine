@@ -4,12 +4,10 @@ modules = ["python-3.12", "nodejs-20", "web", "bash"]
 channel = "stable-25_05"
 
 language = "python3"
-run = "sh -c 'PIP_USER=0 .venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000'"
+run = "python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"
 
-# Completely disable Replit's auto-installer so it doesn't crash on uv.lock
 [packager]
 ignoredPackages = ["*"]
-ignoredPaths = [".venv", "backend", "frontend"]
 
 [packager.features]
 packageSearch = false
@@ -17,9 +15,8 @@ guessImports = false
 autoInstall = false
 
 [deployment]
-# Build frontend and backend, injecting PIP_USER=0 to avoid --user permission errors
-build = ["sh", "-c", "python3 -m venv .venv && PIP_USER=0 .venv/bin/pip install -r backend/requirements.txt && cd frontend && npm install && npm run build"]
-run = ["sh", "-c", "PIP_USER=0 .venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"]
+build = ["sh", "-c", "pip install --break-system-packages -r backend/requirements.txt && cd frontend && npm install && npm run build"]
+run = ["sh", "-c", "python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"]
 deploymentTarget = "autoscale"
 
 [[ports]]
