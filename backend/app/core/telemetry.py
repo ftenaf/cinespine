@@ -145,3 +145,65 @@ class TelemetryExporter:
     @staticmethod
     def get_content_type() -> str:
         return CONTENT_TYPE_LATEST
+
+def setup_otlp(app_name: str = "cinespine-backend"):
+    """
+    Initializes OpenTelemetry traces and logs export to OTLP.
+    Reads standard OTEL_ environment variables.
+    """
+    import os
+    import logging
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.instrumentation.logging import LoggingInstrumentor
+
+    logger = logging.getLogger(__name__)
+    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    
+    if not endpoint:
+        logger.info("OTEL_EXPORTER_OTLP_ENDPOINT not set. OpenTelemetry export is disabled.")
+        return
+
+    logger.info(f"Initializing OpenTelemetry for {app_name}, exporting to {endpoint}")
+
+    resource = Resource.create({
+        "service.name": app_name,
+        "service.version": "0.1.0"
+    })
+
+    tracer_provider = TracerProvider(resource=resource)
+    trace.set_tracer_provider(tracer_provider)
+    
+    otlp_exporter = OTLPSpanExporter()
+    span_processor = BatchSpanProcessor(otlp_exporter)
+    tracer_provider.add_span_processor(span_processor)
+
+    # Instrument python logging to inject trace_id and span_id
+    LoggingInstrumentor().instrument(set_logging_format=True)
+    
+    # -----------------------------------------------------
+    # Set up OTLP Log Exporter
+    # -----------------------------------------------------
+    try:
+        from opentelemetry._logs import set_logger_provider
+        from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+        from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+        from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+
+        logger_provider = LoggerProvider(resource=resource)
+        set_logger_provider(logger_provider)
+        
+        otlp_log_exporter = OTLPLogExporter()
+        logger_provider.add_log_record_processor(BatchLogRecordProcessor(otlp_log_exporter))
+        
+        # Attach OTel handler to the root logger so all logs are exported
+        otel_log_handler = LoggingHandler(level=logging.INFO, logger_provider=logger_provider)
+        logging.getLogger().addHandler(otel_log_handler)
+    except ImportError as e:
+        logger.warning(f"Could not initialize OTLP Log Exporter (requires newer opentelemetry packages): {e}")
+
+    logger.info("OpenTelemetry initialization complete. Traces and Logs are now exporting.")
+

@@ -1,6 +1,9 @@
 # Build stage
 FROM node:20-alpine AS builder
 
+ARG VITE_GRAFANA_FARO_URL
+ENV VITE_GRAFANA_FARO_URL=$VITE_GRAFANA_FARO_URL
+
 WORKDIR /app
 
 # Copy package files

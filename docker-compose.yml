@@ -5,6 +5,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - VITE_GRAFANA_FARO_URL=${VITE_GRAFANA_FARO_URL}
     container_name: cinespine-frontend
     ports:
       - "5173:80"

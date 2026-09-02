@@ -16,6 +16,16 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# Initialize OpenTelemetry
+from backend.app.core.telemetry import setup_otlp
+setup_otlp()
+
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+FastAPIInstrumentor.instrument_app(app)
+HTTPXClientInstrumentor().instrument()
+
 # Enable CORS for React frontend (local Vite port 5173 and Replit hosting)
 app.add_middleware(
     CORSMiddleware,
