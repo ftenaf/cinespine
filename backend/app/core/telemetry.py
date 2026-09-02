@@ -207,3 +207,12 @@ def setup_otlp(app_name: str = "cinespine-backend"):
 
     logger.info("OpenTelemetry initialization complete. Traces and Logs are now exporting.")
 
+    # -----------------------------------------------------
+    # Set up OpenLIT for GenAI/Agent Observability
+    # -----------------------------------------------------
+    try:
+        import openlit
+        openlit.init(application_name=app_name)
+        logger.info("OpenLIT initialized for GenAI/Agent observability.")
+    except ImportError as e:
+        logger.warning(f"Could not initialize OpenLIT: {e}")
