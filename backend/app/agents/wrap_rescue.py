@@ -907,7 +907,7 @@ class WrapRescueAgent(LlmAgent):
         if api_key:
             try:
                 session = InMemorySessionService()
-                runner = Runner(agent=self, session_service=session, app_name="cinespine")
+                runner = Runner(agent=self, session_service=session, app_name="agents")
             except Exception:  # noqa: S110
                 pass
 

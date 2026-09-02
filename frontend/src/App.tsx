@@ -3409,6 +3409,43 @@ export default function App() {
                           </button>
                         </div>
                       </div>
+
+                      {/* If Open: Resolve Input Section */}
+                      {selectedReqForResolve?.requirement_id === req.requirement_id && (
+                        <div className="pt-3 border-t border-slate-800 space-y-2 mt-3">
+                          <div className="space-y-2 bg-slate-900 p-3 rounded-xl border border-spine-accent/40">
+                            <label className="text-[11px] font-bold text-spine-success block">
+                              Resolution Justification / Note:
+                            </label>
+                            <textarea
+                              rows={2}
+                              placeholder="e.g. Applied EQ filter to isolate lavalier, audio verified clean for edit..."
+                              value={reqResolutionNote}
+                              onChange={e => setReqResolutionNote(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-spine-success"
+                              autoFocus
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedReqForResolve(null)}
+                                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-gray-200 text-xs rounded-lg transition"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isResolvingReqSubmitting || !reqResolutionNote.trim()}
+                                onClick={() => handleResolveRequirementSubmit(req.requirement_id)}
+                                className="px-3 py-1 bg-spine-success hover:bg-spine-success disabled:opacity-50 text-white text-xs font-bold rounded-lg flex items-center gap-1 transition shadow"
+                              >
+                                {isResolvingReqSubmitting ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                Mark Resolved & Notify Caller ({req.created_by})
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

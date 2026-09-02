@@ -79,7 +79,7 @@ def get_google_cloud_runtime_status() -> Dict[str, Any]:
     Returns current Google Cloud runtime connection and SDK readiness state.
     """
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT", "cinespine-agentic-cinema")
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT", "cinespine")
     gcs_bucket = os.getenv("GCS_BUCKET_NAME", "cinespine-production-media")
 
     active_features = []
@@ -170,7 +170,7 @@ def upload_media_to_google_cloud_storage(
     using the official google.cloud.storage Client.
     """
     bucket_name = os.getenv("GCS_BUCKET_NAME", "cinespine-production-media")
-    project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "cinespine-agentic-cinema")
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "cinespine")
 
     if GCS_AVAILABLE and not _gcs_unavailable():
         try:

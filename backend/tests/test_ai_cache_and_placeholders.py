@@ -109,7 +109,7 @@ def test_the_second_model_is_tried_when_the_first_declines(monkeypatch):
     monkeypatch.setattr(ai_image_service, "set_cached_response", lambda h, p: None)
     monkeypatch.setattr(ai_image_service, "image_models", lambda: ["first", "second"])
 
-    async def only_second(model, api_key, compiled_prompt):
+    async def only_second(model, compiled_prompt, api_key=None):
         if model == "first":
             raise ai_image_service._NoImageReturned("I can't draw that")
         return {

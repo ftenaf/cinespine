@@ -441,6 +441,8 @@ async def extract_lined_page_if_enabled(
 
     extractor = GeminiScriptLiningExtractor(api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
     try:
+        from backend.app.parsers.doc_ai_extractor import get_docai_client, extract_lined_page
+        
         page = None
         if get_docai_client():
             logger.info("Trying Document AI for lined page: %s", filename)

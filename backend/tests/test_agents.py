@@ -10,6 +10,7 @@ from backend.app.agents.multimodal import GeminiScriptLiningExtractor, Extracted
 from backend.app.agents.mcp_server import ClickHouseMCPServer, GeminiDiscrepancyAssistant
 from backend.app.spine.writer import SpineWriter
 from backend.app.reconciliation.engine import ReconciliationEngine
+from backend.app.script.llm_router import DEFAULT_FLASH_MODEL
 
 
 class TestGeminiScriptLiningExtractor:
@@ -142,7 +143,7 @@ class TestGeminiScriptLiningExtractor:
 
     def test_extract_page_falls_through_to_the_next_model(self, monkeypatch):
         def behaviour(model):
-            if "latest" in model:
+            if model == DEFAULT_FLASH_MODEL:
                 raise RuntimeError("429 RESOURCE_EXHAUSTED")
             return self.PAGE_JSON
 

@@ -21,13 +21,22 @@ def clean_model_env(monkeypatch):
     monkeypatch.delenv("CINESPINE_GEMINI_PRO_MODEL", raising=False)
 
 
-def test_no_candidate_is_a_pinned_version_that_can_be_retired():
+def test_no_candidate_is_an_id_vertex_cannot_serve():
     """
     The outage this fixes: the flash and pro defaults were pinned to a version
     that had never existed on the API, so every call 404'd into a warning.
-    The primary choice must be a floating alias.
+
+    This once asserted the default ended in `-latest`, which was the right
+    defence against a retired pin on the AI Studio endpoint. It is the wrong
+    one here: this deployment runs against Vertex, which publishes no `-latest`
+    alias for any Gemini model, so requiring the alias would have required an
+    id that 404s. What the chain actually has to avoid is a generation that has
+    left the catalogue -- 1.x, which is what it was pointed at.
     """
-    assert DEFAULT_FLASH_MODEL.endswith("-latest")
+    for model in [DEFAULT_FLASH_MODEL, *FLASH_FALLBACK_MODELS]:
+        assert "flash" in model, f"{model} is not a flash model"
+        assert not model.endswith("-latest"), f"{model} does not resolve on Vertex"
+        assert not model.startswith("gemini-1."), f"{model} is a retired generation"
 
 
 def test_every_candidate_is_a_plausible_model_id():
@@ -37,7 +46,7 @@ def test_every_candidate_is_a_plausible_model_id():
         assert not model.endswith("-pro"), f"{model} is a pro model in the flash chain"
 
 
-def test_simple_work_starts_on_the_floating_alias():
+def test_simple_work_starts_on_the_primary_flash_model():
     assert get_model_candidates("a short prompt")[0] == DEFAULT_FLASH_MODEL
     assert get_optimal_gemini_model("a short prompt") == DEFAULT_FLASH_MODEL
 
@@ -70,7 +79,7 @@ def test_pro_routing_is_off_by_default():
 def test_pro_routing_leads_when_configured(monkeypatch):
     monkeypatch.setenv("CINESPINE_GEMINI_PRO_MODEL", "gemini-pro-latest")
     candidates = get_model_candidates("a prompt", "complex")
-    assert candidates[0] == "gemini-pro-latest"
+    assert candidates[0] == "gemini-2.5-pro"
     # and still degrades to flash rather than giving up
     assert DEFAULT_FLASH_MODEL in candidates
 

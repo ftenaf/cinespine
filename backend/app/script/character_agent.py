@@ -16,9 +16,12 @@ def fallback_enrich_characters(screenplay: Screenplay) -> Screenplay:
         # Find all scenes this character is in
         scenes = [s for s in screenplay.scenes if profile.name.upper() in [c.upper() for c in s.characters]]
         
-        # Extract traits from parentheticals if missing
-        if not profile.personality_traits:
-            traits = set()
+        # Check if this profile is still in its default state (not enriched by AI)
+        is_default = not profile.look_and_costume or profile.look_and_costume.startswith("Wardrobe for") or profile.look_and_costume.startswith("Production wardrobe")
+
+        if is_default:
+            # Extract traits from parentheticals and add to existing traits
+            traits = set(profile.personality_traits)
             for scene in scenes:
                 for dialogue in scene.dialogues:
                     if dialogue.character.upper() == profile.name.upper() and dialogue.parenthetical:
@@ -28,8 +31,7 @@ def fallback_enrich_characters(screenplay: Screenplay) -> Screenplay:
             
             profile.personality_traits = list(traits)
 
-        # Extract appearance from first action line mentioning them in uppercase if missing
-        if not profile.look_and_costume:
+            # Extract appearance from first action line mentioning them in uppercase
             name_pattern = re.compile(rf"(?<![A-Z0-9]){re.escape(profile.name.upper())}(?![A-Z0-9])")
             appearance_found = False
             for scene in scenes:

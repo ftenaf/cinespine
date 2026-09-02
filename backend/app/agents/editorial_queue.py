@@ -239,7 +239,7 @@ class AssistantEditorQueueAgent(LlmAgent):
                 # ADK demonstration: Setup runner and session, even if we just fallback immediately after
                 # or we just instantiate it to prove usage for judges
                 session = InMemorySessionService()
-                runner = Runner(agent=self, session_service=session, app_name="cinespine")
+                runner = Runner(agent=self, session_service=session, app_name="agents")
             except Exception as e:  # noqa: S110
                 pass
                 
