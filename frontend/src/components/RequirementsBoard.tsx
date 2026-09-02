@@ -45,7 +45,16 @@ const STATUS_LABELS: Record<string, string> = {
   resolved: 'Resolved',
 };
 
-type Filter = 'outstanding' | 'blocked' | 'all' | RequirementStatus;
+/**
+ * `mine` is the only filter that depends on who is reading.
+ *
+ * It exists because the board is where a person's own work actually lands. The
+ * assistant editor queue hands a scene over by raising a requirement against
+ * it, so "which scenes am I holding" is already on this list -- it was just
+ * mixed in with everyone else's, and the only way to pick it out was to type
+ * your own handle into the search box.
+ */
+type Filter = 'outstanding' | 'blocked' | 'all' | 'mine' | RequirementStatus;
 
 function Chip({ label, count, isActive, onClick, tone }: {
   label: string;
@@ -482,6 +491,13 @@ export function RequirementsBoard({ productionId, team, currentUserHandle, reloa
   const shown = useMemo(() => {
     let rows = requirements ?? [];
     if (filter === 'outstanding') rows = rows.filter(isOutstanding);
+    else if (filter === 'mine') {
+      // Still owed, and owed by the reader. Resolved work is excluded for the
+      // same reason it is under Outstanding: this answers "what am I holding",
+      // and something finished is not being held.
+      const me = currentUserHandle.toLowerCase();
+      rows = rows.filter(r => isOutstanding(r) && r.assigned_to.toLowerCase() === me);
+    }
     else if (filter !== 'all') rows = rows.filter(r => r.status === filter);
 
     const needle = search.trim().toLowerCase();
@@ -495,7 +511,16 @@ export function RequirementsBoard({ productionId, team, currentUserHandle, reloa
       );
     }
     return sortByUrgency(rows);
-  }, [requirements, filter, search]);
+  }, [requirements, filter, search, currentUserHandle]);
+
+  // Taken from the same owner tally the board already builds, so the chip and
+  // the "Owners" strip below it cannot disagree about how much somebody holds.
+  const mineCount = useMemo(
+    () => summary.owners.find(
+      o => o.handle.toLowerCase() === currentUserHandle.toLowerCase(),
+    )?.outstanding ?? 0,
+    [summary.owners, currentUserHandle],
+  );
 
   if (error) {
     return (
@@ -540,6 +565,13 @@ export function RequirementsBoard({ productionId, team, currentUserHandle, reloa
 
       <div className="flex flex-wrap items-center gap-2">
         <Chip label="Outstanding" count={summary.outstanding} isActive={filter === 'outstanding'} onClick={() => setFilter('outstanding')} />
+        <Chip
+          label="Assigned to me"
+          count={mineCount}
+          tone={mineCount ? 'text-cyan-300' : undefined}
+          isActive={filter === 'mine'}
+          onClick={() => setFilter('mine')}
+        />
         <Chip label="Blocked" count={summary.blocked} tone={summary.blocked ? 'text-red-300' : undefined} isActive={filter === 'blocked'} onClick={() => setFilter('blocked')} />
         <Chip label="Open" count={summary.open} isActive={filter === 'open'} onClick={() => setFilter('open')} />
         <Chip label="In progress" count={summary.in_progress} isActive={filter === 'in_progress'} onClick={() => setFilter('in_progress')} />
@@ -599,7 +631,9 @@ export function RequirementsBoard({ productionId, team, currentUserHandle, reloa
           <p className="text-sm text-gray-400 bg-slate-900/60 border border-slate-800 rounded-xl p-4">
             {search.trim()
               ? 'Nothing matches that search.'
-              : 'Nothing in this state.'}
+              : filter === 'mine'
+                ? `Nothing is assigned to ${currentUserHandle} right now.`
+                : 'Nothing in this state.'}
           </p>
         )}
       </div>

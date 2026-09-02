@@ -12,6 +12,7 @@ import { summarizeRequirements } from '../requirementsBoard';
 import { ProductionDashboardPanel } from './ProductionDashboard';
 import { AnalyticsPanel } from './AnalyticsPanel';
 import { RequirementsBoard } from './RequirementsBoard';
+import { AssistantEditorialPanel } from './AssistantEditorialPanel';
 import { WrapRescueAgentPanel } from './WrapRescueAgentPanel';
 
 /**
@@ -526,6 +527,18 @@ export function ProductionsHub({
           {/* The board reads a whole production, not one shoot day, which is
               why it belongs here rather than beside the day-by-day views. */}
           <ProductionDashboardPanel productionId={selected.production_id} reloadKey={tagRevision} />
+
+          {/* Planning a production's assistant editorial: crewing it, and
+              deciding which scenes are clean enough to hand over. Both are
+              whole-production decisions, so they sit here. An assistant editor
+              reading their own queue does not come here for it -- they filter
+              the Spine's requirements board to themselves. */}
+          <AssistantEditorialPanel
+            production={selected}
+            shootDays={selected.shoot_days}
+            currentUserHandle={currentUserHandle}
+            onChanged={() => setRequirementRevision(v => v + 1)}
+          />
 
           <WrapRescueAgentPanel
             productionId={selected.production_id}

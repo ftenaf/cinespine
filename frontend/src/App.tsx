@@ -7,7 +7,7 @@ import {
   Image as ImageIcon, ChevronLeft, ChevronRight, LayoutGrid,
   Maximize2, ExternalLink, Video, Mic, MapPin,
   Bell, CheckCheck, PlusCircle, ChevronDown, Send, ShieldAlert,
-  Radio, ListTodo, ArrowRight, UsersRound
+  Radio, ListTodo, ArrowRight
 } from 'lucide-react';
 import { 
   TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, SequenceRecord,
@@ -32,7 +32,6 @@ import { RequirementRow } from './components/RequirementsBoard';
 import { identify, startAnalytics, trackView } from './analytics';
 import { ProductionsHub } from './components/ProductionsHub';
 import { HackathonDemo } from './components/HackathonDemo';
-import { AssistantEditorialPanel } from './components/AssistantEditorialPanel';
 
 
 
@@ -132,7 +131,7 @@ export default function App() {
   // Top-Level Pillar Navigation: Pre-Production Studio vs Set & Editorial Spine vs Hackathon Demo
   const [currentPillar, setCurrentPillar] = useState<'studio' | 'spine' | 'productions' | 'demo'>('demo');
   // Active View & Filters for Set & Editorial Spine
-  const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents' | 'requirements' | 'assistant'>('master');
+  const [activeTab, setActiveTab] = useState<'master' | 'sequences' | 'scenes' | 'discrepancies' | 'documents' | 'requirements'>('master');
 
   // Bumped whenever a tag changes so the board reloads without a full refetch
   // of the spine behind it.
@@ -1332,19 +1331,19 @@ export default function App() {
                     {reqMetrics.open} open
                   </span>
                 )}
+                {/* Your own share of it, called out separately. Whether the
+                    production owes forty things matters less to the person
+                    reading than whether any of them are theirs. */}
+                {reqMetrics.assignedToMe > 0 && (
+                  <span
+                    className="bg-cyan-500/20 text-cyan-200 text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-cyan-500/40"
+                    title={`${reqMetrics.assignedToMe} assigned to ${currentUser.handle}`}
+                  >
+                    {reqMetrics.assignedToMe} yours
+                  </span>
+                )}
               </button>
 
-              <button
-                onClick={() => setActiveTab('assistant')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-                  activeTab === 'assistant'
-                    ? 'bg-spine-accent text-white shadow-lg shadow-purple-600/30'
-                    : 'text-gray-300 hover:text-white hover:bg-slate-900 border border-transparent'
-                }`}
-              >
-                <UsersRound className="w-4 h-4 text-cyan-400" />
-                Assistant Editorial
-              </button>
             </div>
 
             {/* Set & Editorial Quick Search & Filters */}
@@ -3415,17 +3414,6 @@ export default function App() {
                 })}
               </div>
             )}
-          </section>
-        )}
-        {/* TAB 5: ASSISTANT EDITORIAL */}
-        {activeTab === 'assistant' && (
-          <section className="space-y-4">
-            <AssistantEditorialPanel
-              production={activeProduction}
-              shootDays={activeProduction.shoot_days}
-              currentUserHandle={currentUser.handle}
-              onChanged={() => loadSpineData()}
-            />
           </section>
         )}
       </main>
