@@ -42,6 +42,7 @@ from backend.app.script.scene_lookup import build_scene_context, scene_numbers_f
 from backend.app.core.telemetry import TelemetryExporter
 from backend.app.core import analytics
 from backend.app.core import privacy
+from backend.app.storage.gcs_client import gcs
 
 logger = logging.getLogger(__name__)
 
@@ -531,6 +532,15 @@ def get_document_raw(doc_id: str):
     # the stored bytes were absent, which reached the real paperwork by name
     # and would have walked straight around the gate above. Documents are
     # stored with their bytes now, so the fallback answered nothing anyway.
+    
+    # Check if the file is in GCS first
+    gcs_uri = doc.get("metadata", {}).get("gcs_uri")
+    if gcs_uri and gcs.is_enabled:
+        signed_url = gcs.generate_signed_url(gcs_uri)
+        if signed_url:
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url=signed_url, status_code=302)
+
     if not raw_bytes:
         raw_bytes = privacy.redact(doc.get("content", "")).encode("utf-8")
     
@@ -748,6 +758,14 @@ async def upload_document_file(
             detail=f"Duplicate document: '{existing['filename']}' is already uploaded for {final_prod} Day {final_day} (SHA-256: {checksum[:8]}...).",
         )
 
+    # Optional GCS Upload
+    gcs_uri = None
+    if gcs.is_enabled:
+        object_name = f"{final_prod}/day_{final_day}/{filename}_{checksum[:8]}"
+        gcs_uri = gcs.upload_file(object_name, content_bytes, file.content_type)
+        if gcs_uri:
+            logger.info("Uploaded %s to GCS at %s", filename, gcs_uri)
+
     # Store for previewing
     doc_id = spine_writer.store_document(
         production_id=final_prod,
@@ -757,12 +775,14 @@ async def upload_document_file(
         department=classification.department.value,
         content=raw_text,
         checksum=checksum,
-        raw_bytes=content_bytes,
+        # Only store the heavy bytes in sqlite if we didn't upload to GCS
+        raw_bytes=None if gcs_uri else content_bytes,
         metadata={
             "file_size": len(content_bytes),
             "content_type": file.content_type,
             "lined_page": lined_page.model_dump() if lined_page else None,
             "handwritten_rows": handwritten_rows,
+            "gcs_uri": gcs_uri,
         },
     )
 
@@ -782,6 +802,7 @@ async def upload_document_file(
             "thumbnails": thumbnails_map,
             "lined_page": lined_page.model_dump() if lined_page else None,
             "handwritten_rows": handwritten_rows,
+            "gcs_uri": gcs_uri,
         },
     )
 

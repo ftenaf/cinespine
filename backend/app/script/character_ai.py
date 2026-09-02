@@ -128,7 +128,9 @@ def is_enabled() -> bool:
         "1", "true", "yes",
     ):
         return False
-    return bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
+        
+    use_vertex = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").strip().lower() in ("1", "true", "yes")
+    return use_vertex or bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
 
 
 def collect_character_evidence(
@@ -298,8 +300,15 @@ def _call_gemini(prompt: str) -> str:
     # Rich narrative descriptions are the 'complex' end of the routing.
     candidates = get_model_candidates(prompt, task_complexity="complex")
 
+    use_vertex = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").strip().lower() in ("1", "true", "yes")
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    client = genai.Client(api_key=api_key)
+    
+    if use_vertex:
+        project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
+        location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        client = genai.Client(vertexai=True, project=project_id, location=location)
+    else:
+        client = genai.Client(api_key=api_key)
 
     last_error: Optional[Exception] = None
     for model in candidates:
@@ -528,7 +537,7 @@ async def enrich_screenplay_characters(screenplay: Screenplay) -> Screenplay:
     if not is_enabled():
         screenplay.parse_warnings.append(
             "Character details were derived from the script text only. Set GEMINI_API_KEY "
-            "to have appearance, wardrobe and facial features inferred by AI."
+            "or GOOGLE_GENAI_USE_VERTEXAI to have appearance, wardrobe and facial features inferred by AI."
         )
         return screenplay
 

@@ -96,3 +96,4 @@ backups/
 # Local code-intelligence indexes (rebuilt on demand, machine-specific)
 .codegraph/
 graphify-out/
+gcp-credentials.json

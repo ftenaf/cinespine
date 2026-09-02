@@ -5,6 +5,7 @@ Subscribes to the raw document topics on the in-process event bus, runs
 auto-classification and the deterministic parsers, and emits verified events
 onto the spine topic.
 """
+import os
 import logging
 from typing import Dict, Any
 from backend.app.streaming.models import EventEnvelope, DocumentType
@@ -449,6 +450,13 @@ class IngestionDispatcher:
                         "timestamp": envelope.timestamp,
                     }
                     self.bus.publish("production.events.spine", take_event)
+
+                # Trigger video intelligence for video files
+                if clip.file_name and (clip.file_name.upper().endswith(".MOV") or clip.file_name.upper().endswith(".MP4")):
+                    gcs_uri = f"gs://{os.environ.get('GOOGLE_CLOUD_PROJECT', 'cinespine')}-media/{clip.file_name}"
+                    import threading
+                    from backend.app.parsers.video_intelligence import annotate_video_gcs
+                    threading.Thread(target=annotate_video_gcs, args=(gcs_uri,), daemon=True).start()
         except ParserFailureError as e:
             self._emit_dlq(envelope, "PARSER_FAILURE", str(e))
         except EventHandlerError:

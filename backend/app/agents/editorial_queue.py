@@ -684,3 +684,53 @@ class AssistantEditorQueueAgent(LlmAgent):
             f"for {production_id} {scope}: {labels}. "
             f"{created} requirement(s) created, {updated} updated."
         )
+
+    def check_dialogue_drift(
+        self,
+        production_id: str,
+        shoot_day: str,
+        scene: str,
+        take_id: str,
+        stt_transcript: str,
+        script_dialogue: str,
+        threshold: float = 0.7
+    ) -> None:
+        """
+        Compare STT transcription against the .fountain dialogue lines for the corresponding scene.
+        Emit an Intent vs Belief discrepancy event if the distance exceeds a threshold.
+        """
+        import difflib
+        import uuid
+        from datetime import datetime, timezone
+        
+        if not stt_transcript or not script_dialogue:
+            return
+        
+        similarity = difflib.SequenceMatcher(None, stt_transcript.lower(), script_dialogue.lower()).ratio()
+        if similarity < threshold:
+            discrepancy_id = str(uuid.uuid4())
+            self.spine_writer.append_event({
+                "event_id": str(uuid.uuid4()),
+                "production_id": production_id,
+                "shoot_day": shoot_day,
+                "axis": "intent", 
+                "department": "editorial",
+                "doc_type": "discrepancy",
+                "entity_type": "discrepancy",
+                "payload": {
+                    "discrepancy_id": discrepancy_id,
+                    "discrepancy_type": "DIALOGUE_DRIFT",
+                    "severity": "WARNING",
+                    "description": f"STT transcript for take {take_id} drifted significantly from scene {scene} script dialogue. (Similarity: {similarity:.2f})",
+                    "entity_id": f"{scene}/{take_id}"
+                },
+                "metadata": {
+                    "scene": scene,
+                    "take_id": take_id,
+                    "stt_transcript": stt_transcript,
+                    "script_dialogue": script_dialogue,
+                    "similarity": similarity
+                },
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            self.spine_writer.flush_events()

@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from backend.app.normalizers.takes import normalize_take
 from backend.app.normalizers.rolls import normalize_camera_roll
 from backend.app.script.llm_router import get_model_candidates, get_optimal_gemini_model
+from backend.app.parsers.doc_ai_extractor import extract_lined_page, get_docai_client
 
 logger = logging.getLogger(__name__)
 
@@ -440,10 +441,23 @@ async def extract_lined_page_if_enabled(
 
     extractor = GeminiScriptLiningExtractor(api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
     try:
-        page = await asyncio.wait_for(
-            asyncio.to_thread(extractor.extract_page, document_bytes, mime_type),
-            timeout=TIMEOUT_SECONDS,
-        )
+        page = None
+        if get_docai_client():
+            logger.info("Trying Document AI for lined page: %s", filename)
+            try:
+                page = await asyncio.wait_for(
+                    asyncio.to_thread(extract_lined_page, document_bytes, mime_type),
+                    timeout=TIMEOUT_SECONDS,
+                )
+            except Exception as doc_ai_exc:
+                logger.warning("Document AI failed, falling back to Gemini: %s", doc_ai_exc)
+        
+        if not page or not page.takes:
+            logger.info("Using Gemini for lined page: %s", filename)
+            page = await asyncio.wait_for(
+                asyncio.to_thread(extractor.extract_page, document_bytes, mime_type),
+                timeout=TIMEOUT_SECONDS,
+            )
     except asyncio.TimeoutError:
         logger.warning("Lined page extraction timed out on %s", filename)
         return {

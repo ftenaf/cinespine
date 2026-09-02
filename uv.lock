@@ -13,9 +13,9 @@ resolution-markers = [
     "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.12.*' and sys_platform == 'win32'",
+    "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.12' and sys_platform == 'win32'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
-    "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
@@ -732,7 +732,9 @@ dependencies = [
     { name = "google-cloud-documentai" },
     { name = "google-cloud-logging" },
     { name = "google-cloud-pubsub" },
+    { name = "google-cloud-speech" },
     { name = "google-cloud-storage" },
+    { name = "google-cloud-videointelligence" },
     { name = "google-genai" },
     { name = "httpx" },
     { name = "pdfplumber" },
@@ -767,7 +769,9 @@ requires-dist = [
     { name = "google-cloud-documentai", specifier = ">=3.15.0" },
     { name = "google-cloud-logging", specifier = ">=3.11.0" },
     { name = "google-cloud-pubsub", specifier = ">=2.39.2" },
+    { name = "google-cloud-speech", specifier = ">=2.26.0" },
     { name = "google-cloud-storage", specifier = ">=2.14.0" },
+    { name = "google-cloud-videointelligence", specifier = ">=2.13.0" },
     { name = "google-genai", specifier = ">=1.0.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "mcp-clickhouse", marker = "extra == 'hackathon'", specifier = ">=0.1.0" },
@@ -1472,6 +1476,22 @@ wheels = [
 ]
 
 [[package]]
+name = "google-cloud-speech"
+version = "2.40.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "grpcio" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5a/c1/5dc9795314f4aefea0b01b02e9f5486a198341ecc15fe47f89a61c68df63/google_cloud_speech-2.40.0.tar.gz", hash = "sha256:e89e688e4ce0b926754038bf992d0d0f065c5f1c3503bb20e6c46d08b63658fc", size = 404366, upload-time = "2026-06-03T16:13:59.506Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cc/78/afeca8d597fab54bdd823f857aad15d6f9c4628ff3cb72aa237d01700721/google_cloud_speech-2.40.0-py3-none-any.whl", hash = "sha256:7cc0302b3b9ca33d2eae9669da94a44316601a240942895362ac70e765b9f39c", size = 345427, upload-time = "2026-06-03T16:12:40.909Z" },
+]
+
+[[package]]
 name = "google-cloud-storage"
 version = "3.13.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1486,6 +1506,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ce/7e/73bb7512df1d1aad6ce3f9aed847cd40e0cd400ba4a85d86ab8eb412e9cc/google_cloud_storage-3.13.1.tar.gz", hash = "sha256:a80bf8cac2794808aa61c50c5f769ecbbe2d10331bacd0d69d30e59b14b346b2", size = 17341051, upload-time = "2026-08-06T06:24:42.229Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/06/6f/d69f0e185e08ddb58c323a0a935af2b492907b5de362bc08933b0a3b5644/google_cloud_storage-3.13.1-py3-none-any.whl", hash = "sha256:98208de6c21e85cecd3eb44551894efff33d98365500e178867d4305854a770a", size = 341486, upload-time = "2026-08-06T06:23:36.548Z" },
+]
+
+[[package]]
+name = "google-cloud-videointelligence"
+version = "2.20.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "grpcio" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d5/b1/1257bb2006ca1d4bf2585e1aaaa7d260d4347f9302e5037fe3a22e052209/google_cloud_videointelligence-2.20.0.tar.gz", hash = "sha256:e4492d333843f040191b4730ff58a0a4aea1008350053879bc4058ddf62da8a0", size = 258941, upload-time = "2026-06-22T23:22:45.772Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d9/51/b07f5d71ae92a7731f3fe1113597a8ffbe15af10105dc508c7955a633b37/google_cloud_videointelligence-2.20.0-py3-none-any.whl", hash = "sha256:b7e0ac16d50f66f4dd2f3d1d7d2eb142ae90a06556118820725bde9da1cc7631", size = 287133, upload-time = "2026-06-22T23:20:48.329Z" },
 ]
 
 [[package]]

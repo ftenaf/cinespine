@@ -30,6 +30,9 @@ services:
     depends_on:
       - clickhouse
       - mcp-clickhouse
+    volumes:
+      - .:/app
+      - C:\Users\paco\AppData\Roaming\gcloud\application_default_credentials.json:/app/gcp-credentials.json:ro
 
   mcp-clickhouse:
     build:
@@ -48,7 +51,7 @@ services:
       - CLICKHOUSE_MCP_BIND_HOST=0.0.0.0
       - CLICKHOUSE_MCP_BIND_PORT=4200
       - CLICKHOUSE_MCP_AUTH_DISABLED=true
-    command: ["uv", "run", "mcp-clickhouse"]
+    command: [ "uv", "run", "mcp-clickhouse" ]
     depends_on:
       - clickhouse
 

@@ -30,6 +30,8 @@ dependencies = [
     "pdfplumber>=0.11.0",
     "google-cloud-logging>=3.11.0",
     "google-cloud-documentai>=3.15.0",
+    "google-cloud-speech>=2.26.0",
+    "google-cloud-videointelligence>=2.13.0",
     "google-cloud-pubsub>=2.39.2",
     # backend/app/agents/__init__.py imports the queue and wrap-rescue agents at
     # import time and both subclass adk.agents.LlmAgent, so this is required to

@@ -32,6 +32,7 @@ from backend.app.normalizers.slates import normalize_slate
 from backend.app.normalizers.takes import normalize_take
 from backend.app.parsers.base import ParsedCameraRecord
 from backend.app.script.llm_router import get_model_candidates
+from backend.app.parsers.doc_ai_extractor import extract_camera_report_grid, get_docai_client
 
 logger = logging.getLogger(__name__)
 
@@ -347,10 +348,25 @@ async def read_camera_report_if_enabled(
         api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     )
     try:
-        records = await asyncio.wait_for(
-            asyncio.to_thread(reader.read, document_bytes, mime_type),
-            timeout=TIMEOUT_SECONDS,
-        )
+        # Try Document AI first
+        records = []
+        if get_docai_client():
+            logger.info("Trying Document AI for camera report: %s", filename)
+            try:
+                records = await asyncio.wait_for(
+                    asyncio.to_thread(extract_camera_report_grid, document_bytes, mime_type),
+                    timeout=TIMEOUT_SECONDS,
+                )
+            except Exception as doc_ai_exc:
+                logger.warning("Document AI failed, falling back to Gemini: %s", doc_ai_exc)
+
+        # Fallback to Gemini if Document AI returns nothing
+        if not records:
+            logger.info("Using Gemini for camera report: %s", filename)
+            records = await asyncio.wait_for(
+                asyncio.to_thread(reader.read, document_bytes, mime_type),
+                timeout=TIMEOUT_SECONDS,
+            )
     except asyncio.TimeoutError:
         logger.warning("Camera report reading timed out on %s", filename)
         return {

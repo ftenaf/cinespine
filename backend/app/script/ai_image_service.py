@@ -32,12 +32,19 @@ class _NoImageReturned(Exception):
     """The model answered, but with no image in it."""
 
 
-async def _generate_with(model: str, api_key: str, compiled_prompt: str) -> Dict[str, Any]:
+async def _generate_with(model: str, compiled_prompt: str, api_key: Optional[str] = None) -> Dict[str, Any]:
     """One generate_content call, returning the first inline image part."""
     from google import genai
     from google.genai import types
 
-    client = genai.Client(api_key=api_key)
+    use_vertex = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").strip().lower() in ("1", "true", "yes")
+    if use_vertex:
+        project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
+        location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        client = genai.Client(vertexai=True, project=project_id, location=location)
+    else:
+        client = genai.Client(api_key=api_key)
+
     response = client.models.generate_content(
         model=model,
         contents=compiled_prompt,
@@ -155,17 +162,18 @@ async def generate_ai_cinematic_image(
     # 2. Google's image models, tried in order.
     failures: list[str] = []
     if not economy_mode:
+        use_vertex = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").strip().lower() in ("1", "true", "yes")
         gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        if gemini_key:
+        if use_vertex or gemini_key:
             for model in image_models():
                 try:
-                    return _finalize(await _generate_with(model, gemini_key, compiled_prompt))
+                    return _finalize(await _generate_with(model, compiled_prompt, api_key=gemini_key))
                 except _NoImageReturned as e:
                     failures.append(f"{model}: {e}")
                 except Exception as e:
                     failures.append(f"{model}: {type(e).__name__}: {e}")
         else:
-            failures.append("no GEMINI_API_KEY or GOOGLE_API_KEY in the environment")
+            failures.append("No authentication available (neither Vertex AI nor API key)")
 
     # 3. Local placeholder. Deliberately NOT cached: it means every generator
     #    was unavailable, which is a transient condition the next request should
