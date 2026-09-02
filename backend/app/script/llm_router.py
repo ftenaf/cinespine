@@ -13,7 +13,7 @@ from typing import List
 # A floating alias rather than a pinned version: it follows the current model
 # and cannot 404 when a version is retired. Override per deployment if a
 # specific version is required.
-DEFAULT_FLASH_MODEL = "gemini-flash-latest"
+DEFAULT_FLASH_MODEL = "gemini-2.5-flash"
 
 # Older flash models, tried in turn when the newest is not usable. Two separate
 # reasons make this worth more than a retry against a single model:
@@ -26,9 +26,10 @@ DEFAULT_FLASH_MODEL = "gemini-flash-latest"
 # Ordered newest first, since capability degrades gently and availability
 # improves as you go down the list.
 FLASH_FALLBACK_MODELS = (
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
     "gemini-3.6-flash",
     "gemini-3.5-flash",
-    "gemini-3.5-flash-lite",
 )
 
 # Pro routing is opt-in, and deliberately off by default. A free-tier key is

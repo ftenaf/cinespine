@@ -3183,12 +3183,12 @@ def suggest_dop_preset(req: SuggestDoPPresetRequest):
 
 
 @router.post("/script/breakdown")
-def generate_shot_breakdown(req: ScriptBreakdownRequest):
+async def generate_shot_breakdown(req: ScriptBreakdownRequest):
     """
     Generates a cinematic multi-camera shot coverage list (Cameras A, B, C)
     with technical DoP parameters, character visual consistency, and synthesized generative image prompts.
     """
-    shots = breakdown_scene_to_shots(
+    shots = await breakdown_scene_to_shots(
         scene=req.scene,
         dop_style_name=req.dop_preset,
         dop_overrides=req.dop_overrides,

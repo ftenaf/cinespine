@@ -31,6 +31,7 @@ from backend.app.script.cache_service import (
     set_cached_response,
 )
 from backend.app.script.parser import Screenplay, ScreenplayScene
+from backend.app.script.character_agent import fallback_enrich_characters
 
 logger = logging.getLogger(__name__)
 
@@ -539,7 +540,7 @@ async def enrich_screenplay_characters(screenplay: Screenplay) -> Screenplay:
             "Character details were derived from the script text only. Set GEMINI_API_KEY "
             "or GOOGLE_GENAI_USE_VERTEXAI to have appearance, wardrobe and facial features inferred by AI."
         )
-        return screenplay
+        return fallback_enrich_characters(screenplay)
 
     try:
         raw = await asyncio.wait_for(
@@ -551,14 +552,14 @@ async def enrich_screenplay_characters(screenplay: Screenplay) -> Screenplay:
             f"AI character inference timed out after {TIMEOUT_SECONDS:.0f}s; "
             "showing details derived from the script text."
         )
-        return screenplay
+        return fallback_enrich_characters(screenplay)
     except Exception as exc:  # noqa: BLE001 - inference must never fail an upload
         logger.warning("Character inference failed: %s", exc)
         screenplay.parse_warnings.append(
             "AI character inference was unavailable; showing details derived from "
             "the script text."
         )
-        return screenplay
+        return fallback_enrich_characters(screenplay)
 
     inferred = parse_ai_response(raw)
     if not inferred:
@@ -566,7 +567,7 @@ async def enrich_screenplay_characters(screenplay: Screenplay) -> Screenplay:
             "AI character inference returned nothing usable; showing details derived "
             "from the script text."
         )
-        return screenplay
+        return fallback_enrich_characters(screenplay)
 
     # A prompt cannot guarantee specificity, so check the output and ask once
     # more for whatever came back too generic to render.
@@ -608,4 +609,4 @@ async def enrich_screenplay_characters(screenplay: Screenplay) -> Screenplay:
         screenplay.parse_warnings.append(
             f"AI inferred details for {applied} of {len(screenplay.characters)} characters."
         )
-    return screenplay
+    return fallback_enrich_characters(screenplay)

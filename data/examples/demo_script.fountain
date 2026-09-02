@@ -6,56 +6,171 @@ Draft date: 2026-08-31
 [Scene 1]
 INT. SERVER ROOM - NIGHT
 
-Blue LED lights blink rhythmically. ALICE (30s) types furiously on a terminal. BOB (40s) watches over her shoulder.
+Blue LED lights blink rhythmically, casting long shadows across the server racks. ALICE (30s) types furiously on a terminal. She is hyper-focused, organized, and deeply introverted. BOB (40s) watches over her shoulder, sweating profusely. TECH SUPPORT (20s, disheveled, nervously drinking energy drinks, highly neurotic and extroverted) hovers near the rack, pacing back and forth.
 
 ALICE
-We are running out of time. The discrepancies are compounding.
+(mutters to herself)
+The hash isn't matching. We are running out of time. The discrepancies are compounding faster than the garbage collector can clear them. I have checked the logs three times. Every single line. The precision is flawed. I need absolute perfection if we are going to survive this.
 
 BOB
-(panicked)
-If the append-only spine fails, we lose the entire production state!
+(panicked, grabbing his hair)
+If the append-only spine fails, Alice, we lose the entire production state! Decades of data! Every script, every offload! It's gone! I can't breathe. My chest is tight. We're going to lose everything. The stakeholders are going to kill me! Why did I take this promotion? I was perfectly happy managing the archives!
 
-Alice slams the enter key.
+TECH SUPPORT
+(frantic, waving hands, talking a mile a minute)
+Guys, I tried restarting the container! I tried rebooting the hypervisor! The logs are just screaming! I mean, I'm literally looking at a recursive cascade! We've never seen a recursive failure like this! What if it jumps to the backup node? What do we do then?! We're all going to be fired! Or worse! I shouldn't have taken this job! I knew I should have stayed in QA! I'm completely freaking out here! 
 
 ALICE
-Got it. The Wrap Rescue Agent just mitigated the conflict.
+(calmly, without looking up)
+Breathe. Both of you. Panic is a secondary contagion, and I don't have the bandwidth to mitigate it. I am running a targeted defragmentation on the core loop. It requires absolute focus. Please, step back.
+
+TECH SUPPORT
+(nodding vigorously)
+Okay, okay, stepping back. Stepping way back. I'll just stand over here. By the fire extinguisher. Because I feel like things are going to catch on fire. My heart rate is at 140! I'm so stressed! But I trust you, Alice. I really do. You always know what to do.
+
+BOB
+(pacing)
+I'm calling the Commander. He needs to know we have a breach. This is a catastrophe of unprecedented scale! 
+
+TECH SUPPORT
+(hyperventilating)
+The Commander?! Oh no, he's terrifying! He's going to yell at us!
+
+ALICE
+Let him yell. The system is more important than his ego.
+
+TECH SUPPORT
+(biting fingernails)
+I am too young to go to tech prison!
+
+Bob dials his phone.
+
+TECH SUPPORT
+(whispering loudly)
+Is he picking up?!
+
+BOB
+Voicemail. He's already in the bunker.
+
+TECH SUPPORT
+(groaning)
+We're doomed! We are so doomed!
+
+Alice slams the enter key with authority.
+
+ALICE
+Got it. The Wrap Rescue Agent just mitigated the conflict. I isolated the corruption to a virtual sandbox. The system is stable. 
+
+TECH SUPPORT
+(sighs in massive relief, smiling widely, immediately cheerful)
+Oh, thank god! You are literally my hero, Alice! I'll get us coffees. Extra espresso! Three sugars for you, right? I am so glad you're here. You're amazing! Seriously, you just saved my life. I was about to have a heart attack!
+
+BOB
+(wiping sweat from his brow)
+Just... don't do that again. We need to get these logs to the mountain base before the network gets severed entirely. Pack up the hard drives. We're moving.
 
 [Scene 2]
 EXT. MOUNTAIN TOP - DAY
 
-A wide expanse of snowy peaks. A helicopter flies into frame.
+A wide expanse of snowy peaks. A helicopter flies into frame, battling fierce winds.
 
 BOB (V.O.)
-We made it. 
+We made it out of the valley, but the storm is closing in.
 
 The helicopter lands, blowing snow everywhere. 
 
 [Scene 3]
 INT. HELICOPTER - CONTINUOUS
 
-Alice and Bob strap in. The PILOT looks back at them.
+Alice and Bob strap in. The PILOT (50s, rugged, supremely confident, incredibly open to new experiences) looks back at them.
 
 PILOT
-Where to next?
+(grinning, chewing gum)
+Hope you folks like a bumpy ride. The crosswinds over the ridge are nasty today. But don't worry, I haven't lost a passenger yet. In fact, I live for this weather. The turbulence reminds you you're alive! There's nothing like feeling the raw power of nature tossing a three-ton machine around like a toy! It's exhilarating!
 
 ALICE
-Back to base. We need to upload the checksums before the DIT logs freeze.
+(stiffly)
+Just get us back to base. We need to upload the checksums before the DIT logs freeze. Efficiency is our only priority right now.
+
+PILOT
+(winking, tapping the control stick)
+You got it, boss. Sit back and enjoy the view. It's a beautiful world out there if you know how to look at it. I might even pull a barrel roll if the wind hits us right! I've been flying for thirty years and every day is a new adventure!
+
+BOB
+(groaning)
+Please do not do that. I am already nauseous.
+
+PILOT
+(laughing boisterously)
+Relax, buddy! Life's too short to worry about a little motion sickness! Look at those mountains! Majestic, aren't they? I sometimes think about landing on one of those peaks and just living off the grid. Free as a bird!
+
+ALICE
+Focus on the coordinates, please.
+
+PILOT
+(saluting playfully)
+Coordinates locked! 
+
+BOB
+(closing his eyes)
+I hate flying.
+
+PILOT
+(chuckling)
+You're missing the best part of the trip, my friend! The feeling of weightlessness!
 
 [Scene 4]
 INT. COMMAND BASE - DAY
 
-A massive tactical center. Screens everywhere displaying code and timecodes. The COMMANDER (50s) stands at the center table. A SECURITY CHIEF stands beside him.
+A massive tactical center. Screens everywhere displaying code and timecodes. The COMMANDER (50s, strict, imposing, highly conscientious and disagreeable) stands at the center table, arms crossed. A SECURITY CHIEF (40s, highly organized, skeptical, highly agreeable but rule-bound) stands beside him, holding a tablet.
 
 COMMANDER
-They're late. If they don't sync by 0800, we're blind to the B-Camera footage.
+(barking aggressively)
+They're late. Three minutes late. If they don't sync by 0800, we're blind to the B-Camera footage. I will not accept a blind production day! Unacceptable! If they fail, I'm holding everyone in this room personally responsible! We run a tight ship here! No excuses! No delays! Perfection is the baseline!
 
 SECURITY CHIEF
-Sir, I've got a breach in sector seven. 
+(frowning, adjusting glasses, speaking softly but firmly)
+Sir, with all due respect, protocols dictate we isolate the network. I've got a breach in sector seven. We shouldn't let them upload anything until I run a full diagnostic. It's too risky, and I just want to make sure everyone stays safe. I care deeply about the wellbeing of this facility and its personnel.
 
-Bob and Alice burst through the doors.
+COMMANDER
+(slamming fist on the table)
+We take the risk! The mission comes first! Safety is an illusion for those who don't understand the stakes! Do you think our competitors care about safety protocols?! They care about results! And so do I!
+
+SECURITY CHIEF
+(nodding slowly)
+I understand your perspective, Commander. I truly do. But my duty is to protect the integrity of the data. If we let corrupted logs into the mainframe, we jeopardize the entire operation. I want to help us succeed, but we must do it the right way.
+
+COMMANDER
+(glaring)
+The right way is my way! When they arrive, you will grant them immediate access! 
+
+SECURITY CHIEF
+(sighing)
+As you wish, sir. I will prepare the firewall bypass.
+
+COMMANDER
+(pointing a finger)
+And make it fast! Time is money, and we are bleeding both!
+
+SECURITY CHIEF
+(typing on tablet)
+Bypass initiated. But I must formally register my objection in the log.
+
+COMMANDER
+(scoffing)
+Register whatever you want. Just get it done.
+
+Bob and Alice burst through the doors. Bob is out of breath.
 
 BOB
-We have the logs!
+We have the logs! We made it! The storm almost took us out, but we're here!
+
+SECURITY CHIEF
+(reluctantly stepping aside, offering a gentle smile)
+Alright, plug it in. I know you've had a hard journey. But please, let me monitor the packets. Just a precaution. One anomaly and I pull the plug, for your own good. I'm just trying to keep us all safe.
+
+ALICE
+Understood. Initiating transfer. The checksums are verifying.
 
 [Scene 5]
 EXT. BASE PERIMETER - NIGHT
@@ -63,7 +178,7 @@ EXT. BASE PERIMETER - NIGHT
 Rain pours down. Guards patrol the fence line. A shadow slips past them... 
 
 ALICE (V.O.)
-But the algorithm was already inside.
+But the algorithm was already inside. We were too late.
 
 [Scene 6]
 INT. BASE CORRIDOR - NIGHT
@@ -72,6 +187,6 @@ Red alarms flash. Alice sprints down the hallway, clutching a hard drive. The sh
 
 ALICE
 (into comms)
-Bob, seal the blast doors! Now!
+Bob, seal the blast doors! Now! The perimeter is compromised! I am initiating the fail-safe protocol!
 
 The doors slam shut just as the shadow reaches them. Silence.

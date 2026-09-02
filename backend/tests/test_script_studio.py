@@ -2,7 +2,6 @@
 Automated Test Suite for Script Breakdown, DoP Cinematography & Previz Storyboard Studio.
 """
 import pathlib
-
 import pytest
 from starlette.testclient import TestClient
 from backend.app.main import app
@@ -82,7 +81,8 @@ def test_dop_presets_and_overrides():
     assert "Neo-Noir" in fincher_spec.lighting_style or "Low-Key" in fincher_spec.lighting_style
 
 
-def test_scene_to_shots_breakdown():
+@pytest.mark.asyncio
+async def test_scene_to_shots_breakdown():
     sc = ScreenplayScene(
         scene_number="27",
         heading="INT. GREAT HALL - NAVE - DAY",
@@ -93,7 +93,7 @@ def test_scene_to_shots_breakdown():
         dialogues=[]
     )
 
-    shots = breakdown_scene_to_shots(sc, dop_style_name="Roger Deakins", aspect_ratio="2.39:1")
+    shots = await breakdown_scene_to_shots(sc, dop_style_name="Roger Deakins", aspect_ratio="2.39:1")
     assert len(shots) >= 2
     
     # Master setup with 3 simultaneous cameras (A, B, C)
@@ -497,11 +497,12 @@ def test_fountain_parser_with_cut_to_transitions():
     assert sc.dialogues[1].character == "HELENA"
 
 
-def test_ai_cam_breakdown_with_cut_to_transitions():
+@pytest.mark.asyncio
+async def test_ai_cam_breakdown_with_cut_to_transitions():
     screenplay = parse_fountain_screenplay(CUT_TO_SCRIPT_SAMPLE, title="The Heist Setup")
     sc = screenplay.scenes[0]
     
-    shots = breakdown_scene_to_shots(
+    shots = await breakdown_scene_to_shots(
         scene=sc,
         dop_style_name="David Fincher",
         aspect_ratio="2.39:1",

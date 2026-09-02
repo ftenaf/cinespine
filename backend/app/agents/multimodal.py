@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from backend.app.normalizers.takes import normalize_take
 from backend.app.normalizers.rolls import normalize_camera_roll
 from backend.app.script.llm_router import get_model_candidates, get_optimal_gemini_model
-from backend.app.parsers.doc_ai_extractor import extract_lined_page, get_docai_client
+
 
 logger = logging.getLogger(__name__)
 

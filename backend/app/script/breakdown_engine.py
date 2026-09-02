@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from pydantic import BaseModel, Field
 from backend.app.script.parser import ScreenplayScene, CharacterProfile
 from backend.app.script.dop_presets import DoPSpecification, resolve_dop_specification, DOP_MASTER_PRESETS
+from backend.app.script.breakdown_agent import run_dop_agent, is_agent_enabled
 
 
 class StoryboardFrame(BaseModel):
@@ -444,7 +445,7 @@ def generate_multi_cam_prompts(
     return [cam_a, cam_b, cam_c]
 
 
-def breakdown_scene_to_shots(
+def _deterministic_breakdown_scene_to_shots(
     scene: ScreenplayScene,
     dop_style_name: str = "Roger Deakins",
     dop_overrides: Optional[Dict[str, Any]] = None,
@@ -670,3 +671,104 @@ def breakdown_scene_to_shots(
         shots.append(shot_climax)
 
     return shots
+
+
+async def breakdown_scene_to_shots(
+    scene: ScreenplayScene,
+    dop_style_name: str = "Roger Deakins",
+    dop_overrides: Optional[Dict[str, Any]] = None,
+    custom_mood_prompt: Optional[str] = None,
+    aspect_ratio: str = "2.39:1",
+    character_profiles: Optional[List[CharacterProfile]] = None
+) -> List[ShotProposal]:
+    dop_spec = resolve_dop_specification(
+        preset_name=dop_style_name,
+        custom_prompt=custom_mood_prompt,
+        overrides=dop_overrides
+    )
+    
+    char_map = {}
+    if character_profiles:
+        for p in character_profiles:
+            char_map[p.name.upper()] = p
+
+    cut_segments = parse_scene_into_shot_segments(scene)
+    
+    if is_agent_enabled():
+        agent_data = await run_dop_agent(scene, dop_spec, cut_segments)
+        if agent_data:
+            shots = []
+            for idx, setup in enumerate(agent_data):
+                shot_num = str(idx + 1)
+                
+                cameras = []
+                for cam_data in setup.get("cameras", []):
+                    # Safely handle missing keys by providing defaults
+                    c_letter = cam_data.get("camera_letter", "A")
+                    c_size = cam_data.get("shot_size", "WS")
+                    c_focal = cam_data.get("focal_length", 35)
+                    c_angle = cam_data.get("camera_angle", "EYE_LEVEL")
+                    c_move = cam_data.get("camera_movement", "STATIC")
+                    
+                    # Synthesize prompt
+                    prompt = synthesize_cinematic_prompt(
+                        scene=scene,
+                        camera_letter=c_letter,
+                        shot_size=c_size,
+                        camera_angle=c_angle,
+                        camera_movement=c_move,
+                        focal_length=c_focal,
+                        aperture=cam_data.get("aperture", "T2.8"),
+                        dop_spec=dop_spec,
+                        aspect_ratio=aspect_ratio,
+                        characters_in_shot=setup.get("characters", scene.characters),
+                        character_profiles_map=char_map,
+                        action_text=setup.get("subject_description", "")
+                    )
+                    
+                    cam_prop = CameraAngleProposal(
+                        camera_letter=c_letter,
+                        camera_role=cam_data.get("camera_role", "Coverage"),
+                        shot_size=c_size,
+                        focal_length=c_focal,
+                        aperture=cam_data.get("aperture", "T2.8"),
+                        camera_angle=c_angle,
+                        camera_movement=c_move,
+                        coverage_description=cam_data.get("coverage_description", ""),
+                        prompt=prompt
+                    )
+                    cameras.append(cam_prop)
+                
+                # Ensure at least Camera A exists
+                if not cameras:
+                    continue
+                    
+                active_cam = cameras[0]
+                shot = ShotProposal(
+                    scene_number=scene.scene_number,
+                    shot_number=shot_num,
+                    shot_name=f"SCENE {scene.scene_number} - SHOT {shot_num} ({setup.get('setup_name', 'Setup')})",
+                    shot_size=active_cam.shot_size,
+                    camera_angle=active_cam.camera_angle,
+                    camera_movement=active_cam.camera_movement,
+                    dramatic_beat=setup.get("dramatic_beat", ""),
+                    subject_description=setup.get("subject_description", ""),
+                    characters=setup.get("characters", scene.characters),
+                    dop_spec=dop_spec,
+                    cameras=cameras,
+                    active_camera=active_cam.camera_letter,
+                    storyboard=StoryboardFrame(
+                        prompt=active_cam.prompt,
+                        aspect_ratio=aspect_ratio,
+                        status="pending"
+                    )
+                )
+                shots.append(shot)
+            
+            if shots:
+                return shots
+
+    # Fallback to deterministic logic
+    return _deterministic_breakdown_scene_to_shots(
+        scene, dop_style_name, dop_overrides, custom_mood_prompt, aspect_ratio, character_profiles
+    )
