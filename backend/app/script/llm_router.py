@@ -51,7 +51,11 @@ def _flash_model() -> str:
 
 
 def _pro_model() -> str:
-    return os.environ.get("CINESPINE_GEMINI_PRO_MODEL", DEFAULT_PRO_MODEL)
+    model = os.environ.get("CINESPINE_GEMINI_PRO_MODEL", DEFAULT_PRO_MODEL).strip()
+    # Vertex AI in regions like europe-west4 doesn't resolve 'gemini-pro-latest' correctly.
+    if model in ("gemini-pro-latest", "gemini-1.5-pro-latest"):
+        return "gemini-1.5-pro"
+    return model
 
 
 def estimated_tokens(prompt_text: str) -> int:
