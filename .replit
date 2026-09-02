@@ -16,7 +16,7 @@ autoInstall = false
 
 [deployment]
 build = ["sh", "-c", "pip install --break-system-packages -r backend/requirements.txt && cd frontend && npm install && npm run build"]
-run = ["sh", "-c", "python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"]
+run = ["bash", "start.sh"]
 deploymentTarget = "autoscale"
 
 [[ports]]
