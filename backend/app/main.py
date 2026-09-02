@@ -32,6 +32,10 @@ from fastapi import Request
 
 app.include_router(router)
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "service": "cinespine"}
+
 # Mount static previz directory
 static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
 if os.path.exists(static_dir):
@@ -47,7 +51,7 @@ if os.path.exists(frontend_dist):
     if os.path.exists(assets_dir):
         app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend_assets")
         
-    @app.get("/{full_path:path}")
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
     async def serve_frontend(request: Request, full_path: str):
         # We don't want this catching /api/ routes, but since router is included above, 
         # /api/ routes take precedence.
