@@ -153,7 +153,6 @@ def setup_otlp(app_name: str = "cinespine-backend"):
     """
     import os
     import logging
-    import threading
     import time
     from opentelemetry import trace
     from opentelemetry.sdk.trace import TracerProvider
@@ -210,39 +209,41 @@ def setup_otlp(app_name: str = "cinespine-backend"):
     logger.info("OpenTelemetry initialization complete. Traces and Logs are now exporting.")
 
     # -----------------------------------------------------
-    # Set up OpenLIT for GenAI/Agent Observability
+    # GenAI / Agent Observability
     # -----------------------------------------------------
     #
-    # On a background thread, because `openlit.init()` takes ~34 seconds. It
-    # patches the client library of every GenAI provider it supports, so it
-    # imports anthropic and openai among others -- neither of which this app
-    # uses -- and it does that work before returning.
+    # Instruments the google-genai SDK, which is the layer this app actually
+    # calls: `client.models.generate_content` in character inference, the
+    # camera-report vision reader, the multimodal extractor and the Wrap Rescue
+    # memo. Spans cover generate_content and execute_tool, so an agent run is a
+    # tree rather than one opaque HTTP span.
     #
-    # Called inline it ran at import time, before uvicorn had bound a socket,
-    # and a 45-second import is longer than a platform will wait for a port.
-    # Replit autoscale gave up on the deployment with "the application failed
-    # to open a port in time", which reads like a crash and is not one: the
-    # process was healthy and still importing.
+    # This replaced openlit, which patched the client library of every provider
+    # it supports and hard-depended on anthropic, openai and boto3 to do it --
+    # three vendor SDKs nothing here calls. That cost ~34 seconds at init, so it
+    # had to run on a background thread to keep the app's import off the
+    # critical path; a platform that gave up waiting for the port reported it as
+    # though the process had crashed.
     #
-    # Backgrounded, the port opens immediately and instrumentation attaches a
-    # few seconds later. The window costs nothing in practice -- it patches
-    # GenAI clients, and nothing calls one in the first seconds after boot.
-    if os.environ.get("CINESPINE_DISABLE_OPENLIT", "").strip() not in ("", "0", "false", "False"):
-        logger.info("OpenLIT is disabled by CINESPINE_DISABLE_OPENLIT.")
+    # This one instruments only what is used, so it runs inline: no thread, no
+    # window where model calls go unrecorded, no vendor SDKs in the image.
+    #
+    # Message content is not captured by default, which is the right default
+    # here -- prompts carry unreleased screenplay text. Set
+    # OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT deliberately if that is
+    # ever wanted.
+    if os.environ.get("CINESPINE_DISABLE_GENAI_TELEMETRY", "").strip() not in ("", "0", "false", "False"):
+        logger.info("GenAI instrumentation is disabled by CINESPINE_DISABLE_GENAI_TELEMETRY.")
         return
 
-    def _init_openlit() -> None:
-        try:
-            import openlit
-            started = time.perf_counter()
-            openlit.init(application_name=app_name)
-            logger.info(
-                "OpenLIT initialized for GenAI/Agent observability in %.1fs.",
-                time.perf_counter() - started,
-            )
-        except Exception as e:  # noqa: BLE001 - observability must not break boot
-            logger.warning(f"Could not initialize OpenLIT: {e}")
+    try:
+        from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
 
-    threading.Thread(
-        target=_init_openlit, name="openlit-init", daemon=True
-    ).start()
+        started = time.perf_counter()
+        GoogleGenAiSdkInstrumentor().instrument()
+        logger.info(
+            "google-genai instrumentation attached in %.2fs.",
+            time.perf_counter() - started,
+        )
+    except Exception as e:  # noqa: BLE001 - observability must not break boot
+        logger.warning(f"Could not instrument google-genai: {e}")

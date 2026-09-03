@@ -7,7 +7,7 @@
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11%20%7C%203.14-blue.svg)](https://python.org)
 [![Google Cloud: Gemini Enterprise & Imagen 3](https://img.shields.io/badge/Google%20Cloud-Gemini%20Enterprise%20%26%20Imagen%203-4285F4.svg)](https://cloud.google.com/vertex-ai)
 [![Event Spine: ClickHouse](https://img.shields.io/badge/Event%20Spine-ClickHouse%20OLAP-FEE000.svg)](https://clickhouse.com)
-[![Observability: Grafana](https://img.shields.io/badge/Observability-Grafana%20Labs-F46800.svg)](https://grafana.com)
+[![Observability: Grafana](https://img.shields.io/badge/Observability-Grafana%20Cloud%20%2B%20OTel-F46800.svg)](https://grafana.com)
 [![Deployed on Cloud Run](https://img.shields.io/badge/Deployed-Google%20Cloud%20Run-4285F4.svg?logo=googlecloud&logoColor=white)](https://cinespine-35447568692.europe-west4.run.app)
 [![Frontend: React 18 + Vite](https://img.shields.io/badge/Frontend-React%2018%20%2B%20Vite%20%2B%20Tailwind-61DAFB.svg)](https://vitejs.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](https://opensource.org/licenses/MIT)
@@ -60,7 +60,7 @@ C4Context
   System_Ext(gemini_api, "Google Cloud Gemini & Imagen 3", "Extracts semantic narrative tension & synthesizes 35mm concept stills")
   System_Ext(gcs_bucket, "Google Cloud Storage (GCS)", "Archives screenplay PDFs and verified production media assets")
   System_Ext(clickhouse_cloud, "ClickHouse Cloud + mcp-clickhouse", "Operational memory queried by the Wrap Rescue Agent")
-  System_Ext(grafana_cloud, "Grafana Cloud Lighthouse", "Real-time production sync lag and telemetry dashboards")
+  System_Ext(grafana_cloud, "Grafana Cloud", "Traces, logs, metrics and GenAI spans; browser RUM via Faro")
 
   Rel(script_sup, cinespine, "Uploads Daily Timecode Logs & Lined Pages", "PDF/Text")
   Rel(sound_mixer, cinespine, "Uploads Sound ALE Reports & Day Logs", "CSV/ALE")
@@ -183,7 +183,7 @@ flowchart LR
         C1["🎬 Previz Studio (3-Cam Concept Frames)"]
         C2["🎞️ Composed Master Sheet (Live Ledger)"]
         C3["🚨 3-Axis Discrepancy Matrix (Auto-Resolves)"]
-        C4["📊 Grafana Telemetry & Sync Lag Monitors"]
+        C4["📊 Grafana Telemetry &amp; GenAI Spans"]
     end
 
     Producers -->|"POST /api/events/publish"| EventSpine
@@ -321,7 +321,9 @@ blob.upload_from_string(file_bytes, content_type="application/pdf")
 | **Google Cloud (Imagen 3)** | Photorealistic 35mm cinematic concept art generation | Model `imagen-3.0-generate-002` |
 | **Google Cloud Storage (GCS)** | Screenplay PDF & high-res media archival | Bucket `gs://cinespine-production-media/` |
 | **ClickHouse** | Agent-queryable operational memory | Official `mcp-clickhouse` tool calls plus event projections |
-| **Grafana Labs** | Traces, logs, metrics and agent spans from the backend; RUM from the browser | OTLP export with trace-correlated logs, `GET /api/metrics`, OpenLIT for the ADK agents, and Faro in the SPA — see [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |
+| **Grafana Labs** | Traces, logs, metrics and GenAI spans from the backend; RUM from the browser | OTLP export with trace-correlated logs, `GET /api/metrics`, google-genai instrumentation, and Faro in the SPA — see [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |
+
+---
 
 ### 📡 Observability
 
@@ -331,12 +333,13 @@ opaque:
 * **Traces and logs are correlated.** `LoggingInstrumentor` stamps every log
   record with the active span, so a production log line carries
   `trace_id=… trace_sampled=True` and pastes straight into Grafana.
-* **Agent observability via OpenLIT.** Wrap Rescue and the Assistant Editor
-  Queue run on Google ADK and call Gemini; OpenLIT instruments those model
-  calls, so an agent run is a span tree instead of one opaque HTTP request.
-  It initialises on a background thread — `openlit.init()` takes ~34s, and
-  running it on the import path meant the container never opened its port in
-  time to deploy.
+* **Agent observability** via `opentelemetry-instrumentation-google-genai`.
+  Wrap Rescue and the Assistant Editor Queue run on Google ADK and reach Gemini
+  through the google-genai SDK; `generate_content` and `execute_tool` are
+  traced, so an agent run is a span tree instead of one opaque HTTP request.
+  This replaced OpenLIT, which hard-depends on `anthropic`, `openai` and
+  `boto3` — three vendor SDKs nothing here calls — and spent ~34s at init
+  patching them all. Attaching now costs 0.00s and the image is 39 MB smaller.
 * **Prometheus metrics** at `GET /api/metrics` — discrepancies by day and
   severity, ingested events by department and axis, parser rejections, live SSE
   connections.
@@ -399,7 +402,7 @@ any of it, degrading gracefully rather than failing.
 | `CLICKHOUSE_MCP_AUTH_TOKEN` | *unset* | Bearer token sent to that server. Required unless the server runs with auth disabled. |
 | `GOOGLE_GENAI_USE_VERTEXAI` | *unset* | Set to `TRUE` to run Gemini calls through Vertex AI / Gemini Enterprise credentials. Note that Vertex publishes **no `-latest` aliases** — every model id must be a real Model Garden publisher model. |
 | `CINESPINE_WRAP_RESCUE_MODEL` | *unset* | Gemini model used for the Wrap Rescue handoff memo, for example `gemini-2.5-flash`. |
-| `CINESPINE_DISABLE_OPENLIT` | *unset* | Set to `1` to skip OpenLIT. It initialises on a background thread because it takes ~34s, which is longer than a platform will wait for the port. |
+| `CINESPINE_DISABLE_GENAI_TELEMETRY` | *unset* | Set to `1` to skip GenAI span instrumentation. It attaches inline in 0.00s, so there is rarely a reason to. |
 
 > **Real production paperwork is never committed.** Call sheets, camera reports and script logs are
 > third-party copyrighted material and routinely carry crew personal data, so `data/examples/`,

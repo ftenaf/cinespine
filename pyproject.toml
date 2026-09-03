@@ -48,7 +48,11 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.45b0",
     "opentelemetry-instrumentation-httpx>=0.45b0",
     "opentelemetry-instrumentation-logging>=0.45b0",
-    "openlit>=1.30.0",
+    # Instruments the google-genai SDK only: generate_content, execute_tool,
+    # embed_content. Replaced openlit, which hard-depends on anthropic, openai
+    # and boto3 -- three vendor SDKs this app never calls -- and spent ~34s at
+    # init patching all of them.
+    "opentelemetry-instrumentation-google-genai>=0.1.0",
 ]
 
 [project.optional-dependencies]

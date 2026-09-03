@@ -13,7 +13,7 @@
 - [CLOUD_RUN_DEPLOY.md](CLOUD_RUN_DEPLOY.md) — deploying as a single Cloud Run
   service, and the SQLite constraint that decides its instance count.
 - [OBSERVABILITY.md](OBSERVABILITY.md) — the four signals that reach Grafana
-  Cloud, why OpenLIT cannot run on the import path, and the CORS failure that
+  Cloud, how the agents' model calls are traced, and the CORS failure that
   looks identical from both ends.
 
 ---

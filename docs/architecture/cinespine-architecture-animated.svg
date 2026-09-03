@@ -279,7 +279,7 @@
     <g transform="translate(15, 198)">
       <rect width="260" height="42" rx="6" fill="#1e293b" stroke="#475569" stroke-width="1" />
       <text x="12" y="20" font-size="10" font-weight="800" fill="#fbcfe8">Grafana Telemetry &amp; Metrics</text>
-      <text x="12" y="34" font-size="8.5" fill="#cbd5e1">Sync Lag Monitoring • Take Throughput</text>
+      <text x="12" y="34" font-size="8.5" fill="#cbd5e1">Sync Lag • Throughput • Agent Observability</text>
     </g>
   </g>
 
@@ -364,7 +364,7 @@
       <text x="12" y="20" font-size="10.5" font-weight="800" fill="#fdba74">Grafana Cloud</text>
       <text x="12" y="38" font-size="8.5" fill="#94a3b8">OTLP traces &amp; logs from the backend</text>
       <text x="12" y="53" font-size="8.5" fill="#94a3b8">Faro RUM from the browser</text>
-      <text x="12" y="72" font-size="8.5" fill="#94a3b8">OpenLIT attaches off the boot path</text>
+      <text x="12" y="72" font-size="8.5" fill="#94a3b8">GenAI spans on generate_content</text>
       <rect x="12" y="80" width="120" height="16" rx="4" fill="#9a3412" />
       <text x="72" y="92" font-size="7.5" font-weight="700" fill="#ffffff" text-anchor="middle">OBSERVABILITY</text>
     </g>

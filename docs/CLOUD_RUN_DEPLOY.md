@@ -14,7 +14,7 @@ discrepancies, three ranked blockers, three requirements filed.
 Measured on the built image: **cold start to a healthy `/health` is ~2s**, down
 from ~30s under `docker-compose`. Most of that came from dropping `uv run` from
 the entrypoint and installing without extras; the rest was moving
-`openlit.init()` off the import path (see `backend/app/core/telemetry.py`).
+GenAI instrumentation off the import path (see `backend/app/core/telemetry.py`).
 
 ---
 
