@@ -4,6 +4,12 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
+  # The app serves the exposition format at /api/metrics, not /metrics: the
+  # route is defined on a router with prefix="/api" and nothing is mounted at
+  # the root. Without this line the scrape 404s, and every panel querying
+  # cinespine_* renders as an empty timeseries -- which looks like a quiet
+  # system rather than a missing target.
   - job_name: 'cinespine_backend'
+    metrics_path: /api/metrics
     static_configs:
       - targets: ['host.docker.internal:8000']
