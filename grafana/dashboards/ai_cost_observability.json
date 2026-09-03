@@ -1,48 +1,116 @@
 {
   "title": "AI Cost & Observability (CineSpine)",
   "uid": "ai_cost_observability",
+  "description": "Spend and latency for the Gemini calls, from the OpenTelemetry GenAI semantic conventions. Every panel here except the cache ratio reads gen_ai_*, which the OTel meter provider pushes; the cache ratio reads cinespine_*, which is scraped from /api/metrics. Cost is estimated, not billed -- see the panel description.",
+  "templating": {
+    "list": [
+      {
+        "name": "price_in",
+        "label": "Input price (USD / 1M tokens)",
+        "type": "custom",
+        "query": "0.30",
+        "current": { "text": "0.30", "value": "0.30" },
+        "options": [ { "text": "0.30", "value": "0.30", "selected": true } ],
+        "description": "Applied to every model on this dashboard. Fine while the router only reaches for Flash-tier models (llm_router.FLASH_FALLBACK_MODELS); wrong the moment CINESPINE_GEMINI_PRO_MODEL is set and Pro-tier calls land in the same series."
+      },
+      {
+        "name": "price_out",
+        "label": "Output price (USD / 1M tokens)",
+        "type": "custom",
+        "query": "2.50",
+        "current": { "text": "2.50", "value": "2.50" },
+        "options": [ { "text": "2.50", "value": "2.50", "selected": true } ],
+        "description": "Output is priced far above input, which is why the split below matters."
+      }
+    ]
+  },
   "panels": [
     {
-      "type": "timeseries",
-      "title": "LLM Tokens Consumed Rate",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "targets": [
-        {
-          "expr": "rate(cinespine_llm_tokens_consumed_total[5m])",
-          "legendFormat": "{{model}} ({{task_complexity}})"
-        }
-      ]
-    },
-    {
       "type": "stat",
-      "title": "Total Tokens Consumed",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "title": "Estimated Spend (selected range)",
+      "description": "An estimate: token counts multiplied by the price variables above. Nothing in the codebase knows a price, and no metric here carries dollars -- Grafana's own AI Observability cost panels read gen_ai_usage_cost_USD_sum, which is emitted by the OpenLIT SDK this project removed. So this number moves when Google reprices and nobody edits the variable. Read it as an order of magnitude.",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 4 } },
       "targets": [
         {
-          "expr": "sum(cinespine_llm_tokens_consumed_total)",
-          "legendFormat": "{{model}}"
+          "expr": "sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\"}[$__range])) / 1e6 * $price_in\n+\nsum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\"}[$__range])) / 1e6 * $price_out",
+          "legendFormat": "Estimated"
         }
       ]
     },
     {
       "type": "timeseries",
-      "title": "Generative Inference Latency (95th Percentile)",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "title": "Estimated Spend Rate by Model (USD/hour)",
+      "description": "Each side is aggregated to gen_ai_request_model before the addition. Without that the two selectors differ on gen_ai_token_type, the binary match finds no partner on either side, and the panel returns an empty vector -- silently, and indistinguishably from no traffic.\n\n15m windows because the OTel reader exports on a 60s interval; a shorter range than roughly 4 export intervals produces gaps rather than a rate.",
+      "gridPos": { "h": 6, "w": 18, "x": 6, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 4 } },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(cinespine_llm_inference_duration_seconds_bucket[5m])) by (le, model))",
-          "legendFormat": "{{model}}"
+          "expr": "sum by (gen_ai_request_model) (rate(gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\"}[15m])) * 3600 / 1e6 * $price_in\n+\nsum by (gen_ai_request_model) (rate(gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\"}[15m])) * 3600 / 1e6 * $price_out",
+          "legendFormat": "{{gen_ai_request_model}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Tokens per Second by Model and Type",
+      "description": "gen_ai_client_token_usage covers every google-genai call the app makes -- character inference, the camera-report vision reader, the multimodal extractor and the Wrap Rescue memo -- because the instrumentation wraps the SDK rather than each call site.\n\nThe cinespine_llm_tokens_consumed_total counter this panel replaced was hand-placed at two call sites and recorded total_token_count only, so it both undercounted the run and could not separate input from output.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "expr": "sum by (gen_ai_request_model, gen_ai_token_type) (rate(gen_ai_client_token_usage_sum[15m]))",
+          "legendFormat": "{{gen_ai_request_model}} - {{gen_ai_token_type}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Model Call Latency (95th Percentile)",
+      "description": "Wall time inside generate_content, per model. This is the one metric name shared with Grafana's packaged AI Observability dashboards, so those panels would populate here; their cost and token panels would not.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(gen_ai_client_operation_duration_seconds_bucket[15m])))",
+          "legendFormat": "{{gen_ai_request_model}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Agent Run Duration (95th Percentile)",
+      "description": "The agent dimension rather than the model one, from ADK's own invoke_agent spans. Answers 'which agent is slow' where the panels above answer 'which model is slow'.\n\nThe gen_ai_agent_name label is assumed, not verified against a live series. If it is absent these collapse to a single unlabelled line rather than erroring, so an empty legend here means the label is named something else, not that no agents ran.",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 14 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, gen_ai_agent_name) (rate(gen_ai_invoke_agent_duration_seconds_bucket[15m])))",
+          "legendFormat": "{{gen_ai_agent_name}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Tool Calls per Agent Run",
+      "description": "Mean tool calls per invocation. Read beside the duration panel: a slow agent with a flat tool count is waiting on the model, a slow agent with a rising one is looping.",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 14 },
+      "targets": [
+        {
+          "expr": "sum by (gen_ai_agent_name) (rate(gen_ai_invoke_agent_tool_calls_sum[15m]))\n/\nsum by (gen_ai_agent_name) (rate(gen_ai_invoke_agent_tool_calls_count[15m]))",
+          "legendFormat": "{{gen_ai_agent_name}}"
         }
       ]
     },
     {
       "type": "timeseries",
       "title": "AI Cache Hit Ratio",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "description": "The one panel on this dashboard still reading cinespine_*, because the GenAI conventions have no equivalent -- a cache hit never reaches the SDK, so instrumentation that wraps the SDK cannot see it.\n\nThat means it populates only where /api/metrics is scraped. It is a ratio rather than the two raw rates it replaced, which could not be compared by eye when hits and misses differed by an order of magnitude.",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 14 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
       "targets": [
         {
-          "expr": "rate(cinespine_ai_cache_hits_total[5m])",
-          "legendFormat": "{{model}} - {{status}}"
+          "expr": "sum by (model) (rate(cinespine_ai_cache_hits_total{status=\"hit\"}[15m]))\n/\nsum by (model) (rate(cinespine_ai_cache_hits_total[15m]))",
+          "legendFormat": "{{model}}"
         }
       ]
     }

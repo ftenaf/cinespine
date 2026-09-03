@@ -221,14 +221,39 @@ above**, so the exporter in 4a does not carry them. They are reachable by
 scrape or by hand and are currently absent from Grafana; closing that needs
 either a scrape target or a prometheus→OTel bridge.
 
-This is exactly the trap the split is written down to prevent. The
-`AI Cost & Observability (CineSpine)` dashboard in Grafana Cloud has four
-panels, and **all four query `cinespine_*`** — tokens consumed, inference
-latency p95, cache hit ratio. Every one returns an empty vector, and an empty
-timeseries panel is indistinguishable from a quiet system. The equivalent data
-exists under `gen_ai_client_token_usage` and
-`gen_ai_client_operation_duration_seconds`; the panels have to be pointed at it
-or the metrics have to be bridged.
+This is exactly the trap the split is written down to prevent, and the
+`AI Cost & Observability (CineSpine)` dashboard fell into it: all four of its
+original panels queried `cinespine_*` — tokens consumed, inference latency p95,
+cache hit ratio — so every one returned an empty vector, and an empty
+timeseries panel is indistinguishable from a quiet system.
+
+**Fixed on 2026-09-03.** The dashboard now reads `gen_ai_client_token_usage`
+and `gen_ai_client_operation_duration_seconds`, which are exported. Two things
+that were not obvious while rewriting it:
+
+- The hand-placed `cinespine_llm_tokens_consumed_total` counter exists at
+  **two** call sites (`character_ai.py`, `google_cloud.py`) and records
+  `total_token_count` only. `gen_ai_client_token_usage` covers every
+  google-genai call and splits input from output. Output is priced far above
+  input, so a dollar figure derived from a total-token counter is wrong by a
+  factor that moves with the mix — precise-looking and unfalsifiable.
+- Adding the two token types requires aggregating each side first. Written the
+  obvious way, `rate(...{type="input"}) + rate(...{type="output"})` matches on
+  every label including `gen_ai_token_type`, finds no partner, and returns an
+  **empty vector** — the same silent failure the panels were just rescued from.
+  Verified: the naive form returns 0 series against live data, the
+  `sum by (gen_ai_request_model)` form returns the model.
+
+Cost is an estimate — token counts times a dashboard variable. Nothing here
+carries dollars. Grafana's packaged AI Observability dashboards do have cost
+panels, but they query `gen_ai_usage_cost_USD_sum`, which is emitted by the
+**OpenLIT SDK** (§3) computing spend in-process from a bundled pricing file.
+Installing that integration against this stack lights up its latency panels and
+leaves the cost and token ones empty.
+
+The cache-hit-ratio panel still reads `cinespine_ai_cache_hits_total`, because
+the GenAI conventions have no equivalent: a cache hit never reaches the SDK, so
+instrumentation that wraps the SDK cannot see it.
 
 Verified live:
 
@@ -242,6 +267,33 @@ cinespine_sse_active_connections    # by user_role
 Also defined, and emitted once the paths that produce them run:
 `cinespine_llm_tokens_consumed_total`, `cinespine_llm_inference_duration_seconds`,
 `cinespine_ai_cache_hits_total`, `cinespine_department_sync_lag_seconds`.
+
+### 4c. The local stack needs both intakes
+
+`docker compose --profile observability up -d` runs Prometheus and Grafana
+locally, and the same split bites there in two ways that were both silently
+broken until 2026-09-03:
+
+- **Scrape path.** The config had no `metrics_path`, so it scraped
+  `/metrics`. The app serves `/api/metrics` — the route is on a router with
+  `prefix="/api"` and nothing is mounted at the root. The target reported
+  healthy at the TCP level and 404'd on every scrape, so *no* `cinespine_*`
+  series ever existed locally and every local dashboard was empty.
+- **Push path.** `gen_ai_*` is pushed by the OTel meter provider and is never
+  scraped, so a plain Prometheus never sees it. `--web.enable-otlp-receiver`
+  opens `/api/v1/otlp/v1/metrics` to receive it. Point the backend at it with
+  `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, which overrides the metrics signal
+  only and leaves traces and logs going to Grafana Cloud.
+
+A fresh process exposes **no** `cinespine_*` samples at all — every one of them
+is labelled, and a labelled `prometheus_client` metric has no series until the
+first `.labels(...)` call. Only the `# HELP` lines are there. So a scrape can be
+genuinely working and still look identical to the 404 it replaced until demo
+traffic runs:
+
+```bash
+curl -s http://localhost:8000/api/metrics | grep -c '^cinespine_'   # 0 on a cold process, ~50 after /api/events/demo
+```
 
 `cinespine_active_discrepancies` is labelled by production **and shoot day** on
 purpose: without the day, the second day observed overwrites the first and the
