@@ -135,10 +135,16 @@ CLICKHOUSE_USERNAME: "default"
 # the URL Cloud Run returns for cinespine-mcp after deploying it.
 CLICKHOUSE_MCP_URL: "https://cinespine-mcp-<hash>-ew.a.run.app/mcp"
 
-# 30 rather than the 10s default. That service scales to zero, and a cold start
-# on Cloud Run measured ~21s before it answered -- far longer than the ~4s the
-# same image takes locally, because the image is pulled as well as started.
-CLICKHOUSE_MCP_TIMEOUT: "30"
+# 90, not the 10s default. The MCP service scales to zero and its cold start on
+# Cloud Run measured ~21s -- far longer than the ~4s the same image takes
+# locally, because the image is pulled as well as started. 30 left so little
+# margin that the first Wrap Rescue run after an idle period reported the
+# server unavailable and the agent stopped before ranking anything.
+#
+# The cost is the opposite case: when the server is genuinely down, each call
+# waits the full 90s before saying so. status() runs first and fails closed, so
+# a real outage costs one wait, not one per tool.
+CLICKHOUSE_MCP_TIMEOUT: "90"
 
 OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp-gateway-prod-eu-west-2.grafana.net/otlp"
 OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
@@ -270,8 +276,8 @@ Flags that differ from the app service, and why:
 
 - **`--min-instances=0`.** This service holds no state, so unlike the app it can
   scale to zero and cost nothing between Wrap Rescue runs. Cold start on Cloud
-  Run measured ~21s, which is why `CLICKHOUSE_MCP_TIMEOUT` is 30 above. The 10s
-  default would have failed the first call after every idle period.
+  Run measured ~21s, which is why `CLICKHOUSE_MCP_TIMEOUT` is 90 above. 30 was
+  tried first and still lost the first Wrap Rescue run after an idle period.
 - **`--command` / `--args`** override the image's `CMD`, which starts the
   CineSpine API rather than the MCP server. Same image, different entrypoint.
 - **`--ingress=all` with `--allow-unauthenticated`**, which is not what it

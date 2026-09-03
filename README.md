@@ -7,7 +7,7 @@
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11%20%7C%203.14-blue.svg)](https://python.org)
 [![Google Cloud: Gemini Enterprise & Imagen 3](https://img.shields.io/badge/Google%20Cloud-Gemini%20Enterprise%20%26%20Imagen%203-4285F4.svg)](https://cloud.google.com/vertex-ai)
 [![Event Spine: ClickHouse](https://img.shields.io/badge/Event%20Spine-ClickHouse%20OLAP-FEE000.svg)](https://clickhouse.com)
-[![Observability: Grafana](https://img.shields.io/badge/Observability-Grafana%20Cloud%20%2B%20OTel-F46800.svg)](https://grafana.com)
+[![Observability: Grafana Cloud](https://img.shields.io/badge/Observability-Grafana%20Cloud%20%26%20GenAI%20OTel-F46800.svg)](https://grafana.com)
 [![Deployed on Cloud Run](https://img.shields.io/badge/Deployed-Google%20Cloud%20Run-4285F4.svg?logo=googlecloud&logoColor=white)](https://cinespine-35447568692.europe-west4.run.app)
 [![Frontend: React 18 + Vite](https://img.shields.io/badge/Frontend-React%2018%20%2B%20Vite%20%2B%20Tailwind-61DAFB.svg)](https://vitejs.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](https://opensource.org/licenses/MIT)
@@ -60,7 +60,7 @@ C4Context
   System_Ext(gemini_api, "Google Cloud Gemini & Imagen 3", "Extracts semantic narrative tension & synthesizes 35mm concept stills")
   System_Ext(gcs_bucket, "Google Cloud Storage (GCS)", "Archives screenplay PDFs and verified production media assets")
   System_Ext(clickhouse_cloud, "ClickHouse Cloud + mcp-clickhouse", "Operational memory queried by the Wrap Rescue Agent")
-  System_Ext(grafana_cloud, "Grafana Cloud", "Traces, logs, metrics and GenAI spans; browser RUM via Faro")
+  System_Ext(grafana_cloud, "Grafana Cloud", "OTLP traces/logs, Prometheus metrics, Faro RUM, and GoogleGenAiSdkInstrumentor agent span trees")
 
   Rel(script_sup, cinespine, "Uploads Daily Timecode Logs & Lined Pages", "PDF/Text")
   Rel(sound_mixer, cinespine, "Uploads Sound ALE Reports & Day Logs", "CSV/ALE")
@@ -321,7 +321,7 @@ blob.upload_from_string(file_bytes, content_type="application/pdf")
 | **Google Cloud (Imagen 3)** | Photorealistic 35mm cinematic concept art generation | Model `imagen-3.0-generate-002` |
 | **Google Cloud Storage (GCS)** | Screenplay PDF & high-res media archival | Bucket `gs://cinespine-production-media/` |
 | **ClickHouse** | Agent-queryable operational memory | Official `mcp-clickhouse` tool calls plus event projections |
-| **Grafana Labs** | Traces, logs, metrics and GenAI spans from the backend; RUM from the browser | OTLP export with trace-correlated logs, `GET /api/metrics`, google-genai instrumentation, and Faro in the SPA — see [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |
+| **Grafana Cloud** | Six observability signals: OTLP traces/logs, Prometheus metrics, Faro RUM, ClickHouse alert rule, and `GoogleGenAiSdkInstrumentor` agent span trees | Every `generate_content` call is a child span visible in Grafana — see [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |
 
 ---
 
