@@ -1,6 +1,6 @@
 ---
 name: verify-observability
-description: Verify a CineSpine metrics, dashboard or telemetry change against a running stack rather than against configuration. Use when editing grafana/dashboards/*, grafana/prometheus.yml, backend/app/core/telemetry.py, any prometheus_client metric, OTel exporter settings, or when asked whether a metric "actually reaches Grafana". Covers the local OTLP loop and querying production with gcx.
+description: Verify a CineSpine metrics, dashboard or telemetry change against a running stack rather than against configuration. Use when editing grafana/dashboards/*, grafana/prometheus.yml, backend/app/core/telemetry.py, any prometheus_client metric, OTel exporter settings, or when asked whether a metric "actually reaches Grafana", or to push a dashboard to Grafana Cloud. Covers the local OTLP loop, querying production with gcx, and pushing grafana/dashboards/*.json to Grafana Cloud with gcx.
 ---
 
 # Verifying observability changes
@@ -120,7 +120,68 @@ Local Prometheus proves the query; only Grafana Cloud proves the deployment.
 `gcx` is on the Windows user PATH but **not** on Git Bash's; call it by full
 path. `--jq '<expr>'` shapes the output without external parsing.
 
-## 6. Tear down
+## 6. Push the dashboard to Grafana Cloud
+
+`grafana/dashboards/*.json` is provisioned into the **local** Grafana only.
+Nothing carries it to Grafana Cloud, so a panel fix that is verified locally and
+committed is still the old panel in production until it is pushed. The
+`ai_cost_observability` dashboard sat one commit stale in Cloud for exactly this
+reason. The repo file is the source of truth; a push overwrites edits made in
+the Cloud UI.
+
+The file is the classic dashboard model, which the API calls `v1`. The server
+prefers `v2`, so pass `--api-version dashboard.grafana.app/v1` on **both** the
+`get` and the `update`, or the update fails with `400 ... does not match the
+expected API version`. The update also needs the `metadata.resourceVersion`
+from a fresh `get`; that is the optimistic-concurrency token.
+
+```bash
+G=/e/dev/tools/gcx.exe
+DASH=ai_cost_observability                      # the "uid" field in the JSON
+M="$LOCALAPPDATA/Temp/cinespine-dash-manifest.json"
+
+$G dashboards get $DASH --api-version dashboard.grafana.app/v1 -o json \
+  | grep -v '^{"class":"hint"' | python -c "
+import json,sys
+m=json.load(sys.stdin); spec=json.load(open('grafana/dashboards/$DASH.json'))
+spec['uid']=m['metadata']['name']
+if 'schemaVersion' in m['spec']: spec['schemaVersion']=m['spec']['schemaVersion']
+meta={k:m['metadata'][k] for k in ('name','namespace','resourceVersion')}
+json.dump({'apiVersion':m['apiVersion'],'kind':'Dashboard','metadata':meta,'spec':spec},open(sys.argv[1],'w'))" "$M"
+
+$G dashboards update $DASH --api-version dashboard.grafana.app/v1 -f "$M"
+rm -f "$M"
+```
+
+If the `get` returns not-found the dashboard has never been pushed: drop
+`resourceVersion` from `metadata` and use `dashboards create -f` instead.
+
+**Verify the stored copy, then look at it.** `updated` in the mutation output
+only proves the request was accepted.
+
+```bash
+$G dashboards get $DASH --api-version dashboard.grafana.app/v1 -o json \
+  | grep -v '^{"class":"hint"' | python -c "
+import json,sys
+c=json.load(sys.stdin)['spec']; l=json.load(open('grafana/dashboards/$DASH.json'))
+same=len(c['panels'])==len(l['panels']) and all(
+  a['title']==b['title'] and a['targets'][0]['expr']==b['targets'][0]['expr']
+  for a,b in zip(c['panels'],l['panels']))
+print('MATCHES LOCAL:',same); print([p['title'] for p in c['panels']])"
+
+$G dashboards snapshot $DASH --since 24h --width 1400 --height 900 --output-dir "$LOCALAPPDATA/Temp"
+```
+
+Open the PNG. Against production expect every `gen_ai_*` panel to carry data
+after any Wrap Rescue or parse traffic in the range, and the **AI Cache Hit
+Ratio panel to read "No data"**: it queries `cinespine_*`, which nothing on
+Cloud Run scrapes. That blank is the deployment, not the push.
+
+The panels name no datasource, so they resolve to the stack's default. Today
+that is `grafanacloud-prom`; check with `gcx datasources list` if a pushed
+dashboard renders empty everywhere.
+
+## 7. Tear down
 
 ```bash
 PID=$(netstat -ano | grep ":8000.*LISTENING" | awk '{print $5}' | head -1); taskkill //F //PID $PID
