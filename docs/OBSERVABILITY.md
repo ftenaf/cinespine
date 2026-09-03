@@ -1,8 +1,16 @@
 # 📡 Observability
 
-Four signals reach Grafana Cloud, from three places: OpenTelemetry traces and
-logs from the backend, Prometheus metrics it exposes for scraping, GenAI spans
-covering the agents' model calls, and Faro RUM from the browser.
+Telemetry reaches Grafana Cloud from three places: the backend exports
+OpenTelemetry traces and logs and exposes Prometheus metrics for scraping, the
+GenAI instrumentation emits spans for the agents' model calls, and the browser
+sends RUM through Faro.
+
+The agents' spans follow the OpenTelemetry **GenAI semantic conventions**, which
+is what [Grafana Cloud Agent
+Observability](https://grafana.com/docs/grafana-cloud/observe-and-act/agent-observability/)
+consumes — it is built on OpenTelemetry and reads LLM generations, tool calls,
+token usage and cost from exactly that shape. No separate SDK or exporter: the
+same OTLP endpoint carries it.
 
 Everything here is verified against the deployed service rather than inferred
 from configuration.

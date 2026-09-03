@@ -60,7 +60,7 @@ C4Context
   System_Ext(gemini_api, "Google Cloud Gemini & Imagen 3", "Extracts semantic narrative tension & synthesizes 35mm concept stills")
   System_Ext(gcs_bucket, "Google Cloud Storage (GCS)", "Archives screenplay PDFs and verified production media assets")
   System_Ext(clickhouse_cloud, "ClickHouse Cloud + mcp-clickhouse", "Operational memory queried by the Wrap Rescue Agent")
-  System_Ext(grafana_cloud, "Grafana Cloud", "OTLP traces/logs, Prometheus metrics, Faro RUM, and GoogleGenAiSdkInstrumentor agent span trees")
+  System_Ext(grafana_cloud, "Grafana Cloud", "OTLP traces/logs, Prometheus metrics, Faro RUM, and Agent Observability reading GenAI semantic-convention spans")
 
   Rel(script_sup, cinespine, "Uploads Daily Timecode Logs & Lined Pages", "PDF/Text")
   Rel(sound_mixer, cinespine, "Uploads Sound ALE Reports & Day Logs", "CSV/ALE")
@@ -321,14 +321,14 @@ blob.upload_from_string(file_bytes, content_type="application/pdf")
 | **Google Cloud (Imagen 3)** | Photorealistic 35mm cinematic concept art generation | Model `imagen-3.0-generate-002` |
 | **Google Cloud Storage (GCS)** | Screenplay PDF & high-res media archival | Bucket `gs://cinespine-production-media/` |
 | **ClickHouse** | Agent-queryable operational memory | Official `mcp-clickhouse` tool calls plus event projections |
-| **Grafana Cloud** | Six observability signals: OTLP traces/logs, Prometheus metrics, Faro RUM, ClickHouse alert rule, and `GoogleGenAiSdkInstrumentor` agent span trees | Every `generate_content` call is a child span visible in Grafana — see [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |
+| **Grafana Cloud** | OTLP traces and logs, Prometheus metrics, Faro RUM, and [Agent Observability](https://grafana.com/docs/grafana-cloud/observe-and-act/agent-observability/) for the ADK agents | `GoogleGenAiSdkInstrumentor` emits OTel GenAI semantic-convention spans for `generate_content` and `execute_tool` — the shape Agent Observability reads for generations, tool calls and token usage. See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |
 
 ---
 
 ### 📡 Observability
 
-All four signals reach Grafana Cloud, and the agents are legible rather than
-opaque:
+Telemetry reaches Grafana Cloud from the backend and the browser, and the
+agents are legible rather than opaque:
 
 * **Traces and logs are correlated.** `LoggingInstrumentor` stamps every log
   record with the active span, so a production log line carries

@@ -12,9 +12,9 @@
   show anything.
 - [CLOUD_RUN_DEPLOY.md](CLOUD_RUN_DEPLOY.md) — deploying as a single Cloud Run
   service, and the SQLite constraint that decides its instance count.
-- [OBSERVABILITY.md](OBSERVABILITY.md) — the four signals that reach Grafana
-  Cloud, how the agents' model calls are traced, and the CORS failure that
-  looks identical from both ends.
+- [OBSERVABILITY.md](OBSERVABILITY.md) — what reaches Grafana Cloud, how the
+  agents' model calls are traced for Agent Observability, and the CORS failure
+  that looks identical from both ends.
 
 ---
 
