@@ -120,9 +120,14 @@ CLICKHOUSE_HOST: "<your-instance>.europe-west4.gcp.clickhouse.cloud"
 CLICKHOUSE_SECURE: "1"
 CLICKHOUSE_USERNAME: "default"
 
-# ClickHouse Cloud's hosted MCP -- no self-hosted container in this shape.
-CLICKHOUSE_MCP_URL: "https://mcp.clickhouse.cloud/mcp"
-CLICKHOUSE_MCP_TIMEOUT: "15"
+# The self-hosted MCP service from section 5, not ClickHouse Cloud's hosted
+# endpoint -- see there for why the hosted one cannot work headlessly. Fill in
+# the URL Cloud Run returns for cinespine-mcp after deploying it.
+CLICKHOUSE_MCP_URL: "https://cinespine-mcp-<hash>-ew.a.run.app/mcp"
+
+# 30 rather than the 10s default, because that service scales to zero and a
+# cold start measured ~4s before it answered. The default left no margin.
+CLICKHOUSE_MCP_TIMEOUT: "30"
 
 OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp-gateway-prod-eu-west-2.grafana.net/otlp"
 OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
@@ -203,7 +208,13 @@ the signature of a broken MCP transport, not a quiet day.
 
 ---
 
-## 5. Do not use the hosted MCP for this — self-host it as a second service
+## 5. The MCP server, self-hosted as a second service
+
+`mcp-clickhouse` runs as its own Cloud Run service, built from the same
+`backend/Dockerfile` that compose uses locally. That is the settled shape: the
+same container in both places, one version to reason about, pinned by `uv.lock`.
+
+### Why not ClickHouse Cloud's hosted MCP
 
 The obvious move is to point `CLICKHOUSE_MCP_URL` at
 `https://mcp.clickhouse.cloud/mcp` and run nothing. It does not work here, and
@@ -221,20 +232,53 @@ static `Authorization: Bearer` and implements no OAuth at all. The mismatch is
 not a missing token — it is that the hosted endpoint is built for interactive
 clients (Claude Code, Cursor) and this is a server.
 
-So run the open-source `mcp-clickhouse` as a **second Cloud Run service**, which
-does support the static bearer the client already sends:
+The open-source server, by contrast, accepts exactly the static bearer this
+client already sends.
+
+### Deploying it
+
+Build from `backend/Dockerfile`, which installs `--all-extras` and so carries
+`mcp-clickhouse` from the `hackathon` extra:
 
 ```bash
-gcloud run deploy cinespine-mcp --image=europe-west4-docker.pkg.dev/cinespine/cinespine/mcp:v0.7.0 --region=europe-west4 --project=cinespine --service-account=cinespine-run@cinespine.iam.gserviceaccount.com --ingress=internal --min-instances=1 --max-instances=1 --port=4200 --set-secrets=CLICKHOUSE_PASSWORD=cinespine-clickhouse-password:latest,CLICKHOUSE_MCP_AUTH_TOKEN=cinespine-clickhouse-mcp-token:latest --set-env-vars=CLICKHOUSE_HOST=<your-instance>.europe-west4.gcp.clickhouse.cloud,CLICKHOUSE_USER=default,CLICKHOUSE_SECURE=1,CLICKHOUSE_MCP_SERVER_TRANSPORT=http,CLICKHOUSE_MCP_BIND_HOST=0.0.0.0,CLICKHOUSE_MCP_BIND_PORT=4200 --no-allow-unauthenticated
+docker build -f backend/Dockerfile -t europe-west4-docker.pkg.dev/cinespine/cinespine/mcp:v0.7.0 .
 ```
 
-That image builds from `backend/Dockerfile` with `--all-extras`, since
-`mcp-clickhouse` lives in the `hackathon` extra. `--ingress=internal` keeps it
-off the public internet; point the app's `CLICKHOUSE_MCP_URL` at the service URL
-Cloud Run returns.
+```bash
+docker push europe-west4-docker.pkg.dev/cinespine/cinespine/mcp:v0.7.0
+```
+
+```bash
+gcloud run deploy cinespine-mcp --image=europe-west4-docker.pkg.dev/cinespine/cinespine/mcp:v0.7.0 --region=europe-west4 --project=cinespine --service-account=cinespine-run@cinespine.iam.gserviceaccount.com --ingress=internal --min-instances=0 --max-instances=2 --port=4200 --command=uv --args=run,mcp-clickhouse --set-secrets=CLICKHOUSE_PASSWORD=cinespine-clickhouse-password:latest,CLICKHOUSE_MCP_AUTH_TOKEN=cinespine-clickhouse-mcp-token:latest --set-env-vars=CLICKHOUSE_HOST=<your-instance>.europe-west4.gcp.clickhouse.cloud,CLICKHOUSE_USER=default,CLICKHOUSE_SECURE=1,CLICKHOUSE_MCP_SERVER_TRANSPORT=http,CLICKHOUSE_MCP_BIND_HOST=0.0.0.0,CLICKHOUSE_MCP_BIND_PORT=4200 --no-allow-unauthenticated
+```
+
+Then put the URL it prints into `CLICKHOUSE_MCP_URL` in the app's env file,
+with `/mcp` on the end, and redeploy the app service.
+
+Flags that differ from the app service, and why:
+
+- **`--min-instances=0`.** This service holds no state, so unlike the app it can
+  scale to zero and cost nothing between Wrap Rescue runs. Cold start measured
+  ~4s, which is why `CLICKHOUSE_MCP_TIMEOUT` is raised to 30 above — the 10s
+  default would have worked but left little margin.
+- **`--command` / `--args`** override the image's `CMD`, which starts the
+  CineSpine API rather than the MCP server. Same image, different entrypoint.
+- **`--ingress=internal`** keeps it off the public internet. Only the app
+  service needs to reach it.
+- **`--no-allow-unauthenticated`** on top of that, so the bearer token is not
+  the only thing standing between the internet and your cluster.
 
 The app service still needs no MCP package of its own — its client is plain
 JSON-RPC over httpx, which is why `Dockerfile.cloudrun` installs no extras.
+
+### Why self-hosting is the better answer anyway
+
+Pinning the version is the real argument, independent of OAuth. A hosted
+endpoint can change its tool surface underneath you, and this codebase is a
+worked example of how that fails silently: the client asked for `run_query` for
+a long time against a server that exports `run_select_query`, every call came
+back empty, and the agent reported clean days it had never looked at. With the
+image pinned by `uv.lock`, that change arrives when you choose to take it.
 
 The tool name is `run_select_query`, not `run_query`, and a failed call answers
 HTTP 200 with `isError`. Both are handled, and both are written down in
