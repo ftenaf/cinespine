@@ -10,6 +10,8 @@
 - [DEMO_DATA.md](DEMO_DATA.md) — the relationships the demo fixtures in
   `data/examples/` must satisfy for reconciliation and the editorial queue to
   show anything.
+- [CLOUD_RUN_DEPLOY.md](CLOUD_RUN_DEPLOY.md) — deploying as a single Cloud Run
+  service, and the SQLite constraint that decides its instance count.
 
 ---
 

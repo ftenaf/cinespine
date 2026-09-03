@@ -97,3 +97,6 @@ backups/
 .codegraph/
 graphify-out/
 gcp-credentials.json
+
+# Cloud Run deployment env, which names the ClickHouse host and is per-deployment.
+deploy/cloudrun.env.yaml
