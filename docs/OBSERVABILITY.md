@@ -78,8 +78,8 @@ do it** — four vendor SDKs nothing in this codebase calls. `uv tree` shows the
 as unconditional requirements, not extras.
 
 That cost `openlit.init()` **~34 seconds**, which was too long to run inline: it
-sat on the import path ahead of uvicorn binding a socket, and Replit autoscale
-gave up on the deployment with *"the application failed to open a port in
+sat on the import path ahead of uvicorn binding a socket, and the deployment
+platform's autoscaler gave up with *"the application failed to open a port in
 time"* — which reads like a crash and was not one. The workaround was a daemon
 thread, and it worked, but it left a ~34s window after boot where model calls
 went unrecorded and it monkeypatched modules while the app was already serving.
@@ -95,9 +95,10 @@ managing it. Measured:
 | Window with no instrumentation | ~34s after boot | **none** |
 
 > **Not** a win: import time or cold start. Both Cloud Run images import in
-> ~1.6s and answer `/health` in ~2s. The 45s import that broke the Replit
-> deployment was fixed earlier by backgrounding, and separately by dropping the
-> `dev` and `hackathon` extras from the production image. Those two changes did
+> ~1.6s and answer `/health` in ~2s. The 45s import that broke the prior
+> deployment platform was fixed earlier by backgrounding, and separately by
+> dropping the `dev` and `hackathon` extras from the production image. Those
+> two changes did
 > the deployment work; this one is about what ships and when it attaches.
 
 ## 3.1. What Agent Observability additionally requires

@@ -26,7 +26,8 @@ from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 FastAPIInstrumentor.instrument_app(app)
 HTTPXClientInstrumentor().instrument()
 
-# Enable CORS for React frontend (local Vite port 5173 and Replit hosting)
+# Enable CORS for the React frontend (local Vite dev server on 5173; the
+# Cloud Run deployment itself is same-origin and doesn't need this).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -54,7 +55,7 @@ if os.path.exists(static_dir):
     if os.path.exists(previz_dir):
         app.mount("/previz", StaticFiles(directory=previz_dir), name="previz")
 
-# Serve frontend build for Replit unified deployment
+# Serve the compiled frontend build for the unified single-service deployment
 frontend_dist = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
 if os.path.exists(frontend_dist):
     assets_dir = os.path.join(frontend_dist, "assets")

@@ -70,8 +70,8 @@ gcloud artifacts repositories create cinespine --repository-format=docker --loca
 ### Runtime service account
 
 Cloud Run should authenticate as a service account with Application Default
-Credentials, rather than the `GCP_CREDENTIALS_JSON` key file `start.sh` writes
-to disk for Replit. Nothing on disk, one fewer secret.
+Credentials, rather than a key file written to disk at startup. Nothing on
+disk, one fewer secret.
 
 ```bash
 gcloud iam service-accounts create cinespine-run --display-name="CineSpine Cloud Run runtime" --project=cinespine

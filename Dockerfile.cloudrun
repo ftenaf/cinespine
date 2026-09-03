@@ -3,10 +3,10 @@
 # CineSpine as a single Cloud Run service.
 #
 # One image, one origin: FastAPI serves the API under /api and the compiled SPA
-# at everything else, which backend/app/main.py already does for the Replit
-# deployment. Splitting the frontend onto its own host would buy a CDN and cost
-# a second origin -- meaning CORS between the two, a second entry in the Faro
-# collector's allowed-origins list, and a second thing to deploy.
+# at everything else, which backend/app/main.py already does. Splitting the
+# frontend onto its own host would buy a CDN and cost a second origin --
+# meaning CORS between the two, a second entry in the Faro collector's
+# allowed-origins list, and a second thing to deploy.
 #
 # Kept separate from backend/Dockerfile, which docker-compose still uses for
 # local development. That one builds no frontend and installs --all-extras so
