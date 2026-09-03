@@ -206,7 +206,42 @@ def setup_otlp(app_name: str = "cinespine-backend"):
     except ImportError as e:
         logger.warning(f"Could not initialize OTLP Log Exporter (requires newer opentelemetry packages): {e}")
 
-    logger.info("OpenTelemetry initialization complete. Traces and Logs are now exporting.")
+    # -----------------------------------------------------
+    # Set up OTLP Metric Exporter
+    # -----------------------------------------------------
+    #
+    # Spans and logs had exporters; metrics had none, so nothing this process
+    # measured ever reached Grafana. The gap was invisible because the traces
+    # arriving made the pipeline look configured -- a Prometheus query for
+    # `gen_ai.*` or `cinespine_*` returned an empty vector while Tempo held the
+    # matching spans.
+    #
+    # Push, not scrape. `/api/metrics` still serves the exposition format, but
+    # nothing scrapes a Cloud Run service: it has no stable address to be
+    # scraped at, and a scale-to-zero instance is not there to answer. The
+    # exporter carries them out instead.
+    #
+    # This provider is what the GenAI instrumentation records against, so token
+    # counts and call durations become queryable as series rather than only as
+    # span attributes.
+    try:
+        from opentelemetry import metrics
+        from opentelemetry.sdk.metrics import MeterProvider
+        from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+        from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+
+        # 60s rather than the 30s default: these are counters and histograms
+        # read on dashboards, not alert inputs, and halving the export volume
+        # costs nothing at that resolution.
+        reader = PeriodicExportingMetricReader(
+            OTLPMetricExporter(), export_interval_millis=60_000,
+        )
+        metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=[reader]))
+        logger.info("OTLP metric exporter installed (60s interval).")
+    except Exception as e:  # noqa: BLE001 - observability must not break boot
+        logger.warning(f"Could not initialize OTLP Metric Exporter: {e}")
+
+    logger.info("OpenTelemetry initialization complete. Traces, Logs and Metrics are now exporting.")
 
     # -----------------------------------------------------
     # GenAI / Agent Observability
