@@ -97,6 +97,36 @@ managing it. Measured:
 > `dev` and `hackathon` extras from the production image. Those two changes did
 > the deployment work; this one is about what ships and when it attaches.
 
+### What [Agent Observability](https://grafana.com/products/cloud/agent-observability/) adds on top of the spans
+
+Emitting GenAI semantic-convention spans is the whole integration — but the
+product does more with them than draw a trace:
+
+- **Conversation replay.** Prompts, tool calls and responses in sequence, so a
+  Wrap Rescue run can be read back as *how it reached that memo* rather than as
+  a span tree to interpret.
+- **Cost and token tracking** by agent, run and model — the natural home for
+  "which model is this demo actually spending on", which the
+  `cinespine_llm_tokens_consumed_total` metric only answers in aggregate.
+- **Evaluations and guards** on live traffic: hallucination and unsafe-output
+  detection, and quality regression tracking across prompts, models and agent
+  versions.
+
+**None of the evaluation features are configured here.** They are opt-in and
+would need evaluators defined against real runs; this deployment sends spans
+and nothing more. Worth knowing the capability exists before building anything
+equivalent by hand.
+
+### Cost
+
+The free tier is **30k generations and 25M tokens per month**, which this
+project is nowhere near — a demo run makes a handful of Gemini calls. Beyond
+it, Pro starts at $1.50 per 1k generations plus a $19/month platform fee, and
+evaluations are billed separately at $2 per 1M tokens.
+
+So the span export is free at this scale, and turning on evaluations is the
+decision with a price attached, not the instrumentation.
+
 ### What was given up
 
 OpenLIT's provider-agnostic enrichment, which was never used here — this app
