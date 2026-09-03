@@ -35,7 +35,7 @@ host run by construction:
 
 ```bash
 export CLICKHOUSE_HOST=localhost CLICKHOUSE_PORT=8123 \
-       CLICKHOUSE_USERNAME=default CLICKHOUSE_PASSWORD=password CLICKHOUSE_SECURE=false
+       CLICKHOUSE_USER=default CLICKHOUSE_PASSWORD=password CLICKHOUSE_SECURE=false
 # .env points this at ClickHouse Cloud, which 401s
 export CLICKHOUSE_MCP_URL=http://localhost:4200/mcp
 # .env points this at the container mount path /app/gcp-credentials.json
