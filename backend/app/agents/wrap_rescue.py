@@ -140,6 +140,18 @@ def _mcp_package_installed() -> bool:
     return importlib.util.find_spec("mcp_clickhouse") is not None
 
 
+def _describe(exc: BaseException) -> str:
+    """
+    An exception as something a reader can act on.
+
+    `str()` alone is not enough: httpx raises timeouts and connect errors whose
+    string form is empty, and an empty reason is how a real failure reached the
+    UI as a blank field beside a step whose detail read like success.
+    """
+    text = str(exc).strip()
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
 def _jsonish(value: Any) -> Any:
     if not isinstance(value, str):
         return value
@@ -295,10 +307,23 @@ class HTTPClickHouseMCPClient:
                 reason="Could not derive the MCP health endpoint.",
             )
 
+        # Probe MCP itself, not /health.
+        #
+        # /health looked like the cheaper question and was the wrong one twice
+        # over. On Cloud Run this server hangs on it for sixty seconds and then
+        # answers 503 -- with ClickHouse awake, so the dependency is not the
+        # cause -- and the handler blocks the event loop while it does. So the
+        # probe did not merely report a working server as unavailable: the
+        # `initialize` sent straight afterwards queued behind the wedged loop
+        # and timed out too. Asking whether the server was well is what made it
+        # unwell.
+        #
+        # `initialize` is the honest question anyway. The caller wants to know
+        # whether this client can speak MCP to that URL, and this is the exact
+        # path every tool call takes -- measured at 6ms against the same server
+        # that takes 60s to fail a health check.
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(health_url, headers=self._headers())
-                response.raise_for_status()
+            await self._ensure_initialized()
         except Exception as exc:  # noqa: BLE001 - status must explain every failed transport
             return ClickHouseMCPStatus(
                 configured=True,
@@ -306,7 +331,10 @@ class HTTPClickHouseMCPClient:
                 server_url=self.url,
                 health_url=health_url,
                 package_installed=_mcp_package_installed(),
-                reason=str(exc),
+                # Never blank. httpx raises timeouts whose str() is empty, which
+                # left the agent reporting a failure it did not name beside a
+                # step whose detail read as success.
+                reason=_describe(exc),
             )
 
         return ClickHouseMCPStatus(
