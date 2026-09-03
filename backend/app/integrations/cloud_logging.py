@@ -5,11 +5,19 @@ from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
-try:
-    from google.cloud import logging as cloud_logging
-    CLOUD_LOGGING_AVAILABLE = True
-except ImportError:
-    CLOUD_LOGGING_AVAILABLE = False
+# Imported when a logger is first constructed rather than at module import.
+# `google.cloud.logging` costs about four seconds to import, and this module is
+# reached from the route table, so that was four seconds every boot spent on a
+# client that is only built when an agent finishes a run. Boot time is not free
+# here: the platform gives the app a fixed window to open its port, and the
+# import chain runs before uvicorn binds one.
+def _cloud_logging_module():
+    """The Cloud Logging module, or None where the package is absent."""
+    try:
+        from google.cloud import logging as cloud_logging
+        return cloud_logging
+    except ImportError:
+        return None
 
 
 class AgentCloudLogger:
@@ -24,7 +32,8 @@ class AgentCloudLogger:
         self.client = None
         self.cloud_logger = None
 
-        if CLOUD_LOGGING_AVAILABLE:
+        cloud_logging = _cloud_logging_module()
+        if cloud_logging is not None:
             try:
                 # This will automatically pick up Application Default Credentials or GOOGLE_APPLICATION_CREDENTIALS
                 self.client = cloud_logging.Client()

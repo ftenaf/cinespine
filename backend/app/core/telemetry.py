@@ -153,6 +153,8 @@ def setup_otlp(app_name: str = "cinespine-backend"):
     """
     import os
     import logging
+    import threading
+    import time
     from opentelemetry import trace
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.resources import Resource
@@ -210,9 +212,37 @@ def setup_otlp(app_name: str = "cinespine-backend"):
     # -----------------------------------------------------
     # Set up OpenLIT for GenAI/Agent Observability
     # -----------------------------------------------------
-    try:
-        import openlit
-        openlit.init(application_name=app_name)
-        logger.info("OpenLIT initialized for GenAI/Agent observability.")
-    except ImportError as e:
-        logger.warning(f"Could not initialize OpenLIT: {e}")
+    #
+    # On a background thread, because `openlit.init()` takes ~34 seconds. It
+    # patches the client library of every GenAI provider it supports, so it
+    # imports anthropic and openai among others -- neither of which this app
+    # uses -- and it does that work before returning.
+    #
+    # Called inline it ran at import time, before uvicorn had bound a socket,
+    # and a 45-second import is longer than a platform will wait for a port.
+    # Replit autoscale gave up on the deployment with "the application failed
+    # to open a port in time", which reads like a crash and is not one: the
+    # process was healthy and still importing.
+    #
+    # Backgrounded, the port opens immediately and instrumentation attaches a
+    # few seconds later. The window costs nothing in practice -- it patches
+    # GenAI clients, and nothing calls one in the first seconds after boot.
+    if os.environ.get("CINESPINE_DISABLE_OPENLIT", "").strip() not in ("", "0", "false", "False"):
+        logger.info("OpenLIT is disabled by CINESPINE_DISABLE_OPENLIT.")
+        return
+
+    def _init_openlit() -> None:
+        try:
+            import openlit
+            started = time.perf_counter()
+            openlit.init(application_name=app_name)
+            logger.info(
+                "OpenLIT initialized for GenAI/Agent observability in %.1fs.",
+                time.perf_counter() - started,
+            )
+        except Exception as e:  # noqa: BLE001 - observability must not break boot
+            logger.warning(f"Could not initialize OpenLIT: {e}")
+
+    threading.Thread(
+        target=_init_openlit, name="openlit-init", daemon=True
+    ).start()
