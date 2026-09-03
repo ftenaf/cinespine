@@ -17,12 +17,15 @@ app = FastAPI(
 )
 
 # Initialize OpenTelemetry
-from backend.app.core.telemetry import setup_otlp
+from backend.app.core.telemetry import backport_fastapi_route_details, setup_otlp
 setup_otlp()
 
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
+# Before instrument_app: the 0.63b1 route walker 500s on a wrong-method
+# request to any included route. See the function for why 0.64b0 is not here.
+backport_fastapi_route_details()
 FastAPIInstrumentor.instrument_app(app)
 HTTPXClientInstrumentor().instrument()
 

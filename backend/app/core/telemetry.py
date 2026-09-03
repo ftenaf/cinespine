@@ -227,6 +227,69 @@ def remote_export_allowed(
     return host in _LOCAL_COLLECTOR_HOSTS
 
 
+def backport_fastapi_route_details() -> None:
+    """Let the FastAPI instrumentation see the routes inside an included router.
+
+    FastAPI 0.137 stopped copying an included router's routes onto the app and
+    mounts an ``_IncludedRouter`` wrapper instead, which has no ``path``.
+    ``opentelemetry-instrumentation-fastapi`` 0.63b1 walks ``app.routes``
+    expecting plain routes: on a full match it tolerates the missing ``path``,
+    on a partial match (right path, wrong method) it does not, and the request
+    dies with ``AttributeError`` -- a 500 with no span, where a 405 was due.
+    That is the one 5xx Cloud Run served in the week to 2026-09-03.
+
+    0.64b0 flattens the wrapper. It cannot be installed: its
+    ``semantic-conventions`` pin needs ``opentelemetry-api`` 1.43 and
+    ``google-adk`` 2.8 caps the api at 1.42.1, so the resolver trades ADK down
+    two major versions to take it. This is 0.64b0's fix applied to 0.63b1. It
+    does nothing once the installed instrumentation carries ``_flatten_routes``
+    itself, so it retires on the day ADK lets the upgrade through.
+    """
+    try:
+        import opentelemetry.instrumentation.fastapi as otel_fastapi
+    except ImportError:
+        return
+    if hasattr(otel_fastapi, "_flatten_routes"):
+        return
+
+    from starlette.routing import Match, Route
+
+    try:
+        from fastapi.routing import iter_route_contexts
+    except ImportError:  # FastAPI < 0.137.2
+        iter_route_contexts = None
+
+    def _flatten_routes(routes):
+        if iter_route_contexts is not None:
+            yield from iter_route_contexts(routes)
+            return
+        for starlette_route in routes:
+            if hasattr(starlette_route, "effective_route_contexts"):
+                yield from starlette_route.effective_route_contexts()
+            else:
+                yield starlette_route
+
+    def _get_route_details(scope):
+        route = None
+        for starlette_route in _flatten_routes(scope["app"].routes):
+            match, _ = (
+                Route.matches(starlette_route, scope)
+                if isinstance(starlette_route, Route)
+                else starlette_route.matches(scope)
+            )
+            if match == Match.FULL:
+                try:
+                    route = starlette_route.path
+                except AttributeError:  # host-routed entries carry no path
+                    route = scope.get("path")
+                break
+            if match == Match.PARTIAL:
+                route = starlette_route.path
+        return route
+
+    otel_fastapi._get_route_details = _get_route_details
+
+
 def setup_otlp(app_name: str = "cinespine-backend"):
     """
     Initializes OpenTelemetry traces and logs export to OTLP.

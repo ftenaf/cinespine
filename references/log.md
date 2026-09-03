@@ -11,6 +11,18 @@ Newest first. Each entry names what produced it.
 
 ## 2026-09-03
 
+**A wrong method on any API route was a 500, and the instrumentation was the
+cause.** The only 5xx Cloud Run served in a week was a POST to a GET-only
+route: `opentelemetry-instrumentation-fastapi` 0.63b1 walks `app.routes`
+expecting plain routes, FastAPI 0.137+ mounts an `_IncludedRouter` wrapper
+with no `path`, and on the partial match (right path, wrong method) the walker
+raises before any span exists. Reproduced locally: POST `/api/health` -> 500,
+no span. 0.64b0 fixes it and cannot be installed -- its semantic-conventions
+pin needs `opentelemetry-api` 1.43 and `google-adk` 2.8 caps the api at 1.42.1,
+so `uv lock` trades ADK down from 2.8 to 1.14 to take it. The fix is
+backported in `telemetry.py` and retires itself once the installed
+instrumentation has `_flatten_routes`.
+
 **A laptop container pushed into the production stack, and nothing could tell.**
 Seven days of Grafana Cloud logs held 2,400 error lines about
 `/app/gcp-credentials.json` and 800 about a full disk. That path is the compose
