@@ -1,9 +1,15 @@
 # ☁️ Deploying CineSpine to Cloud Run
 
-One Cloud Run service, built from [`Dockerfile.cloudrun`](../Dockerfile.cloudrun):
-FastAPI serves the API under `/api` and the compiled SPA at everything else.
-ClickHouse and its MCP server are both hosted by ClickHouse Cloud, so nothing
-stateful runs in the container.
+One Cloud Run service for the app, built from
+[`Dockerfile.cloudrun`](../Dockerfile.cloudrun): FastAPI serves the API under
+`/api` and the compiled SPA at everything else, so there is a single origin and
+no CORS between the two halves. ClickHouse itself is ClickHouse Cloud; its MCP
+server runs as a second, scale-to-zero Cloud Run service (section 5 — the
+hosted MCP is OAuth-only and cannot work headlessly).
+
+Deployed and verified end to end at
+`https://cinespine-35447568692.europe-west4.run.app`: three Day 31
+discrepancies, three ranked blockers, three requirements filed.
 
 Measured on the built image: **cold start to a healthy `/health` is ~2s**, down
 from ~30s under `docker-compose`. Most of that came from dropping `uv run` from
@@ -116,6 +122,10 @@ GOOGLE_CLOUD_LOCATION: "europe-west4"
 CINESPINE_WRAP_RESCUE_MODEL: "gemini-2.5-flash"
 
 # ClickHouse Cloud. SECURE moves the port to 8443 on its own.
+#
+# "1" is correct here and wrong on the MCP service, which wants the literal
+# "true" -- same variable name, two parsers. Section 5 has the detail; it cost
+# a deploy to find.
 CLICKHOUSE_HOST: "<your-instance>.europe-west4.gcp.clickhouse.cloud"
 CLICKHOUSE_SECURE: "1"
 CLICKHOUSE_USERNAME: "default"
@@ -125,8 +135,9 @@ CLICKHOUSE_USERNAME: "default"
 # the URL Cloud Run returns for cinespine-mcp after deploying it.
 CLICKHOUSE_MCP_URL: "https://cinespine-mcp-<hash>-ew.a.run.app/mcp"
 
-# 30 rather than the 10s default, because that service scales to zero and a
-# cold start measured ~4s before it answered. The default left no margin.
+# 30 rather than the 10s default. That service scales to zero, and a cold start
+# on Cloud Run measured ~21s before it answered -- far longer than the ~4s the
+# same image takes locally, because the image is pulled as well as started.
 CLICKHOUSE_MCP_TIMEOUT: "30"
 
 OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp-gateway-prod-eu-west-2.grafana.net/otlp"
@@ -249,7 +260,7 @@ docker push europe-west4-docker.pkg.dev/cinespine/cinespine/mcp:v0.7.0
 ```
 
 ```bash
-gcloud run deploy cinespine-mcp --image=europe-west4-docker.pkg.dev/cinespine/cinespine/mcp:v0.7.0 --region=europe-west4 --project=cinespine --service-account=cinespine-run@cinespine.iam.gserviceaccount.com --ingress=internal --min-instances=0 --max-instances=2 --port=4200 --command=uv --args=run,mcp-clickhouse --set-secrets=CLICKHOUSE_PASSWORD=cinespine-clickhouse-password:latest,CLICKHOUSE_MCP_AUTH_TOKEN=cinespine-clickhouse-mcp-token:latest --set-env-vars=CLICKHOUSE_HOST=<your-instance>.europe-west4.gcp.clickhouse.cloud,CLICKHOUSE_USER=default,CLICKHOUSE_SECURE=1,CLICKHOUSE_MCP_SERVER_TRANSPORT=http,CLICKHOUSE_MCP_BIND_HOST=0.0.0.0,CLICKHOUSE_MCP_BIND_PORT=4200 --no-allow-unauthenticated
+gcloud run deploy cinespine-mcp --image=europe-west4-docker.pkg.dev/cinespine/cinespine/mcp:v0.7.0 --region=europe-west4 --project=cinespine --service-account=cinespine-run@cinespine.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=2 --port=4200 --memory=1Gi --command=uv --args=run,mcp-clickhouse --set-secrets=CLICKHOUSE_PASSWORD=cinespine-clickhouse-password:latest,CLICKHOUSE_MCP_AUTH_TOKEN=cinespine-clickhouse-mcp-token:latest --set-env-vars=CLICKHOUSE_HOST=<your-instance>.europe-west4.gcp.clickhouse.cloud,CLICKHOUSE_USER=default,CLICKHOUSE_SECURE=true,CLICKHOUSE_PORT=8443,CLICKHOUSE_MCP_SERVER_TRANSPORT=http,CLICKHOUSE_MCP_BIND_HOST=0.0.0.0,CLICKHOUSE_MCP_BIND_PORT=4200 --allow-unauthenticated
 ```
 
 Then put the URL it prints into `CLICKHOUSE_MCP_URL` in the app's env file,
@@ -258,15 +269,44 @@ with `/mcp` on the end, and redeploy the app service.
 Flags that differ from the app service, and why:
 
 - **`--min-instances=0`.** This service holds no state, so unlike the app it can
-  scale to zero and cost nothing between Wrap Rescue runs. Cold start measured
-  ~4s, which is why `CLICKHOUSE_MCP_TIMEOUT` is raised to 30 above — the 10s
-  default would have worked but left little margin.
+  scale to zero and cost nothing between Wrap Rescue runs. Cold start on Cloud
+  Run measured ~21s, which is why `CLICKHOUSE_MCP_TIMEOUT` is 30 above. The 10s
+  default would have failed the first call after every idle period.
 - **`--command` / `--args`** override the image's `CMD`, which starts the
   CineSpine API rather than the MCP server. Same image, different entrypoint.
-- **`--ingress=internal`** keeps it off the public internet. Only the app
-  service needs to reach it.
-- **`--no-allow-unauthenticated`** on top of that, so the bearer token is not
-  the only thing standing between the internet and your cluster.
+- **`--ingress=all` with `--allow-unauthenticated`**, which is not what it
+  looks like. See below — `internal` was tried first and does not work without
+  more machinery than it is worth here.
+- **`CLICKHOUSE_SECURE=true`, not `1`.** This server compares
+  `os.getenv("CLICKHOUSE_SECURE", "true").lower() == "true"`, so `1` reads as
+  false and it connects over plain HTTP on 8123 to a cluster that only speaks
+  TLS on 8443. The app's own client parses the same variable with a tolerant
+  flag helper where `1` is correct, so **the two services need different values
+  for the same name**. Omitting it entirely would also have worked; the
+  explicit value is what broke it.
+
+### On ingress, and why this one is public
+
+`--ingress=internal` is the obvious choice and was the first attempt. It does
+not work between two Cloud Run services on its own: the app's outbound call
+leaves over the public internet, so the internal-only service refuses it at the
+frontend and returns **404** — not 403, so it reads like a missing route rather
+than a policy decision.
+
+Making it work means Direct VPC egress on the *caller* (`--network`,
+`--subnet`, `--vpc-egress=all-traffic`), and once all traffic goes through the
+VPC you need Cloud NAT so Vertex, ClickHouse Cloud and Grafana stay reachable.
+That is the right answer for production and more machinery than a demo needs.
+
+So this deployment runs the MCP service public and leans on the bearer token,
+which is real rather than decorative: `CLICKHOUSE_MCP_AUTH_DISABLED` is
+deliberately **not** set, the server logs `Authentication enabled for HTTP/SSE
+transport` at startup, it answers `401` without the header, and every tool it
+exposes is read-only.
+
+It is still an endpoint to your cluster on the public internet behind one
+static token. Fine while this is a demo; revisit with VPC egress if it outlives
+one.
 
 The app service still needs no MCP package of its own — its client is plain
 JSON-RPC over httpx, which is why `Dockerfile.cloudrun` installs no extras.
@@ -279,6 +319,21 @@ worked example of how that fails silently: the client asked for `run_query` for
 a long time against a server that exports `run_select_query`, every call came
 back empty, and the agent reported clean days it had never looked at. With the
 image pinned by `uv.lock`, that change arrives when you choose to take it.
+
+### Do not health-check this server
+
+`/health` on this build hangs for sixty seconds and then answers 503, with
+ClickHouse awake and reachable — and its handler blocks the event loop while it
+does. So probing it does not merely misreport a working server: a request sent
+straight afterwards queues behind the wedged loop and times out too. The
+service's own logs show a `POST /mcp` taking exactly the caller's timeout beside
+a `GET /health` taking 60s, while the same `/mcp` call against an idle server
+returns in 6ms.
+
+`HTTPClickHouseMCPClient.status()` therefore sends `initialize` instead, which
+is the honest question — whether the client can speak MCP to that URL — and the
+path every tool call takes. If you add your own monitoring, point it at `/mcp`,
+not `/health`.
 
 The tool name is `run_select_query`, not `run_query`, and a failed call answers
 HTTP 200 with `isError`. Both are handled, and both are written down in
