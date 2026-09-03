@@ -321,7 +321,30 @@ blob.upload_from_string(file_bytes, content_type="application/pdf")
 | **Google Cloud (Imagen 3)** | Photorealistic 35mm cinematic concept art generation | Model `imagen-3.0-generate-002` |
 | **Google Cloud Storage (GCS)** | Screenplay PDF & high-res media archival | Bucket `gs://cinespine-production-media/` |
 | **ClickHouse** | Agent-queryable operational memory | Official `mcp-clickhouse` tool calls plus event projections |
-| **Grafana Labs** | Real-time production sync lag, take throughput telemetry | Metrics exporter (`GET /metrics`) |
+| **Grafana Labs** | Traces, logs, metrics and agent spans from the backend; RUM from the browser | OTLP export with trace-correlated logs, `GET /api/metrics`, OpenLIT for the ADK agents, and Faro in the SPA — see [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |
+
+### 📡 Observability
+
+All four signals reach Grafana Cloud, and the agents are legible rather than
+opaque:
+
+* **Traces and logs are correlated.** `LoggingInstrumentor` stamps every log
+  record with the active span, so a production log line carries
+  `trace_id=… trace_sampled=True` and pastes straight into Grafana.
+* **Agent observability via OpenLIT.** Wrap Rescue and the Assistant Editor
+  Queue run on Google ADK and call Gemini; OpenLIT instruments those model
+  calls, so an agent run is a span tree instead of one opaque HTTP request.
+  It initialises on a background thread — `openlit.init()` takes ~34s, and
+  running it on the import path meant the container never opened its port in
+  time to deploy.
+* **Prometheus metrics** at `GET /api/metrics` — discrepancies by day and
+  severity, ingested events by department and axis, parser rejections, live SSE
+  connections.
+* **Faro RUM** from the SPA, with the caveat that costs the most time: the
+  collector's allowed-origins list must contain **every** origin serving the
+  app, and Cloud Run issues two hostnames per service. A rejected preflight is
+  invisible from both ends — the frontend appears not to send and Grafana
+  appears not to receive.
 
 ---
 
