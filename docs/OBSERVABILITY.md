@@ -5,12 +5,14 @@ OpenTelemetry traces and logs and exposes Prometheus metrics for scraping, the
 GenAI instrumentation emits spans for the agents' model calls, and the browser
 sends RUM through Faro.
 
-The agents' spans follow the OpenTelemetry **GenAI semantic conventions**, which
-is what [Grafana Cloud Agent
-Observability](https://grafana.com/docs/grafana-cloud/observe-and-act/agent-observability/)
-consumes — it is built on OpenTelemetry and reads LLM generations, tool calls,
-token usage and cost from exactly that shape. No separate SDK or exporter: the
-same OTLP endpoint carries it.
+The agents' spans follow the OpenTelemetry **GenAI semantic conventions**, so
+LLM calls, tool calls and token usage arrive in the standard shape and are
+queryable as `gen_ai_*` traces and metrics.
+
+That is **not** the same as being onboarded to [Grafana Cloud Agent
+Observability](https://grafana.com/docs/grafana-cloud/observe-and-act/agent-observability/).
+An earlier version of this document claimed the OTLP endpoint was the whole
+integration. It is not — see [§3.1](#31-what-agent-observability-additionally-requires).
 
 Everything here is verified against the deployed service rather than inferred
 from configuration.
@@ -98,10 +100,40 @@ managing it. Measured:
 > `dev` and `hackathon` extras from the production image. Those two changes did
 > the deployment work; this one is about what ships and when it attaches.
 
-### What [Agent Observability](https://grafana.com/products/cloud/agent-observability/) adds on top of the spans
+## 3.1. What Agent Observability additionally requires
 
-Emitting GenAI semantic-convention spans is the whole integration — but the
-product does more with them than draw a trace:
+**[Agent Observability](https://grafana.com/products/cloud/agent-observability/)
+is not wired up here, and GenAI spans alone will not wire it up.** Verified
+against the live stack:
+
+```bash
+gcx agento11y agents list          # => []
+gcx agento11y conversations list   # => []
+```
+
+Empty, while `gen_ai_*` traces and metrics for the same runs are in Tempo and
+Prometheus. The product takes **two channels**, and this deployment has one:
+
+| Channel | Carries | Configured by | Here |
+| :--- | :--- | :--- | :--- |
+| OTel | traces, metrics | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` | **yes** |
+| Generation ingest | generations, conversations, the agent catalog | `AGENTO11Y_ENDPOINT`, `AGENTO11Y_PROTOCOL=http`, `AGENTO11Y_AUTH_MODE=basic`, `AGENTO11Y_AUTH_TENANT_ID`, `AGENTO11Y_AUTH_TOKEN` | **no** |
+
+The second channel needs the Agent Observability SDK making explicit generation
+calls — it is not a span exporter, and no amount of OTel configuration produces
+it. `AGENTO11Y_PROTOCOL=http` and `AGENTO11Y_AUTH_MODE=basic` are required
+rather than optional against Cloud: the SDK defaults are grpc and no-auth,
+which return a **silent 401**.
+
+So conversation replay, per-agent cost attribution and evaluations are
+unavailable here, and would be a real piece of work rather than a config flag.
+What *is* available is everything in §4a — including `gen_ai_invoke_agent_*`,
+which answers per-agent duration and tool-call counts from the OTel channel
+alone.
+
+### What the product adds, if that work is done
+
+The reason it might be worth doing:
 
 - **Conversation replay.** Prompts, tool calls and responses in sequence, so a
   Wrap Rescue run can be read back as *how it reached that memo* rather than as
@@ -113,9 +145,9 @@ product does more with them than draw a trace:
   detection, and quality regression tracking across prompts, models and agent
   versions.
 
-**None of the evaluation features are configured here.** They are opt-in and
-would need evaluators defined against real runs; this deployment sends spans
-and nothing more. Worth knowing the capability exists before building anything
+**None of this is configured here** — it all sits behind the generation-ingest
+channel in §3.1, and the evaluators would additionally need defining against
+real runs. Worth knowing the capability exists before building anything
 equivalent by hand.
 
 ### Cost
@@ -187,6 +219,15 @@ loop", and it comes from ADK's own `invoke_agent` spans without extra wiring.
 above**, so the exporter in 4a does not carry them. They are reachable by
 scrape or by hand and are currently absent from Grafana; closing that needs
 either a scrape target or a prometheus→OTel bridge.
+
+This is exactly the trap the split is written down to prevent. The
+`AI Cost & Observability (CineSpine)` dashboard in Grafana Cloud has four
+panels, and **all four query `cinespine_*`** — tokens consumed, inference
+latency p95, cache hit ratio. Every one returns an empty vector, and an empty
+timeseries panel is indistinguishable from a quiet system. The equivalent data
+exists under `gen_ai_client_token_usage` and
+`gen_ai_client_operation_duration_seconds`; the panels have to be pointed at it
+or the metrics have to be bridged.
 
 Verified live:
 
