@@ -229,10 +229,10 @@
     <rect width="290" height="35" rx="14" fill="#1e3a8a" opacity="0.7" />
     <text x="20" y="23" font-size="12" font-weight="900" fill="#ffffff" letter-spacing="1">GOOGLE CLOUD ECOSYSTEM</text>
 
-    <!-- Gemini 2.0 Card -->
+    <!-- Gemini Card -->
     <g transform="translate(15, 48)">
       <rect width="260" height="52" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="1" />
-      <text x="12" y="20" font-size="10.5" font-weight="800" fill="#7dd3fc">Gemini 2.0 Flash (google.genai)</text>
+      <text x="12" y="20" font-size="10.5" font-weight="800" fill="#7dd3fc">Gemini 2.5 Flash (google.genai)</text>
       <text x="12" y="38" font-size="8.5" fill="#94a3b8">Screenplay breakdown &amp; DoP prompt compilation</text>
     </g>
 
@@ -310,6 +310,6 @@
 
   <!-- Footer Info -->
   <g transform="translate(60, 675)">
-    <text x="0" y="0" font-size="10" font-weight="600" fill="#64748b">CineSpine Architecture • Built for Google Cloud Agentic Cinema Blockbuster Hackathon 2026 • 100/100 Tests Green</text>
+    <text x="0" y="0" font-size="10" font-weight="600" fill="#64748b">CineSpine Architecture • Google Cloud Agentic Cinema Hackathon 2026 • Deployed on Cloud Run • 975 Tests Green</text>
   </g>
 </svg>

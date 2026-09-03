@@ -3,16 +3,16 @@
 > **The Autonomous Append-Only Event Spine, 3-Axis Discrepancy Engine & Multi-Camera AI Previz Studio for Film & TV Production**  
 > *Submitted to [Agentic Cinema: The Blockbuster Hackathon](https://agentic-cinema.devpost.com/) (Google Cloud & Partner Ecosystem: ClickHouse, Grafana Labs, Replit).*
 
-[![CI Test Suite](https://img.shields.io/badge/Pytest-173%20passed-brightgreen.svg)](https://github.com/ftenaf/cinespine/actions)
+[![CI Test Suite](https://img.shields.io/badge/Pytest-975%20passed-brightgreen.svg)](https://github.com/ftenaf/cinespine/actions)
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11%20%7C%203.14-blue.svg)](https://python.org)
 [![Google Cloud: Gemini Enterprise & Imagen 3](https://img.shields.io/badge/Google%20Cloud-Gemini%20Enterprise%20%26%20Imagen%203-4285F4.svg)](https://cloud.google.com/vertex-ai)
 [![Event Spine: ClickHouse](https://img.shields.io/badge/Event%20Spine-ClickHouse%20OLAP-FEE000.svg)](https://clickhouse.com)
 [![Observability: Grafana](https://img.shields.io/badge/Observability-Grafana%20Labs-F46800.svg)](https://grafana.com)
-[![Deploy on Replit](https://img.shields.io/badge/Deploy-Replit-red.svg?logo=replit)](https://replit.com/new/github/ftenaf/cinespine)
+[![Deployed on Cloud Run](https://img.shields.io/badge/Deployed-Google%20Cloud%20Run-4285F4.svg?logo=googlecloud&logoColor=white)](https://cinespine-35447568692.europe-west4.run.app)
 [![Frontend: React 18 + Vite](https://img.shields.io/badge/Frontend-React%2018%20%2B%20Vite%20%2B%20Tailwind-61DAFB.svg)](https://vitejs.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](https://opensource.org/licenses/MIT)
 
-[![Run on Replit](https://replit.com/badge/github/ftenaf/cinespine)](https://replit.com/new/github/ftenaf/cinespine)
+**▶ Live: [cinespine-35447568692.europe-west4.run.app](https://cinespine-35447568692.europe-west4.run.app)** — one Cloud Run service serving the API and the SPA from a single origin. See [docs/CLOUD_RUN_DEPLOY.md](docs/CLOUD_RUN_DEPLOY.md).
 
 ---
 
@@ -250,8 +250,8 @@ flowchart LR
 ### 3.5 🤖 Wrap Rescue Agent for the ClickHouse Track
 The production hub includes a **Run Wrap Rescue Agent** action built for the ClickHouse hackathon track.
 It projects the latest CineSpine state into ClickHouse, calls the official `mcp-clickhouse` server for
-`list_tables` and `run_query`, ranks active blockers by severity, age and missing acknowledgement, then
-creates or updates requirement cards with notifications and an append-only audit event.
+`list_tables` and `run_select_query`, ranks active blockers by severity, age and missing acknowledgement,
+then creates or updates requirement cards with notifications and an append-only audit event.
 
 The UI shows the judge-visible trace: MCP connection status, SQL/tool calls, ranked blockers,
 requirement actions, and the final Gemini Enterprise handoff memo. In the demo story, Day 31 has a
@@ -286,9 +286,11 @@ from google import genai
 from google.genai import types as genai_types
 
 # Gemini Screenplay Semantic Breakdown.
-# The model is not pinned: llm_router returns an ordered list of candidates,
-# starting from the floating "-latest" alias, so a retired version or an
-# exhausted per-model quota falls through instead of failing the request.
+# llm_router returns an ordered list of candidates rather than one name, so a
+# retired version or an exhausted per-model quota falls through instead of
+# failing the request. Every id is a real Model Garden publisher model: Vertex
+# publishes no floating "-latest" alias, and asking for one 404s exactly the
+# way a retired pin does.
 from backend.app.script.llm_router import get_model_candidates
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -369,14 +371,23 @@ any of it, degrading gracefully rather than failing.
 | `CINESPINE_DB_PATH` | `spine.db` | SQLite file holding screenplays and character profiles. Relative to the working directory, so set an absolute path for a deployment. |
 | `CINESPINE_EXAMPLES_DIR` | `data/examples` | Local folder of example production paperwork. Nothing is committed — see the note below. |
 | `GOOGLE_CLOUD_PROJECT` / `GCS_BUCKET_NAME` | demo values | Google Cloud Storage archival target. |
-| `CLICKHOUSE_MCP_URL` | *unset* | Official `mcp-clickhouse` HTTP endpoint for the Wrap Rescue Agent, for example `http://localhost:4200/mcp`. |
-| `GOOGLE_GENAI_USE_VERTEXAI` | *unset* | Set to `TRUE` to run Gemini calls through Vertex AI / Gemini Enterprise credentials. |
-| `CINESPINE_WRAP_RESCUE_MODEL` | `gemini-flash-latest` | Gemini model used for the Wrap Rescue handoff memo. |
+| `CINESPINE_GEMINI_FLASH_MODEL` | `gemini-2.5-flash` | First candidate `llm_router` returns. The fallbacks after it are separate quota pools, so a 429 or 503 on one still has somewhere to go. |
+| `CLICKHOUSE_MCP_URL` | *unset* | Official `mcp-clickhouse` HTTP endpoint for the Wrap Rescue Agent, for example `http://localhost:4200/mcp`. Point it at your own server: ClickHouse Cloud's hosted MCP is OAuth-only and cannot be reached headlessly. |
+| `CLICKHOUSE_MCP_AUTH_TOKEN` | *unset* | Bearer token sent to that server. Required unless the server runs with auth disabled. |
+| `GOOGLE_GENAI_USE_VERTEXAI` | *unset* | Set to `TRUE` to run Gemini calls through Vertex AI / Gemini Enterprise credentials. Note that Vertex publishes **no `-latest` aliases** — every model id must be a real Model Garden publisher model. |
+| `CINESPINE_WRAP_RESCUE_MODEL` | *unset* | Gemini model used for the Wrap Rescue handoff memo, for example `gemini-2.5-flash`. |
+| `CINESPINE_DISABLE_OPENLIT` | *unset* | Set to `1` to skip OpenLIT. It initialises on a background thread because it takes ~34s, which is longer than a platform will wait for the port. |
 
-> **Production paperwork is never committed.** Real call sheets, camera reports and script logs are
-> third-party copyrighted material and routinely carry crew personal data. `data/examples/`, `data/raw/`
-> and `*.pdf` are gitignored. Point `CINESPINE_EXAMPLES_DIR` at a local copy to enable the PDF
-> integration tests, which skip by default.
+> **Real production paperwork is never committed.** Call sheets, camera reports and script logs are
+> third-party copyrighted material and routinely carry crew personal data, so `data/examples/`,
+> `data/raw/` and `*.pdf` are gitignored. Point `CINESPINE_EXAMPLES_DIR` at a local copy to enable the
+> PDF integration tests, which skip by default.
+>
+> The synthetic `DEMO_*` fixtures are the one exception and **are** tracked, via negations in
+> `.gitignore`. They have to be: the demo endpoint reads them by filename and skips what is missing, so
+> while they were ignored a fresh clone ingested no offload evidence and still reported success. What
+> those files must satisfy for reconciliation to show anything is written down in
+> [docs/DEMO_DATA.md](docs/DEMO_DATA.md).
 
 ### 2. Start the Backend API Server
 ```bash
@@ -426,8 +437,18 @@ pytest
 ```
 
 ```
-173 passed, 7 skipped in 75s
+975 passed, 11 skipped in 100s
 ```
+
+The 11 skips are environmental, not silent failures: seven need real production
+PDFs that `.gitignore` deliberately excludes, two are parsers refusing a
+document shape, and two need ClickHouse or TLS environment variables.
+
+> A green suite is not evidence the deployed stack works. Nothing here reads
+> `data/examples/`, and the Wrap Rescue tests use a fake MCP client — which is
+> how a client asking for a tool the server does not export stayed green for a
+> long time. [docs/CLICKHOUSE_MCP.md](docs/CLICKHOUSE_MCP.md) records what that
+> transport actually guarantees and how to check it against a running server.
 
 The frontend suite covers the optics module — sensor geometry, angle of view,
 depth of field and the blur simulator:
