@@ -1,9 +1,11 @@
 # 📡 Observability
 
 Telemetry reaches Grafana Cloud from three places: the backend exports
-OpenTelemetry traces and logs and exposes Prometheus metrics for scraping, the
-GenAI instrumentation emits spans for the agents' model calls, and the browser
-sends RUM through Faro.
+OpenTelemetry traces, logs and metrics, the GenAI instrumentation emits spans
+and metrics for the agents' model calls, and the browser sends RUM through
+Faro. The backend also serves `prometheus_client` metrics at `/api/metrics`,
+and those reach nothing in production — nothing scrapes a Cloud Run service.
+§4 is the split.
 
 The agents' spans follow the OpenTelemetry **GenAI semantic conventions**, so
 LLM calls, tool calls and token usage arrive in the standard shape and are
@@ -128,9 +130,10 @@ which return a **silent 401**.
 
 So conversation replay, per-agent cost attribution and evaluations are
 unavailable here, and would be a real piece of work rather than a config flag.
-What *is* available is everything in §4a — including `gen_ai_invoke_agent_*`,
-which answers per-agent duration and tool-call counts from the OTel channel
-alone.
+What *is* available is everything in §4a. That includes
+`gen_ai_invoke_agent_*`, with the limit §4a spells out: it describes the one
+agent ADK actually invokes, and its tool-call count is 0 by construction
+because the two agents that declare tools never run through ADK.
 
 ### What the product adds, if that work is done
 
@@ -139,9 +142,10 @@ The reason it might be worth doing:
 - **Conversation replay.** Prompts, tool calls and responses in sequence, so a
   Wrap Rescue run can be read back as *how it reached that memo* rather than as
   a span tree to interpret.
-- **Cost and token tracking** by agent, run and model — the natural home for
-  "which model is this demo actually spending on", which the
-  `cinespine_llm_tokens_consumed_total` metric only answers in aggregate.
+- **Cost and token tracking** by agent and run. "Which model is this demo
+  spending on" is already answered by `gen_ai_client_token_usage` on the AI
+  cost dashboard (§4b); what the product adds is attribution to the agent and
+  the conversation that spent it.
 - **Evaluations and guards** on live traffic: hallucination and unsafe-output
   detection, and quality regression tracking across prompts, models and agent
   versions.
@@ -235,6 +239,23 @@ above**, so the exporter in 4a does not carry them. They are reachable by
 scrape or by hand and are currently absent from Grafana; closing that needs
 either a scrape target or a prometheus→OTel bridge.
 
+Verified live:
+
+```
+cinespine_active_discrepancies      # by production, shoot_day, severity, type
+cinespine_ingested_events_total     # by department, axis
+cinespine_parser_rejections_total   # by doc_type, error_type
+cinespine_sse_active_connections    # by user_role
+```
+
+Also defined, and emitted once the paths that produce them run:
+`cinespine_llm_tokens_consumed_total`, `cinespine_llm_inference_duration_seconds`,
+`cinespine_ai_cache_hits_total`, `cinespine_department_sync_lag_seconds`. The
+first two no longer have a reader anywhere — the dashboard that queried them
+was moved onto `gen_ai_*` below — so they are emitted into nothing.
+
+#### The dashboard that queried the wrong half
+
 This is exactly the trap the split is written down to prevent, and the
 `AI Cost & Observability (CineSpine)` dashboard fell into it: all four of its
 original panels queried `cinespine_*` — tokens consumed, inference latency p95,
@@ -303,19 +324,6 @@ declare tools in `super().__init__(tools=[...])` that ADK never dispatches —
 their step loops call those methods directly. So the count is right, and will
 stay 0 until tool use moves inside an agent that is actually invoked.
 
-Verified live:
-
-```
-cinespine_active_discrepancies      # by production, shoot_day, severity, type
-cinespine_ingested_events_total     # by department, axis
-cinespine_parser_rejections_total   # by doc_type, error_type
-cinespine_sse_active_connections    # by user_role
-```
-
-Also defined, and emitted once the paths that produce them run:
-`cinespine_llm_tokens_consumed_total`, `cinespine_llm_inference_duration_seconds`,
-`cinespine_ai_cache_hits_total`, `cinespine_department_sync_lag_seconds`.
-
 ### 4c. The local stack needs both intakes
 
 `docker compose --profile observability up -d` runs Prometheus and Grafana
@@ -330,8 +338,11 @@ broken until 2026-09-03:
 - **Push path.** `gen_ai_*` is pushed by the OTel meter provider and is never
   scraped, so a plain Prometheus never sees it. `--web.enable-otlp-receiver`
   opens `/api/v1/otlp/v1/metrics` to receive it. Point the backend at it with
-  `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, which overrides the metrics signal
-  only and leaves traces and logs going to Grafana Cloud.
+  `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`. That overrides the metrics signal
+  only, so traces and logs keep going wherever `OTEL_EXPORTER_OTLP_ENDPOINT`
+  points. The `verify-observability` skill sets **both** to localhost on
+  purpose: a laptop run then pushes nothing into the production stack, and the
+  traces and logs 404 against local Prometheus, which is harmless.
 
 A fresh process exposes **no** `cinespine_*` samples at all — every one of them
 is labelled, and a labelled `prometheus_client` metric has no series until the
