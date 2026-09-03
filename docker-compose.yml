@@ -29,6 +29,12 @@ services:
       - CLICKHOUSE_PASSWORD=password
       - CLICKHOUSE_SECURE=false
       - CLICKHOUSE_MCP_URL=http://mcp-clickhouse:4200/mcp
+      # This container is deployment.environment=local. With .env pointing
+      # OTEL_EXPORTER_OTLP_ENDPOINT at Grafana Cloud it exports nothing and
+      # says so at boot; a laptop run once pushed 2,400 error lines into the
+      # production stack that way. Point it at the local receiver instead
+      # (http://prometheus:9090/api/v1/otlp, observability profile) or set
+      # CINESPINE_TELEMETRY_REMOTE_OK=1 to push into Cloud on purpose.
     depends_on:
       - clickhouse
       - mcp-clickhouse

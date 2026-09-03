@@ -11,6 +11,26 @@ Newest first. Each entry names what produced it.
 
 ## 2026-09-03
 
+**A laptop container pushed into the production stack, and nothing could tell.**
+Seven days of Grafana Cloud logs held 2,400 error lines about
+`/app/gcp-credentials.json` and 800 about a full disk. That path is the compose
+bind-mount, which Cloud Run never sets, and Cloud Logging had neither string
+from the service -- so a local container running with the production `.env`
+had exported straight into Grafana Cloud. The resource said only
+`cinespine-backend 0.1.0`; there was no attribute to filter on. Every signal
+now carries `deployment.environment` (`cloudrun` wherever `K_SERVICE` is set,
+otherwise `local`) and `service.instance.id` (the revision name), and a local
+process refuses to export anywhere but a local collector unless
+`CINESPINE_TELEMETRY_REMOTE_OK=1` says the push is deliberate. The Cloud alert
+rules select `deployment_environment!="local"`.
+
+**Nothing in Grafana Cloud notified anyone.** The root notification policy
+routed to a receiver named `empty`, and the only contact point was the Asserts
+webhook. The four CineSpine rules in `grafana/provisioning/alerting/rules.yml`
+exist only locally, against a ClickHouse datasource Cloud does not have. Four
+rules now live in the Cloud folder `CineSpine`, on data that exists: backend
+telemetry silent, error-log burst, 5xx responses, GenAI call failures.
+
 **Four dashboard panels queried metrics that never arrive, and an empty panel
 looks like a quiet system.** The AI cost dashboard read `cinespine_*`, which
 `prometheus_client` serves and the OTel exporter does not carry. Rewritten onto

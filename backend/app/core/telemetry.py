@@ -4,10 +4,14 @@ Lighthouse Telemetry and Prometheus Metrics Exporter.
 Evidence:
 - references/domain/handoffs.md ('Department sync latency and lost acknowledgements')
 """
-from typing import Any, Dict, Iterable, Tuple
+import os
+import socket
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
+from urllib.parse import urlparse
 
 from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
+from backend.app import __version__
 from backend.app.reconciliation.models import DiscrepancyType, Severity
 
 # Metrics
@@ -146,12 +150,88 @@ class TelemetryExporter:
     def get_content_type() -> str:
         return CONTENT_TYPE_LATEST
 
+
+# -----------------------------------------------------------------------------
+# Which deployment is this?
+# -----------------------------------------------------------------------------
+#
+# Every exporter below stamps its data with the resource built here. Until
+# 2026-09-03 that resource said only "cinespine-backend 0.1.0", and one
+# afternoon of a laptop container running with the production .env pushed
+# 2,400 error lines about a missing credentials file into Grafana Cloud, where
+# nothing could tell them from Cloud Run's. The environment attribute is what
+# makes them separable; the guard is what makes the accident impossible.
+
+# Hosts a local process may export to without being asked twice. The compose
+# service name is here because a container on the compose network reaches
+# Prometheus by it.
+_LOCAL_COLLECTOR_HOSTS = frozenset({
+    "localhost", "127.0.0.1", "::1", "host.docker.internal", "prometheus",
+})
+
+
+def deployment_environment(environ: Optional[Mapping[str, str]] = None) -> str:
+    """Name of the deployment this process belongs to.
+
+    Cloud Run sets ``K_SERVICE`` on every container it runs, so its presence
+    is production whatever else the environment says. Anything else is
+    ``local`` unless ``CINESPINE_ENV`` names it.
+    """
+    env = os.environ if environ is None else environ
+    if env.get("K_SERVICE"):
+        return "cloudrun"
+    return (env.get("CINESPINE_ENV") or "local").strip() or "local"
+
+
+def service_instance_id(
+    environ: Optional[Mapping[str, str]] = None, hostname: Optional[str] = None
+) -> str:
+    """One id per running process: the Cloud Run revision there, the host name here.
+
+    The revision changes on every deploy, so a series break in Grafana lines
+    up with a release rather than having to be guessed from timestamps.
+    """
+    env = os.environ if environ is None else environ
+    return env.get("K_REVISION") or env.get("K_SERVICE") or hostname or socket.gethostname()
+
+
+def resource_attributes(
+    app_name: str,
+    environ: Optional[Mapping[str, str]] = None,
+    hostname: Optional[str] = None,
+) -> Dict[str, str]:
+    """The OpenTelemetry resource every signal from this process carries."""
+    return {
+        "service.name": app_name,
+        "service.version": __version__,
+        "deployment.environment": deployment_environment(environ),
+        "service.instance.id": service_instance_id(environ, hostname),
+    }
+
+
+def remote_export_allowed(
+    environment: str, endpoint: str, environ: Optional[Mapping[str, str]] = None
+) -> bool:
+    """Whether this process may push telemetry to ``endpoint``.
+
+    A deployment exports wherever it is pointed. A local process exports only
+    to a local collector unless ``CINESPINE_TELEMETRY_REMOTE_OK=1`` says the
+    push into a remote stack is deliberate.
+    """
+    if environment != "local":
+        return True
+    env = os.environ if environ is None else environ
+    if (env.get("CINESPINE_TELEMETRY_REMOTE_OK") or "").strip().lower() in ("1", "true", "yes"):
+        return True
+    host = (urlparse(endpoint).hostname or "").lower()
+    return host in _LOCAL_COLLECTOR_HOSTS
+
+
 def setup_otlp(app_name: str = "cinespine-backend"):
     """
     Initializes OpenTelemetry traces and logs export to OTLP.
     Reads standard OTEL_ environment variables.
     """
-    import os
     import logging
     import time
     from opentelemetry import trace
@@ -168,12 +248,25 @@ def setup_otlp(app_name: str = "cinespine-backend"):
         logger.info("OTEL_EXPORTER_OTLP_ENDPOINT not set. OpenTelemetry export is disabled.")
         return
 
-    logger.info(f"Initializing OpenTelemetry for {app_name}, exporting to {endpoint}")
+    attributes = resource_attributes(app_name)
+    environment = attributes["deployment.environment"]
+    if not remote_export_allowed(environment, endpoint):
+        logger.warning(
+            "OpenTelemetry export is disabled: this is a %s process and %s is not a "
+            "local collector. Set CINESPINE_TELEMETRY_REMOTE_OK=1 to push a local run "
+            "into a remote stack on purpose; it will arrive labelled deployment.environment=%s.",
+            environment, endpoint, environment,
+        )
+        return
 
-    resource = Resource.create({
-        "service.name": app_name,
-        "service.version": "0.1.0"
-    })
+    logger.info(
+        "Initializing OpenTelemetry for %s (%s, %s), exporting to %s",
+        app_name, environment, attributes["service.instance.id"], endpoint,
+    )
+
+    # Resource.create also merges OTEL_RESOURCE_ATTRIBUTES, so a deployment
+    # can add attributes without a code change.
+    resource = Resource.create(attributes)
 
     tracer_provider = TracerProvider(resource=resource)
     trace.set_tracer_provider(tracer_provider)

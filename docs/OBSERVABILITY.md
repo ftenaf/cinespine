@@ -38,6 +38,27 @@ initialises the last.
 None of it is required. With `OTEL_EXPORTER_OTLP_ENDPOINT` unset the exporter
 logs one line and returns, and the app runs unchanged.
 
+### Which deployment sent it
+
+Every signal carries a resource built in `telemetry.py`: `service.name`,
+`service.version` (the package version), `deployment.environment` and
+`service.instance.id`. Cloud Run is recognised by the `K_SERVICE` variable it
+sets on every container, so production is `cloudrun` with the revision name as
+instance id and nothing to configure. Anything else is `local`, named after the
+host, unless `CINESPINE_ENV` says otherwise.
+
+The attribute exists because of one afternoon in which a laptop container
+running with the production `.env` pushed 2,400 error lines about a missing
+credentials file into Grafana Cloud, where nothing could tell them from Cloud
+Run's. Two consequences:
+
+- **A local process exports only to a local collector.** Pointed anywhere
+  else, it disables export and logs why. `CINESPINE_TELEMETRY_REMOTE_OK=1`
+  overrides that, and the data arrives labelled `local`.
+- **Dashboards and alerts filter on the label.** The Cloud alert rules select
+  `deployment_environment!="local"`, which also matches series from builds
+  older than the label.
+
 ---
 
 ## 2. Traces and logs are correlated
