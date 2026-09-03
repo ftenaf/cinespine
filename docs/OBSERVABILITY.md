@@ -23,12 +23,13 @@ from configuration.
 | :--- | :--- | :--- | :--- |
 | Traces | FastAPI, httpx | OTLP HTTP | `OTEL_EXPORTER_OTLP_ENDPOINT` |
 | Logs | Python `logging`, trace-correlated | OTLP HTTP | same endpoint |
-| Metrics | `prometheus_client` at `/api/metrics` | scrape | always on |
+| Metrics (OTel) | GenAI instrumentation, OTel meters | OTLP HTTP | same endpoint |
+| Metrics (business) | `prometheus_client` at `/api/metrics` | scrape | always on |
 | Agent / GenAI spans | `opentelemetry-instrumentation-google-genai` | OTLP HTTP | inherits the OTel config |
 | Browser RUM | `@grafana/faro-web-sdk` | Faro collector | `VITE_GRAFANA_FARO_URL` |
 
-`backend/app/core/telemetry.py` wires the first four; `frontend/src/main.tsx`
-initialises the fifth.
+`backend/app/core/telemetry.py` wires the first five; `frontend/src/main.tsx`
+initialises the last.
 
 None of it is required. With `OTEL_EXPORTER_OTLP_ENDPOINT` unset the exporter
 logs one line and returns, and the app runs unchanged.
@@ -143,7 +144,51 @@ changes. `CINESPINE_DISABLE_GENAI_TELEMETRY=1` turns instrumentation off.
 
 ## 4. Metrics
 
-`GET /api/metrics` serves the Prometheus exposition format. Verified live:
+There are **two metric systems here, and only one of them reaches Grafana.**
+Worth stating plainly, because the names look alike and the distinction is
+invisible from a dashboard that happens to be querying the half that works.
+
+### 4a. OpenTelemetry metrics — exported
+
+A `MeterProvider` with a `PeriodicExportingMetricReader` pushes over the same
+OTLP endpoint as traces and logs, on a 60s interval. These are counters and
+histograms read on dashboards, not alert inputs, so halving the default 30s
+export volume costs nothing at that resolution.
+
+This was missing until 2026-09-03. Spans and logs had exporters; metrics had
+none, so everything this process measured stayed in the process. **The gap was
+invisible precisely because the traces were arriving** — the pipeline looked
+configured, and a Prometheus query for `gen_ai_*` returned an empty vector while
+Tempo held the matching spans. Nothing was broken enough to log an error.
+
+Push rather than scrape, because nothing scrapes a Cloud Run service: it has no
+stable address to be scraped at, and a scaled-to-zero instance is not there to
+answer. The exporter carries them out instead.
+
+What arrives, verified in Grafana Cloud Prometheus under `job="cinespine-backend"`:
+
+```
+gen_ai_client_token_usage_{sum,count,bucket}              # by model
+gen_ai_client_operation_duration_seconds_{sum,count,bucket}
+gen_ai_invoke_agent_duration_seconds_{sum,count,bucket}
+gen_ai_invoke_agent_inference_calls_{sum,count,bucket}
+gen_ai_invoke_agent_tool_calls_{sum,count,bucket}
+```
+
+The `gen_ai_invoke_agent_*` family is the agent dimension rather than the model
+one — duration, inference calls and tool calls **per agent run**. That is the
+data behind "which agent is expensive, and whether it is the model or the tool
+loop", and it comes from ADK's own `invoke_agent` spans without extra wiring.
+
+### 4b. Business metrics — served, not exported
+
+`GET /api/metrics` serves the Prometheus exposition format. These are
+`prometheus_client` objects, a **separate library from the OTel meter provider
+above**, so the exporter in 4a does not carry them. They are reachable by
+scrape or by hand and are currently absent from Grafana; closing that needs
+either a scrape target or a prometheus→OTel bridge.
+
+Verified live:
 
 ```
 cinespine_active_discrepancies      # by production, shoot_day, severity, type
