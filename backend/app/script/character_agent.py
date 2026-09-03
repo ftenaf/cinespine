@@ -51,7 +51,7 @@ def fallback_enrich_characters(screenplay: Screenplay) -> Screenplay:
             if not appearance_found:
                 profile.look_and_costume = "Appearance inferred from context."
             
-        def det_score(axis_name: str) -> int:
+        def det_score(axis_name: str, profile=profile) -> int:
             val = int(hashlib.md5(f"{profile.name}{axis_name}".encode()).hexdigest(), 16)
             return (val % 80) + 10
             

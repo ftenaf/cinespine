@@ -25,24 +25,20 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-          cache: "pip"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          # backend/requirements.txt is the pinned lock compiled from pyproject.toml.
-          # --no-deps keeps the editable install from resolving past those pins.
-          pip install -r backend/requirements.txt
-          pip install -e .deployment --no-deps
+          python -m pip install --upgrade pip uv
+          # pyproject.toml/uv.lock are the single dependency source, same as
+          # Dockerfile.cloudrun and backend/Dockerfile. --frozen refuses to
+          # touch the lock, so a stale lock fails here instead of drifting.
+          uv sync --frozen --extra dev
 
       - name: Run Ruff
-        run: ruff check backend
+        run: uv run ruff check backend
 
       - name: Run Pytest
-        env:
-          PYTHONPATH: .
-        run: |
-          pytest -v
+        run: uv run pytest -v
 
   build-frontend:
     runs-on: ubuntu-latest

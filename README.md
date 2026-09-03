@@ -362,26 +362,23 @@ agents are legible rather than opaque:
 git clone https://github.com/ftenaf/cinespine.git
 cd cinespine
 
-# Create virtual environment
-python -m venv .venv
-# On Windows:
-.\.venv\Scripts\activate
-# On Linux/macOS:
-source .venv/bin/activate
-
-# Install the pinned dependency set, then the project itself
-pip install -r backend/requirements.txt
-pip install -e . --no-deps
+# Installs uv itself if you don't have it: https://docs.astral.sh/uv/getting-started/installation/
+uv sync --extra dev
 ```
 
-> **Dependencies are declared once, in `pyproject.toml`.** `backend/requirements.txt` is its compiled
-> lock: 82 packages pinned to exact versions, resolved universally so the same file installs on the
-> Linux 3.11 CI runner and a Windows 3.14 developer machine. Never hand-edit the lock. After changing
-> `pyproject.toml`, regenerate it:
+> **Dependencies are declared once, in `pyproject.toml`, and pinned in `uv.lock`.** `uv sync` creates
+> `.venv` and installs both from the lock — no separate `pip install -r` step, and nothing to
+> hand-edit. This is the same lock `Dockerfile.cloudrun` and `backend/Dockerfile` install from, so a
+> local run, CI and the deployed image all resolve identically. After changing `pyproject.toml`,
+> regenerate the lock:
 >
 > ```bash
-> uv pip compile pyproject.toml --extra dev --universal --python-version 3.11 -o backend/requirements.txt
+> uv lock
 > ```
+>
+> Prefix any command with `uv run` to use the project's `.venv` (e.g. `uv run pytest`,
+> `uv run uvicorn backend.app.main:app --reload`), or activate it directly:
+> `source .venv/bin/activate` (Linux/macOS) / `.\.venv\Scripts\activate` (Windows).
 
 ### Configuration
 
@@ -417,7 +414,7 @@ any of it, degrading gracefully rather than failing.
 
 ### 2. Start the Backend API Server
 ```bash
-python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 * Backend API Gateway: `http://localhost:8000`
 * Interactive API Docs: `http://localhost:8000/docs`
@@ -459,7 +456,7 @@ retry. The UI surfaces them as an amber banner.
 ## 🧪 Automated Test Suite
 
 ```bash
-pytest
+uv run pytest
 ```
 
 ```
@@ -521,8 +518,8 @@ Two properties worth knowing:
 ```
 cinespine/
 ├── pyproject.toml                       # Single source of dependency truth
+├── uv.lock                              # Compiled lock (generated — do not edit)
 ├── backend/
-│   ├── requirements.txt                 # Compiled lock (generated — do not edit)
 │   ├── app/
 │   │   ├── main.py                      # FastAPI application gateway
 │   │   ├── api/routes.py                # REST & SSE gateway

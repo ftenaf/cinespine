@@ -40,7 +40,7 @@ def test_constructing_a_bus_takes_no_transport_argument():
 
 
 def test_confluent_kafka_is_not_a_dependency():
-    for name in ("backend/requirements.txt", "pyproject.toml"):
+    for name in ("uv.lock", "pyproject.toml"):
         assert "confluent-kafka" not in (REPO / name).read_text(encoding="utf-8"), name
 
 

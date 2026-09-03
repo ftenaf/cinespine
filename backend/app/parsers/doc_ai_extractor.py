@@ -108,7 +108,7 @@ def extract_camera_report_grid(pdf_bytes: bytes, mime_type: str = "application/p
 
             for row in table.body_rows:
                 cells = row.cells
-                def get_cell(key):
+                def get_cell(key, col_map=col_map, cells=cells):
                     idx = col_map.get(key)
                     if idx is not None and idx < len(cells):
                         return _get_text(text, cells[idx].layout.text_anchor.text_segments)
