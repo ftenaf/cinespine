@@ -65,26 +65,26 @@
     },
     {
       "type": "timeseries",
-      "title": "Model Call Latency (95th Percentile)",
-      "description": "Wall time inside generate_content, per model. This is the one metric name shared with Grafana's packaged AI Observability dashboards, so those panels would populate here; their cost and token panels would not.",
+      "title": "Model Call Latency (mean)",
+      "description": "Wall time inside generate_content, per model. This is the one metric name shared with Grafana's packaged AI Observability dashboards, so those panels would populate here; their cost and token panels would not.\n\nMean from the cumulative sum and count, not histogram_quantile over rate(). p95 is the better question, and the wrong query at this volume: a demo makes a handful of calls, so the bucket counters are flat across any sensible rate window, rate() returns 0 for every bucket, and histogram_quantile of all-zero buckets is NaN -- a blank panel, indistinguishable from no traffic. Verified against a real run. Switch to p95 when calls are continuous enough for the buckets to move.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
       "fieldConfig": { "defaults": { "unit": "s" } },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(gen_ai_client_operation_duration_seconds_bucket[15m])))",
+          "expr": "sum by (gen_ai_request_model) (gen_ai_client_operation_duration_seconds_sum)\n/\nsum by (gen_ai_request_model) (gen_ai_client_operation_duration_seconds_count)",
           "legendFormat": "{{gen_ai_request_model}}"
         }
       ]
     },
     {
       "type": "timeseries",
-      "title": "Agent Run Duration (95th Percentile)",
-      "description": "The agent dimension rather than the model one, from ADK's own invoke_agent spans. Answers 'which agent is slow' where the panels above answer 'which model is slow'.\n\nThe gen_ai_agent_name label is assumed, not verified against a live series. If it is absent these collapse to a single unlabelled line rather than erroring, so an empty legend here means the label is named something else, not that no agents ran.",
+      "title": "Agent Run Duration (mean)",
+      "description": "The agent dimension rather than the model one, recorded by ADK itself in google/adk/telemetry/_metrics.py. Answers 'which agent is slow' where the panels above answer 'which model is slow'.\n\ngen_ai_agent_name is verified, not assumed: a real Wrap Rescue run emits gen_ai_agent_name=\"wrap_rescue_handoff_agent\". ADK also adds error_type to failed invocations, which splits the series -- aggregating by gen_ai_agent_name alone folds failures back in on purpose, since a run that died still took time.\n\nMean rather than p95 for the same reason as the model latency panel: one agent run per demo leaves the bucket counters flat, and a rate-based quantile over flat buckets is NaN.",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 14 },
       "fieldConfig": { "defaults": { "unit": "s" } },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, gen_ai_agent_name) (rate(gen_ai_invoke_agent_duration_seconds_bucket[15m])))",
+          "expr": "sum by (gen_ai_agent_name) (gen_ai_invoke_agent_duration_seconds_sum)\n/\nsum by (gen_ai_agent_name) (gen_ai_invoke_agent_duration_seconds_count)",
           "legendFormat": "{{gen_ai_agent_name}}"
         }
       ]
@@ -92,11 +92,11 @@
     {
       "type": "timeseries",
       "title": "Tool Calls per Agent Run",
-      "description": "Mean tool calls per invocation. Read beside the duration panel: a slow agent with a flat tool count is waiting on the model, a slow agent with a rising one is looping.",
+      "description": "Mean tool calls per invocation. Read beside the duration panel: a slow agent with a flat tool count is waiting on the model, a slow agent with a rising one is looping.\n\nExpect 0 for wrap_rescue_handoff_agent, and that is correct rather than broken. The ClickHouse MCP queries are driven by the app's own step loop; the ADK agent is only asked to write the memo, so it calls no tools. This panel becomes informative if tool use moves inside the agent.",
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 14 },
       "targets": [
         {
-          "expr": "sum by (gen_ai_agent_name) (rate(gen_ai_invoke_agent_tool_calls_sum[15m]))\n/\nsum by (gen_ai_agent_name) (rate(gen_ai_invoke_agent_tool_calls_count[15m]))",
+          "expr": "sum by (gen_ai_agent_name) (gen_ai_invoke_agent_tool_calls_sum)\n/\nsum by (gen_ai_agent_name) (gen_ai_invoke_agent_tool_calls_count)",
           "legendFormat": "{{gen_ai_agent_name}}"
         }
       ]

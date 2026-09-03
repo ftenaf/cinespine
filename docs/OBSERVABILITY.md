@@ -255,6 +255,33 @@ The cache-hit-ratio panel still reads `cinespine_ai_cache_hits_total`, because
 the GenAI conventions have no equivalent: a cache hit never reaches the SDK, so
 instrumentation that wraps the SDK cannot see it.
 
+**The latency panels are means, not p95, and that is deliberate.** p95 is the
+better question and the wrong query at this volume. A demo makes a handful of
+model calls and one agent run, so the bucket counters are flat across any
+sensible rate window; `rate()` returns 0 for every bucket, and
+`histogram_quantile` of all-zero buckets is `NaN`. The panel renders blank —
+indistinguishable from no traffic, which is the failure this whole section
+exists to prevent. Measured on a real Wrap Rescue run: the p95 form returned
+`NaN` where `sum / count` returned 1.20s. Switch to p95 once calls are
+continuous enough to move the buckets.
+
+`gen_ai_invoke_agent_*` is recorded by ADK itself in
+`google/adk/telemetry/_metrics.py`, not by the google-genai instrumentation.
+Verified on a real run:
+
+```
+gen_ai_invoke_agent_duration_seconds_count{gen_ai_agent_name="wrap_rescue_handoff_agent"} 1
+gen_ai_invoke_agent_duration_seconds_count{gen_ai_agent_name="wrap_rescue_handoff_agent",
+                                           error_type="DefaultCredentialsError"} 1
+```
+
+Two things that reads as a surprise and is not. ADK adds `error_type` to failed
+invocations, which **splits the series** — aggregating by `gen_ai_agent_name`
+alone folds failures back in, which is what the panels do, since a run that
+died still took time. And `gen_ai_invoke_agent_tool_calls` is **0** for this
+agent: the ClickHouse MCP queries are driven by the app's own step loop, and
+the ADK agent is only asked to write the memo, so it calls no tools.
+
 Verified live:
 
 ```
