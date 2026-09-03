@@ -53,8 +53,28 @@ The core of the discrepancy engine relies on checking alignment across three axe
 3. **Existence:** What is physically on the disk (DIT Silverstack offloads, checksums).
 Disagreements between these axes are the primary product of the event spine.
 
+## Observability
+
+`docs/OBSERVABILITY.md` is the reference. Three things that have each cost a
+debugging session, so read them before touching a dashboard or a metric:
+
+- **Two metric systems, one exporter.** `gen_ai_*` comes from the OTel meter
+  provider and is **pushed**. `cinespine_*` comes from `prometheus_client` and
+  is **scraped** from `/api/metrics` (not `/metrics`). The OTel exporter does
+  not carry `cinespine_*`, so it is absent from Grafana Cloud — verified empty
+  over 30 days. A panel querying the wrong half returns an empty vector, which
+  renders identically to a healthy, quiet system.
+- **Verify against a running stack, never against config.** Use the
+  `verify-observability` skill in `.claude/skills/`. Every defect in this area
+  was a configuration that read correctly.
+- **The agent dimension covers one agent of three.** `WrapRescueAgent` and
+  `AssistantEditorQueueAgent` build an ADK `Runner` and discard it, so they emit
+  no `gen_ai_invoke_agent_*`. See
+  [references/findings/agent-telemetry-coverage.md](references/findings/agent-telemetry-coverage.md).
+
 ## Agent Guidelines & Tools
 1. **Graphify:** This project uses a Graphify knowledge graph (`graphify-out/`). When answering architectural questions, use `graphify query` instead of grepping files.
 2. **CodeGraph:** `.codegraph/` is enabled. Use the `codegraph_explore` tool for jumping directly to symbol definitions and call paths.
+3. **`gcx`** queries the live Grafana Cloud stack — `gcx metrics query '<promql>' --since 30d`, plus `logs`, `traces`, `dashboards`, `agento11y`. It answers "is this actually arriving in production" without a browser. The binary is at `E:\dev\tools\gcx.exe`; it is on the Windows user PATH but **not** on Git Bash's, so call it by full path from `bash`.
 3. **Testing:** The backend uses `pytest` and currently runs 159 tests (7 skipped without local example PDFs), plus 49 frontend tests via `npm test` in `frontend/`. Ensure no regressions occur when modifying backend logic.
 4. **State Management:** The frontend heavily utilizes React Hooks and `localStorage` for client-side persistence (e.g., custom DoP presets), reserving the backend API for heavy lifting (AI generation, event sourcing).

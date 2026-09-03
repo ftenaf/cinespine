@@ -209,9 +209,23 @@ gen_ai_invoke_agent_tool_calls_{sum,count,bucket}
 ```
 
 The `gen_ai_invoke_agent_*` family is the agent dimension rather than the model
-one — duration, inference calls and tool calls **per agent run**. That is the
-data behind "which agent is expensive, and whether it is the model or the tool
-loop", and it comes from ADK's own `invoke_agent` spans without extra wiring.
+one — duration, inference calls and tool calls **per agent run**, from ADK's own
+instrumentation without extra wiring.
+
+It would be the data behind "which agent is expensive, and whether it is the
+model or the tool loop", except that **it describes one agent out of three**.
+`WrapRescueAgent` and `AssistantEditorQueueAgent` construct an ADK `Runner` and
+never call it, so ADK never invokes them and records nothing; the only name that
+appears is `wrap_rescue_handoff_agent`, the inline agent that drafts the memo.
+Confirmed against thirty days of Grafana Cloud, not inferred:
+
+```bash
+gcx metrics query 'count by (gen_ai_agent_name) (gen_ai_invoke_agent_duration_seconds_count)' --since 30d
+# => one series: wrap_rescue_handoff_agent
+```
+
+The instrumentation is correct and is reporting the truth. See
+[references/findings/agent-telemetry-coverage.md](../references/findings/agent-telemetry-coverage.md).
 
 ### 4b. Business metrics — served, not exported
 
@@ -275,12 +289,19 @@ gen_ai_invoke_agent_duration_seconds_count{gen_ai_agent_name="wrap_rescue_handof
                                            error_type="DefaultCredentialsError"} 1
 ```
 
-Two things that reads as a surprise and is not. ADK adds `error_type` to failed
-invocations, which **splits the series** — aggregating by `gen_ai_agent_name`
-alone folds failures back in, which is what the panels do, since a run that
-died still took time. And `gen_ai_invoke_agent_tool_calls` is **0** for this
-agent: the ClickHouse MCP queries are driven by the app's own step loop, and
-the ADK agent is only asked to write the memo, so it calls no tools.
+Two things that read as a surprise and are not.
+
+ADK adds `error_type` to failed invocations, which **splits the series** —
+aggregating by `gen_ai_agent_name` alone folds failures back in, which is what
+the panels do, since a run that died still took time.
+
+And `gen_ai_invoke_agent_tool_calls` is **0**, for a larger reason than it first
+appears. It is not that this one agent happens to have no tools: the two agents
+that do have tools never execute through ADK at all, and the memo agent that
+does is given none. Both `WrapRescueAgent` and `AssistantEditorQueueAgent`
+declare tools in `super().__init__(tools=[...])` that ADK never dispatches —
+their step loops call those methods directly. So the count is right, and will
+stay 0 until tool use moves inside an agent that is actually invoked.
 
 Verified live:
 

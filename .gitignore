@@ -48,7 +48,13 @@ yarn-error.log*
 # IDE / Editor
 .vscode/
 .idea/
-.claude/
+# Per-developer: settings.json, launch.json, handoffs/. Skills are versioned
+# instead -- they are repo knowledge like references/, not local preference.
+# The parent must be `.claude/*` rather than `.claude/`: git cannot re-include
+# a path whose parent directory is excluded, so `!.claude/skills/` alone would
+# not work.
+.claude/*
+!.claude/skills/
 *.swp
 *.swo
 

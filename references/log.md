@@ -9,6 +9,43 @@ tags: [log]
 
 Newest first. Each entry names what produced it.
 
+## 2026-09-03
+
+**Four dashboard panels queried metrics that never arrive, and an empty panel
+looks like a quiet system.** The AI cost dashboard read `cinespine_*`, which
+`prometheus_client` serves and the OTel exporter does not carry. Rewritten onto
+the GenAI conventions. Two things the rewrite turned up:
+
+The hand-placed token counter cannot price anything. It sits at two call sites
+of eight, and records `total_token_count` only -- while output is billed far
+above input. A dollar figure from it is wrong by a factor that moves with the
+mix: precise-looking and unfalsifiable. `gen_ai_client_token_usage` covers every
+`google-genai` call and splits the two.
+
+Summing the two token types the obvious way returns **nothing**.
+`rate(...{type="input"}) + rate(...{type="output"})` matches on every label
+including `gen_ai_token_type`, finds no partner, and yields an empty vector --
+the same silent failure the panels were being rescued from. Confirmed: the naive
+form returns 0 series against live data.
+
+**The local stack had never scraped anything.** `prometheus.yml` carried no
+`metrics_path`, so it asked for `/metrics` while the app serves `/api/metrics`.
+The target reported healthy and 404'd every scrape, so no `cinespine_*` series
+had ever existed locally -- every local dashboard was empty, not just the AI one.
+`gen_ai_*` is pushed and never scraped, so it needs `--web.enable-otlp-receiver`
+on top; without it a dashboard can work in Cloud and be dead on a developer's
+machine.
+
+**p95 was the right question and the wrong query.** A demo makes a handful of
+model calls and one agent run, so the bucket counters are flat across any
+sensible rate window; `rate()` is 0 for every bucket and `histogram_quantile` of
+all-zero buckets is `NaN`. Measured on a real Wrap Rescue run: the p95 form
+returned `NaN` where `sum / count` returned 1.20s. The panels are means until
+traffic is continuous enough to move the buckets.
+
+**Two of the three agents never run as agents.** See
+[findings/agent-telemetry-coverage.md](findings/agent-telemetry-coverage.md).
+
 ## 2026-08-30
 
 **The department sync matrix is built, and it says which kind of measurement each row is.** REQ-10's
