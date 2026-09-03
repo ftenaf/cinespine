@@ -128,7 +128,7 @@ CINESPINE_WRAP_RESCUE_MODEL: "gemini-2.5-flash"
 # a deploy to find.
 CLICKHOUSE_HOST: "<your-instance>.europe-west4.gcp.clickhouse.cloud"
 CLICKHOUSE_SECURE: "1"
-CLICKHOUSE_USERNAME: "default"
+CLICKHOUSE_USER: "default"
 
 # The self-hosted MCP service from section 5, not ClickHouse Cloud's hosted
 # endpoint -- see there for why the hosted one cannot work headlessly. Fill in
