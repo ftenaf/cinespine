@@ -150,3 +150,6 @@ python scripts/wipe_and_seed.py
 python scripts/wipe_and_seed.py --no-seed
 
 
+
+
+gcx synthetic-monitoring checks update cinespine-deep-health-88757 -f grafana/synthetic/deep-health.yaml
