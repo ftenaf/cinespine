@@ -268,7 +268,10 @@ end-of-day requirements across all active assistant editors. Each assigned assis
 complete, resolving the requirement with `resolved_by` and `resolved_at` audit fields, and the production
 dashboard shows pre-editing progress by assistant with a completion chart. The same dashboard also includes
 a production-wide **Crew Workload** view so coordinators can see every crew member's active requirements,
-blocked items, completed count and current task targets at a glance.
+blocked items, completed count and current task targets at a glance. Beside it, an **Activity** card reads
+the activity ledger every mutation route writes: changes made and things viewed per person and shoot day,
+kept apart on purpose, plus the median time from a requirement being raised to its assignee first touching
+it. It counts actions, not effort, and says so.
 
 ### 4. 📡 Append-Only Event Spine & Real-Time SSE Bus
 * Backed by **ClickHouse** and SQLite for zero-data-loss event streaming.

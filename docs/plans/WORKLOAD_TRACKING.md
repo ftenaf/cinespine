@@ -1,6 +1,9 @@
 # Workload tracking: measure what people do, not just what they own
 
-Status: plan, 2026-09-04. Nothing built yet.
+Status: done, 2026-09-04. Steps 1-4 landed (554c851, 1d97033, 1c350e7 and
+the docs commit). Kept as the record of why. Open follow-up: thread
+`currentUser.handle` into the production, crew, script-link and breakdown
+bodies so those rows stop being `actor_source=default`.
 
 ## Why
 

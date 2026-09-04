@@ -289,3 +289,43 @@ flowchart LR
 1. **Zero Mutation Invariant:** Events are append-only. Takes and slates are never updated in place; state is computed as a fold over historical events.
 2. **Auditability & Traceability:** Every discrepancy resolution, consensus vote, and prompt modification records the originating practitioner handle (`@assistant_editor`, `@director`) and UTC timestamp.
 3. **Non-Blocking Real-Time Fan-Out:** The FastAPI `LiveEventBroker` utilizes asynchronous Server-Sent Events (SSE) scoped by `production_id`, `shoot_day`, and user handle to push live updates with sub-millisecond latency and zero browser polling.
+
+### The activity ledger (`user_activity`)
+
+Beside the event spine, which records what a production did, `user_activity`
+records what people did to the tool. SQLite is the source of truth and
+ClickHouse holds the mirror, like every other store.
+
+Two kinds of row, kept apart in every query and never summed:
+
+- **Views** (`viewed`, `acknowledged`): what a person tells us about their
+  attention. Written by the Requirements board through `POST /api/activity`.
+- **Mutations** (`created`, `updated`, `resolved`, `reopened`, `deleted`,
+  `tagged`, `uploaded`, `linked`, `unlinked`, `ran_agent`): what the API saw
+  them change. Written server-side by `_record()` in `backend/app/api/routes.py`
+  after every mutation route's write succeeds, so no surface can forget to.
+  Never raises: the write it describes has already happened.
+
+Target types: `requirement`, `discrepancy`, `notification`, `shoot_day`,
+`scene`, `shot`, `take`, `document`, `production`, `crew`, `script`,
+`breakdown`, `tag`, `agent`. The vocabulary is closed; an unknown verb or
+target is refused, not stored (`backend/app/spine/activity_store.py`).
+
+Two rules that keep the numbers honest:
+
+- **`actor_source=default`.** A route whose body names nobody (productions,
+  crew, script links, breakdowns, bare uploads) records the change under
+  `@director` and tags the row's `context_json` with `actor_source: default`.
+  Per-person queries exclude those rows; per-department queries keep them.
+  The change happened; crediting the director with it would be a fiction.
+- **No free text.** `context_json` passes through `analytics.safe_properties`,
+  the same blocklist product analytics applies, so a title, note or filename
+  cannot reach the ledger by way of a new call site.
+
+What reads it: `GET /api/analytics` carries `actions_by_actor_and_day`,
+`actions_by_department_and_hour` and `first_touch_lag`
+(`backend/app/spine/analytics.py`), and the production dashboard's Activity
+card draws them beside Crew workload. The card says the one thing the
+numbers cannot: a count of actions is activity, not effort. Identity is the
+self-declared `@handle` from the passwordless login, so per-person figures
+are honor-system until there is auth.
