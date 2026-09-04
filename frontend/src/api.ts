@@ -9,7 +9,7 @@ const API_BASE = '/api';
  * of. Faro is optional (no VITE_GRAFANA_FARO_URL, no Faro), so this is a
  * no-op without it. Ids and counts only, never a filename or content.
  */
-function pushEvent(name: string, attributes: Record<string, string | number | boolean | null | undefined>): void {
+export function pushEvent(name: string, attributes: Record<string, string | number | boolean | null | undefined>): void {
   try {
     const clean: Record<string, string> = {};
     for (const [key, value] of Object.entries(attributes)) {

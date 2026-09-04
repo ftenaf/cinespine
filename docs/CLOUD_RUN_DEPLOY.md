@@ -169,7 +169,7 @@ gcloud builds submit --tag=europe-west4-docker.pkg.dev/cinespine/cinespine/app:v
 push:
 
 ```bash
-docker build -f Dockerfile.cloudrun --build-arg VITE_GRAFANA_FARO_URL="$VITE_GRAFANA_FARO_URL" -t europe-west4-docker.pkg.dev/cinespine/cinespine/app:v0.7.0 .
+docker build -f Dockerfile.cloudrun --build-arg VITE_GRAFANA_FARO_URL="$VITE_GRAFANA_FARO_URL" --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t europe-west4-docker.pkg.dev/cinespine/cinespine/app:$(git rev-parse --short HEAD) .
 ```
 
 ```bash

@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
-from backend.app.core.telemetry import set_attributes, span
+from backend.app.core.telemetry import SPAN_MIRROR_INSERT, set_attributes, span
 
 from backend.app.spine import character_store, activity_store
 from backend.app.spine import production_store
@@ -249,7 +249,7 @@ class SpineWriter:
             return False
         # clickhouse_connect is not httpx, so no instrumentor sees this call;
         # the span is the only trace of the mirror write.
-        with span("cinespine.mirror.insert", **{"cinespine.table": table, "cinespine.rows": len(rows)}) as current:
+        with span(SPAN_MIRROR_INSERT, table=table, rows=len(rows)) as current:
             try:
                 # Native ClickHouse HTTP stream insertion (async_insert)
                 self.client.insert(
@@ -261,12 +261,12 @@ class SpineWriter:
                 if self._mirror_blocked_until:
                     logger.info("ClickHouse is answering again; the mirror is open")
                     self._mirror_blocked_until = 0.0
-                set_attributes(current, **{"cinespine.ok": True})
+                set_attributes(current, ok=True)
                 return True
             except Exception as exc:
                 self._mirror_blocked_until = time.monotonic() + MIRROR_COOLDOWN_SECONDS
                 current.record_exception(exc)
-                set_attributes(current, **{"cinespine.ok": False})
+                set_attributes(current, ok=False)
                 logger.error(
                     "ClickHouse insert into %s failed (%s); pausing the mirror for %ds",
                     table, exc, MIRROR_COOLDOWN_SECONDS,

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { pushEvent } from '../api';
 import { Film, Camera, Sparkles, Sliders, RotateCw, Maximize2, FileText, Upload, CheckCircle2, Users, ShieldCheck, Loader2, Aperture, Crosshair, Plus, Pencil, Trash2, Link2, Check, X } from 'lucide-react';
 import { CharacterProfileCard } from './CharacterProfileCard';
 // Every screenplay type now lives in types.ts and is re-exported here, because
@@ -448,6 +449,10 @@ export const ScriptStudio: React.FC = () => {
       });
       if (res.ok) {
         const data = await res.json();
+        pushEvent('cinespine.parse', {
+          script_id: data.script_id, scenes: data.scenes?.length,
+          characters: data.characters?.length, warnings: data.parse_warnings?.length,
+        });
         if (data.title) setScriptTitle(data.title);
         setScriptId(data.script_id || null);
         setParseWarnings(data.parse_warnings || []);

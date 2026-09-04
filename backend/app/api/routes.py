@@ -39,8 +39,7 @@ from backend.app.parsers.pdf_parsers import extract_text_from_pdf, extract_thumb
 from backend.app.normalizers.takes import normalize_take
 from backend.app.normalizers.slates import normalize_slate
 from backend.app.script.scene_lookup import build_scene_context, scene_numbers_for_target
-from backend.app import __version__
-from backend.app.core.telemetry import TelemetryExporter, set_attributes, span
+from backend.app.core.telemetry import SPAN_INGEST, TelemetryExporter, app_version, set_attributes, span
 from backend.app.core import analytics
 from backend.app.core import privacy
 from backend.app.storage.gcs_client import gcs
@@ -296,7 +295,7 @@ def _record_crew_change(
 @router.get("/health")
 def health_check():
     """Is the process up. Cloud Run's startup probe; it checks nothing else."""
-    return {"status": "ok", "version": __version__, "service": "cinespine"}
+    return {"status": "ok", "version": app_version(), "service": "cinespine"}
 
 
 @router.get("/health/deep")
@@ -313,7 +312,7 @@ async def deep_health_check(mcp: bool = False):
     report = await health.deep_health(
         spine_writer,
         mcp_client=HTTPClickHouseMCPClient(timeout=25.0) if mcp else None,  # cold start is ~21s
-        version=__version__,
+        version=app_version(),
     )
     return JSONResponse(report, status_code=503 if report["status"] == "down" else 200)
 
@@ -680,16 +679,10 @@ def upload_document(req: UploadRequest):
 
     topic = f"production.raw.{department.value}"
     with span(
-        "cinespine.ingest",
-        **{
-            "cinespine.production_id": envelope.production_id,
-            "cinespine.shoot_day": envelope.shoot_day,
-            "cinespine.department": department.value,
-            "cinespine.axis": axis.value,
-            "cinespine.doc_type": doc_type.value,
-            "cinespine.doc_id": doc_id,
-            "cinespine.bytes": len(req.raw_content),
-        },
+        SPAN_INGEST,
+        production_id=envelope.production_id, shoot_day=envelope.shoot_day,
+        department=department.value, axis=axis.value, doc_type=doc_type.value,
+        doc_id=doc_id, bytes=len(req.raw_content),
     ) as ingest:
         try:
             event_bus.publish(topic, envelope)
@@ -697,7 +690,7 @@ def upload_document(req: UploadRequest):
             raise _ingest_failed(exc, doc_id, filename)
         # The document is ingested; send its events on together rather than
         # leaving them buffered until the next upload.
-        set_attributes(ingest, **{"cinespine.mirrored_rows": spine_writer.flush_events()})
+        set_attributes(ingest, mirrored_rows=spine_writer.flush_events())
         _project_analytics(envelope.production_id, envelope.shoot_day)
 
     event_broker.publish_sync(SpineLiveEvent(

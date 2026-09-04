@@ -86,8 +86,9 @@ one service rather than two.
 
 Since 2026-09-04, anywhere but a laptop. Cloud Run reads stdout, and as plain
 text every line landed in Cloud Logging at severity `DEFAULT` with the trace
-id buried mid-string: no filtering by level, no link from a line to its trace,
-and Loki's `detected_level` reduced to a guess. `JsonLogFormatter` in
+id buried mid-string: no filtering by level, no link from a line to its trace.
+(Loki was never affected: it receives logs through the OTLP handler, which
+carries the level natively.) `JsonLogFormatter` in
 `telemetry.py` writes `severity`, `message`, `logger`, `time`, the flat
 `trace_id`/`span_id`, and the `logging.googleapis.com/trace`, `spanId` and
 `trace_sampled` keys Cloud Logging turns into a trace link. uvicorn's own

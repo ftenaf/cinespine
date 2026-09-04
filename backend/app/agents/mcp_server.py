@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Optional
 from backend.app.spine.writer import SpineWriter
 from backend.app.reconciliation.engine import ReconciliationEngine
 from backend.app.normalizers.takes import normalize_take
-from backend.app.core.telemetry import set_attributes, span
+from backend.app.core.telemetry import EVENT_DISCREPANCY, SPAN_RECONCILE, set_attributes, span
 from opentelemetry import trace as otel_trace
 
 
@@ -32,10 +32,7 @@ class ClickHouseMCPServer:
         event with its kind and what it is about. That is the product's
         output, and it was invisible between an HTTP span and a SQLite read.
         """
-        with span(
-            "cinespine.reconcile",
-            **{"cinespine.production_id": production_id, "cinespine.shoot_day": shoot_day},
-        ) as current:
+        with span(SPAN_RECONCILE, production_id=production_id, shoot_day=shoot_day) as current:
             found = self._reconcile(production_id, shoot_day)
             unresolved = [d for d in found if not d.get("is_resolved")]
             by_severity: Dict[str, int] = {}
@@ -44,11 +41,11 @@ class ClickHouseMCPServer:
                 by_severity[key] = by_severity.get(key, 0) + 1
             set_attributes(
                 current,
-                **{"cinespine.discrepancies": len(found), "cinespine.unresolved": len(unresolved)},
-                **{f"cinespine.unresolved.{k}": v for k, v in by_severity.items()},
+                discrepancies=len(found), unresolved=len(unresolved),
+                **{f"unresolved.{k}": v for k, v in by_severity.items()},
             )
             for d in unresolved[: self.DISCREPANCY_EVENTS_ON_SPAN]:
-                current.add_event("cinespine.discrepancy", {
+                current.add_event(EVENT_DISCREPANCY, {
                     "cinespine.discrepancy_type": str(d.get("discrepancy_type") or ""),
                     "cinespine.severity": str(d.get("severity") or ""),
                     "cinespine.entity_type": str(d.get("entity_type") or ""),
@@ -58,7 +55,7 @@ class ClickHouseMCPServer:
 
     def _reconcile(self, production_id: str, shoot_day: str) -> List[Dict[str, Any]]:
         events = self.spine_writer.get_events(production_id=production_id, shoot_day=shoot_day)
-        set_attributes(otel_trace.get_current_span(), **{"cinespine.events": len(events)})
+        set_attributes(otel_trace.get_current_span(), events=len(events))
         
         # Group take events by slate and canonical take_id
         takes_map: Dict[str, List[Dict[str, Any]]] = {}

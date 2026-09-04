@@ -10,7 +10,7 @@ import logging
 from typing import Dict, Any
 from backend.app.streaming.models import EventEnvelope, DocumentType
 from backend.app.streaming.bus import EventBus, EventHandlerError
-from backend.app.core.telemetry import span
+from backend.app.core.telemetry import SPAN_PARSE, span
 from backend.app.parsers.sound_ale import parse_sound_ale
 from backend.app.parsers.camera_csv import parse_camera_csv
 from backend.app.parsers.silverstack_xml import parse_silverstack_xml
@@ -58,15 +58,11 @@ class IngestionDispatcher:
         """
         def traced(envelope: EventEnvelope) -> None:
             with span(
-                "cinespine.parse",
-                **{
-                    "cinespine.handler": handler.__name__,
-                    "cinespine.production_id": envelope.production_id,
-                    "cinespine.shoot_day": envelope.shoot_day,
-                    "cinespine.department": envelope.department.value,
-                    "cinespine.axis": envelope.axis.value,
-                    "cinespine.doc_type": envelope.doc_type.value,
-                },
+                SPAN_PARSE,
+                handler=handler.__name__,
+                production_id=envelope.production_id, shoot_day=envelope.shoot_day,
+                department=envelope.department.value, axis=envelope.axis.value,
+                doc_type=envelope.doc_type.value,
             ):
                 return handler(envelope)
         traced.__name__ = f"traced_{handler.__name__}"

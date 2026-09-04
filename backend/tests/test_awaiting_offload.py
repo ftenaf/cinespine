@@ -159,7 +159,11 @@ def test_existence_findings_reach_the_api_at_all():
     from backend.app.agents.mcp_server import ClickHouseMCPServer
     import inspect
 
-    source = inspect.getsource(ClickHouseMCPServer.query_production_discrepancies)
+    # The public method opens the span and delegates to _reconcile, which is
+    # where the engine is called; both must be read for the guard to hold.
+    source = (inspect.getsource(ClickHouseMCPServer.query_production_discrepancies)
+              + inspect.getsource(ClickHouseMCPServer._reconcile))
+    assert "_reconcile(" in inspect.getsource(ClickHouseMCPServer.query_production_discrepancies)
     assert "reconcile_existence" in source
     assert "all_discrepancies.append" in source.split("reconcile_existence")[1], (
         "reconcile_existence is called and its results are not collected"

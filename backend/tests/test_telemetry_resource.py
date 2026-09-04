@@ -36,8 +36,13 @@ def test_cinespine_env_names_a_deployment_that_is_not_cloud_run():
     assert deployment_environment({"CINESPINE_ENV": "  "}) == "local"
 
 
-def test_the_version_is_the_package_version_not_a_literal():
+def test_the_version_is_the_package_version_on_a_laptop():
     assert resource_attributes("cinespine-backend", {}, hostname="h")["service.version"] == __version__
+
+
+def test_the_version_is_the_build_revision_when_the_image_says_so():
+    attrs = resource_attributes("cinespine-backend", {**CLOUD_RUN, "CINESPINE_VERSION": "3724ab2"}, hostname="h")
+    assert attrs["service.version"] == "3724ab2"
 
 
 def test_a_local_process_may_export_to_a_local_collector():

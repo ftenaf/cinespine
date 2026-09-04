@@ -18,12 +18,13 @@ The overall status is decided by what the product cannot work without:
 - The MCP server scales to zero and takes ~20s to wake, so it is probed only
   when asked (`?mcp=1`); a routine check must not spin it up every minute.
 """
+import asyncio
 import os
 import shutil
 import time
 from typing import Any, Callable, Dict, Optional
 
-from backend.app.core.telemetry import deployment_environment, service_instance_id, span
+from backend.app.core.telemetry import SPAN_HEALTH, deployment_environment, service_instance_id, span
 from backend.app.spine import event_store
 
 
@@ -81,10 +82,13 @@ def overall(checks: Dict[str, Dict[str, Any]]) -> str:
 
 
 async def deep_health(writer: Any, mcp_client: Optional[Any] = None, version: str = "") -> Dict[str, Any]:
-    with span("cinespine.health") as current:
+    with span(SPAN_HEALTH) as current:
+        # The SQLite and ClickHouse probes are synchronous and the latter can
+        # wait up to its 3s server-side limit; off the event loop so a slow
+        # mirror does not stall every other request while the probe runs.
         checks: Dict[str, Dict[str, Any]] = {
-            "sqlite": check_sqlite(),
-            "clickhouse": check_clickhouse(writer),
+            "sqlite": await asyncio.to_thread(check_sqlite),
+            "clickhouse": await asyncio.to_thread(check_clickhouse, writer),
         }
         if mcp_client is not None:
             checks["mcp"] = await check_mcp(mcp_client)

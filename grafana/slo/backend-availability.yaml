@@ -11,8 +11,10 @@ spec:
     uid: grafanacloud-prom
   name: CineSpine backend availability
   description: >-
-    Share of API requests on Cloud Run answered without a 5xx. One instance is
-    always warm, so this is the service, not the platform's cold path.
+    Share of API requests on Cloud Run answered without a 5xx, excluding the
+    health endpoints: two outside probes hit /api/health/deep every five
+    minutes and would pad the denominator with cheap successes. One instance
+    is always warm, so this is the service, not the platform's cold path.
   labels:
     - key: team
       value: cinespine
@@ -25,6 +27,6 @@ spec:
     type: freeform
     freeform:
       query: >-
-        sum(rate(http_server_request_duration_seconds_count{job="cinespine-backend", deployment_environment="cloudrun", http_response_status_code!~"5.."}[$__rate_interval]))
+        sum(rate(http_server_request_duration_seconds_count{job="cinespine-backend", deployment_environment="cloudrun", http_route!~"/api/health.*", http_response_status_code!~"5.."}[$__rate_interval]))
         /
-        sum(rate(http_server_request_duration_seconds_count{job="cinespine-backend", deployment_environment="cloudrun"}[$__rate_interval]))
+        sum(rate(http_server_request_duration_seconds_count{job="cinespine-backend", deployment_environment="cloudrun", http_route!~"/api/health.*"}[$__rate_interval]))

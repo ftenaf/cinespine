@@ -30,6 +30,10 @@ FROM node:20-alpine AS frontend
 # relative `/api` in frontend/src/api.ts is correct and needs no build arg.
 ARG VITE_GRAFANA_FARO_URL
 ENV VITE_GRAFANA_FARO_URL=$VITE_GRAFANA_FARO_URL
+# The revision this image was built from, so the browser's Faro app.version
+# and the backend's service.version say the same thing as the image tag.
+ARG GIT_SHA=unknown
+ENV VITE_APP_VERSION=$GIT_SHA
 
 WORKDIR /build
 
@@ -43,6 +47,8 @@ RUN npm run build
 # Stage 2 -- the service
 # --------------------------------------------------------------------------- #
 FROM python:3.11-slim
+ARG GIT_SHA=unknown
+ENV CINESPINE_VERSION=$GIT_SHA
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

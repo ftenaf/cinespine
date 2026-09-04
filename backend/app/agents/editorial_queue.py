@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Literal, Optional, cast
 from pydantic import BaseModel, Field
 
 from backend.app.core import analytics
-from backend.app.core.telemetry import set_attributes, span
+from backend.app.core.telemetry import SPAN_AGENT_ASSISTANT_QUEUE, set_attributes, span
 from backend.app.integrations.cloud_logging import AgentCloudLogger
 from backend.app.spine import requirement_store
 from backend.app.spine.writer import SpineWriter
@@ -230,17 +230,13 @@ class AssistantEditorQueueAgent(LlmAgent):
         max_scenes: int = 6,
     ) -> AssistantQueueResult:
         """One run under a `cinespine.agent.assistant_editor_queue` span."""
-        with span(
-            "cinespine.agent.assistant_editor_queue",
-            **{"cinespine.production_id": production_id, "cinespine.shoot_day": shoot_day, "cinespine.actor": actor},
-        ) as current:
+        with span(SPAN_AGENT_ASSISTANT_QUEUE, production_id=production_id, shoot_day=shoot_day, actor=actor) as current:
             result = self._run(production_id, shoot_day, actor, assignee, max_scenes)
-            set_attributes(current, **{
-                "cinespine.shoot_day": result.shoot_day,
-                "cinespine.scenes": len(result.scenes),
-                "cinespine.requirement_actions": len(result.requirement_actions),
-                "cinespine.assignees": len(result.assignees),
-            })
+            set_attributes(
+                current,
+                shoot_day=result.shoot_day, scenes=len(result.scenes),
+                requirement_actions=len(result.requirement_actions), assignees=len(result.assignees),
+            )
             return result
 
     def _run(

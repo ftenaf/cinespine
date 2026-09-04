@@ -90,7 +90,7 @@
     {
       "type": "stat",
       "title": "Estimated Spend (selected range)",
-      "description": "An estimate: token counts multiplied by the price variables above, one pair for Flash-tier models and one for anything with \"pro\" in its name. Nothing in the codebase knows a price, and no metric here carries dollars -- Grafana's own AI Observability cost panels read gen_ai_usage_cost_USD_sum, which is emitted by the OpenLIT SDK this project removed. So this number moves when Google reprices and nobody edits the variables. Read it as an order of magnitude.",
+      "description": "An estimate: token counts multiplied by the price variables above, one pair for Flash-tier models and one for anything with \"pro\" in its name. Nothing in the codebase knows a price, and no metric here carries dollars -- Grafana's own AI Observability cost panels read gen_ai_usage_cost_USD_sum, which is emitted by the OpenLIT SDK this project removed. So this number moves when Google reprices and nobody edits the variables. Read it as an order of magnitude.\n\nEach term is `(sum(...) or vector(0))`: sum() over no matching series is an empty vector and empty + x is empty, so without the fallback a range with no Pro-tier call (or no Flash call) blanked the whole stat.",
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -105,7 +105,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\", gen_ai_request_model!~\".*pro.*\"}[$__range])) / 1e6 * $price_in\n+ sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\", gen_ai_request_model!~\".*pro.*\"}[$__range])) / 1e6 * $price_out\n+ sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\", gen_ai_request_model=~\".*pro.*\"}[$__range])) / 1e6 * $price_in_pro\n+ sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\", gen_ai_request_model=~\".*pro.*\"}[$__range])) / 1e6 * $price_out_pro",
+          "expr": "(sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\", gen_ai_request_model!~\".*pro.*\"}[$__range])) / 1e6 * $price_in or vector(0))\n+ (sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\", gen_ai_request_model!~\".*pro.*\"}[$__range])) / 1e6 * $price_out or vector(0))\n+ (sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\", gen_ai_request_model=~\".*pro.*\"}[$__range])) / 1e6 * $price_in_pro or vector(0))\n+ (sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\", gen_ai_request_model=~\".*pro.*\"}[$__range])) / 1e6 * $price_out_pro or vector(0))",
           "legendFormat": "Estimated",
           "datasource": {
             "type": "prometheus",

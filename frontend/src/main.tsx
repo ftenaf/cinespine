@@ -12,7 +12,7 @@ if (faroUrl) {
     url: faroUrl,
     app: {
       name: 'cinespine-frontend',
-      version: '0.1.0',
+      version: import.meta.env.VITE_APP_VERSION || 'dev',
       environment: import.meta.env.MODE
     },
     instrumentations: [

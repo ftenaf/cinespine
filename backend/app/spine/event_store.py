@@ -218,10 +218,18 @@ def probe_write() -> None:
     """
     conn = _conn()
     with _lock:
-        conn.execute("CREATE TABLE IF NOT EXISTS health_probe (probed_at TEXT NOT NULL)")
-        conn.execute("DELETE FROM health_probe")
-        conn.execute("INSERT INTO health_probe (probed_at) VALUES (?)", (datetime.now(timezone.utc).isoformat(),))
-        conn.commit()
+        try:
+            conn.execute("CREATE TABLE IF NOT EXISTS health_probe (probed_at TEXT NOT NULL)")
+            conn.execute("DELETE FROM health_probe")
+            conn.execute("INSERT INTO health_probe (probed_at) VALUES (?)", (datetime.now(timezone.utc).isoformat(),))
+            conn.commit()
+        except Exception:
+            # The DELETE opened an implicit transaction on the shared
+            # connection. Left open, it holds the write lock until the next
+            # real commit -- and this is the path that runs while the disk is
+            # full, so the next real commit is exactly what would not come.
+            conn.rollback()
+            raise
 
 
 def append_events(events: List[Dict[str, Any]]) -> int:

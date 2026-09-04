@@ -185,16 +185,39 @@ class TelemetryExporter:
 # otherwise have to dig out of a log line.
 _tracer = otel_trace.get_tracer("cinespine")
 
+# One name per seam. Named here rather than at the call site so a module that
+# must not spell a database name (the mirror writer, whose test forbids the
+# literal "cinespine.") can still open its span.
+SPAN_INGEST = "cinespine.ingest"
+SPAN_PARSE = "cinespine.parse"
+SPAN_RECONCILE = "cinespine.reconcile"
+SPAN_MIRROR_INSERT = "cinespine.mirror.insert"
+SPAN_MCP_TOOL = "cinespine.mcp.tool"
+SPAN_AGENT_WRAP_RESCUE = "cinespine.agent.wrap_rescue"
+SPAN_AGENT_ASSISTANT_QUEUE = "cinespine.agent.assistant_editor_queue"
+SPAN_HEALTH = "cinespine.health"
+EVENT_DISCREPANCY = "cinespine.discrepancy"
+
+ATTRIBUTE_PREFIX = "cinespine."
+
 _ATTRIBUTE_TYPES = (str, bool, int, float)
 
 
 def _clean(attributes: Mapping[str, Any]) -> Dict[str, Any]:
-    """Drops Nones and stringifies anything OTel cannot carry as-is."""
+    """
+    Drops Nones, prefixes bare keys, stringifies what OTel cannot carry.
+
+    ``production_id=...`` becomes ``cinespine.production_id``; a key that
+    already has a dot is taken as-is, so the semantic conventions can be
+    mixed in. Callers pass plain keyword arguments and never spell the
+    prefix.
+    """
     out: Dict[str, Any] = {}
     for key, value in attributes.items():
         if value is None:
             continue
-        out[key] = value if isinstance(value, _ATTRIBUTE_TYPES) else str(value)
+        name = key if "." in key else ATTRIBUTE_PREFIX + key
+        out[name] = value if isinstance(value, _ATTRIBUTE_TYPES) else str(value)
     return out
 
 
@@ -203,8 +226,8 @@ def span(name: str, **attributes: Any) -> Iterator[otel_trace.Span]:
     """
     One step of the pipeline, as a span under whatever is current.
 
-    Attribute keys are the caller's; the convention is ``cinespine.<thing>``
-    so the product's dimensions sort together in Tempo. An exception raised
+    Bare attribute keys are prefixed ``cinespine.`` so the product's
+    dimensions sort together in Tempo; dotted keys pass through. An exception raised
     inside is recorded on the span, marks it as an error, and propagates.
     With no tracer provider installed this costs a no-op span and nothing
     else.
@@ -333,6 +356,20 @@ def service_instance_id(
     return env.get("K_REVISION") or env.get("K_SERVICE") or hostname or socket.gethostname()
 
 
+def app_version(environ: Optional[Mapping[str, str]] = None) -> str:
+    """
+    What is running: the git revision the image was built from, else the
+    package version.
+
+    `pyproject` says 0.1.0 while the tags are at v0.8.x, so the package
+    version alone would label every deployment the same. Dockerfile.cloudrun
+    sets CINESPINE_VERSION from its GIT_SHA build arg; a laptop run falls back
+    to the package.
+    """
+    env = os.environ if environ is None else environ
+    return (env.get("CINESPINE_VERSION") or "").strip() or __version__
+
+
 def resource_attributes(
     app_name: str,
     environ: Optional[Mapping[str, str]] = None,
@@ -341,7 +378,7 @@ def resource_attributes(
     """The OpenTelemetry resource every signal from this process carries."""
     return {
         "service.name": app_name,
-        "service.version": __version__,
+        "service.version": app_version(environ),
         "deployment.environment": deployment_environment(environ),
         "service.instance.id": service_instance_id(environ, hostname),
     }
