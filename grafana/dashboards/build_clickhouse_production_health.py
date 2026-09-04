@@ -115,7 +115,8 @@ SELECT severity, shoot_day, discrepancy_type, entity_type, entity_id, descriptio
 FROM cinespine.audit_discrepancies FINAL
 WHERE production_id = {P} AND is_resolved = 0
 ORDER BY multiIf(severity = 'CRITICAL', 0, severity = 'WARNING', 1, 2), shoot_day, discrepancy_type
-""", 0, 5, 12, 8, desc="Everything still unsettled, most severe first. Empty is the answer worth wanting."),
+""", 0, 5, 12, 8, desc="Everything still unsettled, most severe first. Empty is the answer worth wanting.",
+          fieldConfig={"defaults": {"noValue": "Nothing open"}, "overrides": []}),
 
     row("Ingestion: who has filed", 13),
     panel("timeseries", "Documents ingested per department", f"""

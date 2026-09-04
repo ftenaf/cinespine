@@ -288,7 +288,13 @@
           "refId": "A"
         }
       ],
-      "description": "Everything still unsettled, most severe first. Empty is the answer worth wanting."
+      "description": "Everything still unsettled, most severe first. Empty is the answer worth wanting.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Nothing open"
+        },
+        "overrides": []
+      }
     },
     {
       "id": 7,
