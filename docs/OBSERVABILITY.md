@@ -584,9 +584,15 @@ notices the service is down when the exporter is down with it, which the
 "backend telemetry silent" alert in §4d cannot distinguish from an outage of
 the pipeline. A Cloud Monitoring alert policy ("CineSpine deep health failing")
 emails the same address as the Grafana contact point when the check fails from
-more than one region for ten minutes. Grafana Synthetic Monitoring was the
-first choice and needs `gcx cloud login` renewed before it can be configured
-from here.
+more than one region for ten minutes.
+
+A Grafana Synthetic Monitoring check watches the same endpoint from five
+EMEA probes (`cinespine-deep-health`, created in the UI, which is what
+initialises the product for a stack). `grafana/synthetic/deep-health.yaml` is
+its intended definition; applying it needs the SM app's own access token in
+`gcx config set stacks.default.providers.synth.sm-token`, and the SM API
+refuses writes while the stack's publisher token is invalid (`check creation
+denied`). A Grafana service-account token is not accepted there at all.
 
 ---
 

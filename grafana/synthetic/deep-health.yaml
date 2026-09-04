@@ -1,0 +1,39 @@
+# The check was created in the Grafana UI (that is what initialises Synthetic
+# Monitoring for a stack); this manifest is its definition, applied with:
+#   gcx synthetic-monitoring checks update cinespine-deep-health-88757 -f grafana/synthetic/deep-health.yaml
+#
+# The outside probe of /api/health/deep. Every five minutes from three
+# European probes, expecting a 2xx: the endpoint answers 503 when SQLite will
+# not take a write, and nothing at all when the service or the platform is
+# down -- which the "backend telemetry silent" alert cannot tell apart from a
+# dead exporter. The MCP server is deliberately not asked for (no ?mcp=1): it
+# scales to zero and a probe that woke it every interval would pay a cold start
+# each time.
+apiVersion: syntheticmonitoring.ext.grafana.app/v1alpha1
+kind: Check
+metadata:
+  name: cinespine-deep-health-88757
+spec:
+  job: cinespine-deep-health
+  target: https://cinespine-35447568692.europe-west4.run.app/api/health/deep
+  enabled: true
+  frequency: 300000
+  timeout: 10000
+  alertSensitivity: medium
+  probes:
+    - London
+    - Frankfurt
+    - Paris
+    - Zurich
+    - Spain
+  labels:
+    - name: team
+      value: cinespine
+    - name: environment
+      value: cloudrun
+  settings:
+    http:
+      method: GET
+      validStatusCodes: [200]
+      failIfBodyNotMatchesRegexp:
+        - '"status": *"(ok|degraded)"'
