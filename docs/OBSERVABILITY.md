@@ -582,8 +582,11 @@ A Google Cloud Monitoring uptime check hits `/api/health/deep` from three
 regions every five minutes and expects a 2xx. It is the only thing that
 notices the service is down when the exporter is down with it, which the
 "backend telemetry silent" alert in §4d cannot distinguish from an outage of
-the pipeline. Grafana Synthetic Monitoring was the first choice and needs
-`gcx cloud login` renewed before it can be configured from here.
+the pipeline. A Cloud Monitoring alert policy ("CineSpine deep health failing")
+emails the same address as the Grafana contact point when the check fails from
+more than one region for ten minutes. Grafana Synthetic Monitoring was the
+first choice and needs `gcx cloud login` renewed before it can be configured
+from here.
 
 ---
 
