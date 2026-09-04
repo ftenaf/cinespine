@@ -379,6 +379,37 @@ curl -s http://localhost:8000/api/metrics | grep -c '^cinespine_'   # 0 on a col
 purpose: without the day, the second day observed overwrites the first and the
 board shows whichever day was opened last while looking like a total.
 
+### 4d. Alerting in Cloud
+
+Until 2026-09-04 nothing in Grafana Cloud notified anyone: the root
+notification policy routed to a receiver named `empty`, the only contact point
+was the Asserts webhook, and the four CineSpine rules in
+`grafana/provisioning/alerting/rules.yml` exist only locally, against a
+ClickHouse datasource Cloud does not have.
+
+Four Grafana-managed rules now live in the Cloud folder **CineSpine**, group
+`cinespine-backend`, evaluated every 60s, all on data that is verified to
+arrive:
+
+| Rule | Reads | Fires when |
+| :--- | :--- | :--- |
+| backend telemetry silent | `http_server_active_requests` | absent for 20m — one instance is always warm, so silence is an outage or a dead exporter |
+| backend error logs | Loki, `detected_level="error"` | more than 10 lines in 10m |
+| backend 5xx responses | `http_server_duration_milliseconds_count` | any 5xx in 15m |
+| GenAI call failures | `gen_ai_client_operation_duration_seconds_count{error_type!=""}` | any failure in 15m, by error type and model |
+
+All four select `deployment_environment!="local"`, so a laptop run that opts
+into remote export cannot page anyone.
+
+Routing: the root policy still goes to `empty`, which keeps the six hundred
+Asserts and integration rules quiet. Two child routes send `team=cinespine`
+and the Frontend Observability folder to the `cinespine-email` contact point.
+Grafana Cloud only accepts contact-point addresses that belong to organization
+members, so the address is the org admin's; change it in the contact point,
+not the rules. The rules were created through the provisioning API with
+`gcx api /api/v1/provisioning/alert-rules`; `gcx api` needs
+`MSYS_NO_PATHCONV=1` under Git Bash or the path is rewritten.
+
 ---
 
 ## 5. Browser telemetry, and the failure it hides
