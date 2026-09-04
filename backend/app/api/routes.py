@@ -2829,7 +2829,7 @@ def get_activity(production_id: str, target_type: str, target_id: str):
 # Script Breakdown, DoP Cinematography & Previz Storyboard Endpoints
 # ---------------------------------------------------------------------------
 
-from backend.app.script.parser import parse_fountain_screenplay, parse_screenplay_file, clean_character_name, Screenplay, ScreenplayScene, CharacterProfile
+from backend.app.script.parser import parse_fountain_screenplay, parse_screenplay_file, clean_character_name, split_heading_components, Screenplay, ScreenplayScene, CharacterProfile
 from backend.app.script.dop_presets import DOP_MASTER_PRESETS, resolve_dop_specification, suggest_dop_preset_metadata
 from backend.app.script.breakdown_engine import breakdown_scene_to_shots, ShotProposal
 from backend.app.script.storyboard_generator import render_cinematic_storyboard_svg
@@ -3433,6 +3433,36 @@ def get_demo_script():
     return {"filename": os.path.basename(path), "script_text": text}
 
 
+def _stored_scene_as_parsed(row: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    A stored scene in the shape the parser gives, not the shape the table has.
+
+    The store keeps a scene as its number, heading and raw text. The studio,
+    and POST /script/breakdown behind it, want what /script/parse returned:
+    environment, location, action blocks, dialogues, characters. Served as the
+    table row, a reloaded scene rendered with holes and every breakdown
+    request was refused as malformed, so the two buttons looked dead.
+
+    The raw text starts with its heading line, so parsing it alone yields the
+    scene again; the stored number wins over the parser's count, which would
+    restart at 1 for every scene.
+    """
+    body = row.get("body") or ""
+    parsed = parse_fountain_screenplay(body).scenes if body.strip() else []
+    if parsed:
+        scene = parsed[0].model_dump()
+        scene["scene_number"] = row["scene_number"]
+        scene["raw_content"] = body
+        return scene
+    env, loc, tod = split_heading_components(row.get("heading") or "")
+    return ScreenplayScene(
+        scene_number=row["scene_number"],
+        heading=row.get("heading") or f"{env}. {loc} - {tod}",
+        environment=env, location=loc, time_of_day=tod,
+        raw_content=body,
+    ).model_dump()
+
+
 @router.get("/script/{script_id}")
 def get_screenplay(script_id: str):
     """
@@ -3449,7 +3479,7 @@ def get_screenplay(script_id: str):
     stored = spine_writer.get_screenplay(script_id)
     if stored is None:
         raise HTTPException(status_code=404, detail=f"Unknown script '{script_id}'.")
-    scenes = spine_writer.get_screenplay_scenes(script_id)
+    scenes = [_stored_scene_as_parsed(row) for row in spine_writer.get_screenplay_scenes(script_id)]
     characters = spine_writer.get_character_profiles(script_id)
     return {
         "script_id": script_id,
