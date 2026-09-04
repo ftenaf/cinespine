@@ -3406,6 +3406,33 @@ async def generate_shot_breakdown(req: ScriptBreakdownRequest):
     }
 
 
+# The screenplay the Load Demo button loads. One file in the repo, copied into
+# the image with the rest of data/, rather than a string in the frontend
+# bundle: the demo script is demo data, and demo data lives in data/examples
+# beside the paperwork that references its scenes.
+DEMO_SCRIPT_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "..", "..", "data", "examples", "demo_script.fountain",
+)
+
+
+@router.get("/script/demo")
+def get_demo_script():
+    """
+    The demo screenplay's text, for the Script Studio to parse like an upload.
+
+    Declared before /script/{script_id} so the placeholder cannot swallow it.
+    """
+    path = os.path.normpath(DEMO_SCRIPT_PATH)
+    if not os.path.exists(path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"The demo screenplay is not in this build (expected {os.path.basename(path)} under data/examples).",
+        )
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    return {"filename": os.path.basename(path), "script_text": text}
+
+
 @router.get("/script/{script_id}")
 def get_screenplay(script_id: str):
     """

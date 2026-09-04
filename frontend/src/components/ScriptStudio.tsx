@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { fetchScreenplay, pushEvent } from '../api';
+import { fetchDemoScript, fetchScreenplay, pushEvent } from '../api';
 import { Film, Camera, Sparkles, Sliders, RotateCw, Maximize2, FileText, Upload, CheckCircle2, Users, ShieldCheck, Loader2, Aperture, Crosshair, Plus, Pencil, Trash2, Link2, Check, X } from 'lucide-react';
 import { CharacterProfileCard } from './CharacterProfileCard';
 // Every screenplay type now lives in types.ts and is re-exported here, because
@@ -39,48 +39,6 @@ import {
   mergeActivePresets
 } from '../presets';
 
-const DEMO_FOUNTAIN_SCRIPT = `Title: LA CATHÉDRALE
-Author: Francisco
-
-27 INT. GREAT HALL - NAVE - DAY
-
-Colossal gothic arches soar into the gloom. Beams of volumetric sunlight slice through high stained-glass windows, illuminating floating dust motes.
-
-LEAD (30s), haggard and drenched in sweat, sits at the multi-tier pipe organ console. His hands hover over the stops in frantic hesitation.
-
-LEAD
-(whispering to himself)
-If the cadence fails, the sanctuary falls with it.
-
-He strikes a heavy, resounding C-minor chord that reverberates through the stone columns.
-
-From the shadows of the narthex, SUPPORT (30s) emerges, clutching a leather dossier.
-
-SUPPORT
-LEAD! Stop! They've already breached the perimeter gates.
-
-LEAD doesn't look back. His fingers dance across the keys in relentless counterpoint.
-
-LEAD
-Then let them hear what they came to destroy.
-
-49 INT. GREAT HALL - MAIN CONCERT STAGE - DAY
-
-The nave has been cleared for the recital. Rows of empty chairs face the raised stage.
-
-LEAD takes the stage, sits, and begins. Four bars in, his hands falter and the phrase collapses.
-
-SUPPORT
-It doesn't matter. Play it again.
-
-LEAD closes the lid, stands, and walks out through the side aisle without answering.
-
-50 EXT. PLAZA - NIGHT
-
-Rain lashes against ancient cobblestones. Black tactical sedans screech to a halt around the bronze great_hall doors.
-
-COMMANDER VANCE steps out into the downpour, pointing a high-power spotlight at the stained-glass facade.
-`;
 
 /**
  * Tracks an element's rendered width in CSS pixels.
@@ -478,6 +436,24 @@ export const ScriptStudio: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState<number>(0);
 
   // Parse Script Handler
+  /**
+   * The demo script comes from the server (data/examples/demo_script.fountain)
+   * rather than a string in this bundle, so the studio and the demo paperwork
+   * describe the same screenplay and editing one file changes both.
+   */
+  const handleLoadDemo = async () => {
+    setUploadedFileName(null);
+    setIsParsingDemo(true);
+    try {
+      const demo = await fetchDemoScript();
+      setUploadedFileName(demo.filename);
+      await handleParseScript(demo.script_text);
+    } catch (err) {
+      console.error('Failed to load the demo screenplay:', err);
+      setIsParsingDemo(false);
+    }
+  };
+
   const handleParseScript = async (textToParse: string, title?: string) => {
     setIsParsingDemo(true);
     try {
@@ -1314,10 +1290,7 @@ export const ScriptStudio: React.FC = () => {
           </button>
 
           <button
-            onClick={() => {
-              setUploadedFileName(null);
-              handleParseScript(DEMO_FOUNTAIN_SCRIPT);
-            }}
+            onClick={handleLoadDemo}
             disabled={isUploading || isParsingDemo}
             className="px-3.5 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-gray-200 rounded-md border border-slate-700 transition flex items-center gap-1.5 disabled:opacity-50"
           >

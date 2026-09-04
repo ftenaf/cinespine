@@ -589,6 +589,13 @@ export async function fetchDashboard(
 // Script context: the scene behind a slate
 // ==========================================
 
+/** The demo screenplay's text, served from data/examples so it is one file, not a bundled string. */
+export async function fetchDemoScript(): Promise<{ filename: string; script_text: string }> {
+  const res = await fetch(`${API_BASE}/script/demo`);
+  if (!res.ok) throw await apiError(res, 'The demo screenplay is not available');
+  return res.json();
+}
+
 /** The stored screenplay, whole -- what the studio reloads after a refresh. */
 export async function fetchScreenplay(scriptId: string): Promise<any> {
   const res = await fetch(`${API_BASE}/script/${encodeURIComponent(scriptId)}`);
