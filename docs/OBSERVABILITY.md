@@ -490,8 +490,9 @@ The panels are blank in Cloud until two manual steps are done, and blank
 here looks like a quiet production: the `grafana-clickhouse-datasource`
 plugin must be installed on the stack through the browser (the gcx token
 lacks `plugins:install`), then `grafana/cloud/clickhouse-datasource.yaml`
-creates the datasource with uid `clickhouse_ds`, reading the password from
-the shell rather than a file. The header of that file has the commands.
+creates the datasource with uid `clickhouse_ds` as the read-only ClickHouse
+user `grafana_ro` (SELECT on `cinespine.*`, `readonly = 1`), reading the
+password from the shell rather than a file. The header of that file has the commands.
 
 Routing: the root policy still goes to `empty`, which keeps the six hundred
 Asserts and integration rules quiet. Two child routes send `team=cinespine`

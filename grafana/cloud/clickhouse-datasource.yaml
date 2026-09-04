@@ -6,13 +6,16 @@
 # stack (Administration > Plugins and data > Plugins > ClickHouse > Install).
 # The gcx token lacks plugins:install, so that step is done in the browser.
 #
-# Then, with the admin password in the shell and never in this file:
+# Then, with the read-only password in the shell and never in this file:
 #
-#   export $(grep '^CLICKHOUSE_PASSWORD=' .env)
-#   gcx datasources create -f grafana/cloud/clickhouse-datasource.yaml
+#   export $(grep '^CLICKHOUSE_GRAFANA_PASSWORD=' .env)
+#   gcx datasources create -f grafana/cloud/clickhouse-datasource.yaml   # first time
+#   gcx datasources update clickhouse_ds -f grafana/cloud/clickhouse-datasource.yaml
 #
-# A read-only ClickHouse user would be the better identity for a dashboard;
-# `default` is what exists today.
+# `grafana_ro` is a ClickHouse user with SELECT on cinespine.* and the four
+# system tables the plugin browses, readonly = 1, 60 s execution cap. Created
+# 2026-09-04 as `default`; its password lives only in .env (gitignored) and
+# in Grafana's secure store.
 apiVersion: grafana-clickhouse-datasource.datasource.grafana.app/v0alpha1
 kind: DataSource
 metadata:
@@ -26,10 +29,10 @@ spec:
     port: 8443
     protocol: http
     secure: true
-    username: default
+    username: grafana_ro
     defaultDatabase: cinespine
     dialTimeout: "10"
     queryTimeout: "60"
 secure:
   password:
-    fromEnv: CLICKHOUSE_PASSWORD
+    fromEnv: CLICKHOUSE_GRAFANA_PASSWORD
