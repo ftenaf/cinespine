@@ -13,7 +13,7 @@
 #   gcx datasources update clickhouse_ds -f grafana/cloud/clickhouse-datasource.yaml
 #
 # `grafana_ro` is a ClickHouse user with SELECT on cinespine.* and the four
-# system tables the plugin browses, readonly = 1, 60 s execution cap. Created
+# system tables the plugin browses, readonly = 2 (settings allowed, writes denied; readonly = 1 breaks the plugin), 60 s execution cap. Created
 # 2026-09-04 as `default`; its password lives only in .env (gitignored) and
 # in Grafana's secure store.
 apiVersion: grafana-clickhouse-datasource.datasource.grafana.app/v0alpha1
