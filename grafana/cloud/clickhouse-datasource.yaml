@@ -1,0 +1,35 @@
+# The ClickHouse datasource for Grafana Cloud, mirroring the local one in
+# grafana/provisioning/datasources/clickhouse.yml with the same uid, so the
+# dashboards in grafana/dashboards/*.json work unchanged in both places.
+#
+# Prerequisite: the grafana-clickhouse-datasource plugin installed on the
+# stack (Administration > Plugins and data > Plugins > ClickHouse > Install).
+# The gcx token lacks plugins:install, so that step is done in the browser.
+#
+# Then, with the admin password in the shell and never in this file:
+#
+#   export $(grep '^CLICKHOUSE_PASSWORD=' .env)
+#   gcx datasources create -f grafana/cloud/clickhouse-datasource.yaml
+#
+# A read-only ClickHouse user would be the better identity for a dashboard;
+# `default` is what exists today.
+apiVersion: grafana-clickhouse-datasource.datasource.grafana.app/v0alpha1
+kind: DataSource
+metadata:
+  name: clickhouse_ds
+spec:
+  title: ClickHouse
+  type: grafana-clickhouse-datasource
+  access: proxy
+  jsonData:
+    host: t3wb3t0af4.europe-west4.gcp.clickhouse.cloud
+    port: 8443
+    protocol: http
+    secure: true
+    username: default
+    defaultDatabase: cinespine
+    dialTimeout: "10"
+    queryTimeout: "60"
+secure:
+  password:
+    fromEnv: CLICKHOUSE_PASSWORD

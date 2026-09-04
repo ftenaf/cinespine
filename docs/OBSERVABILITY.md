@@ -468,6 +468,31 @@ arrive:
 All four select `deployment_environment!="local"`, so a laptop run that opts
 into remote export cannot page anyone.
 
+### 4e. The analytical spine in Cloud
+
+`grafana/dashboards/clickhouse_production_health.json` asks the ClickHouse
+mirror the same questions `/api/analytics` asks -- discrepancy health,
+department freshness, takes per day, requirement state, post stage,
+acknowledgement latency -- with a `production_id` variable. It is generated
+by `build_clickhouse_production_health.py` beside it; edit the Python, run
+it, commit both. It lives in the Cloud folder **CineSpine** as
+`clickhouse_production_health` and is provisioned locally with the rest.
+
+Every panel there carries the two rules the data model imposes, in its
+description: `audit_discrepancies` is read `FINAL` (a re-emitted snapshot on
+a ReplacingMergeTree, so an unmerged older version counts a settled finding
+as still open -- the demo showed three findings as unresolved when all
+three were settled), and the three event trails are resolved to current
+state with `argMax` (a raw `GROUP BY status` counts every transition ever
+made, not the state now).
+
+The panels are blank in Cloud until two manual steps are done, and blank
+here looks like a quiet production: the `grafana-clickhouse-datasource`
+plugin must be installed on the stack through the browser (the gcx token
+lacks `plugins:install`), then `grafana/cloud/clickhouse-datasource.yaml`
+creates the datasource with uid `clickhouse_ds`, reading the password from
+the shell rather than a file. The header of that file has the commands.
+
 Routing: the root policy still goes to `empty`, which keeps the six hundred
 Asserts and integration rules quiet. Two child routes send `team=cinespine`
 and the Frontend Observability folder to the `cinespine-email` contact point.

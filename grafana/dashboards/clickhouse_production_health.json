@@ -1,0 +1,609 @@
+{
+  "uid": "clickhouse_production_health",
+  "title": "Production Health from ClickHouse (CineSpine)",
+  "description": "The analytical spine read directly. Same questions as /api/analytics, asked of the cinespine database with a production_id filter.",
+  "tags": [
+    "cinespine",
+    "clickhouse"
+  ],
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "timezone": "utc",
+  "templating": {
+    "list": [
+      {
+        "name": "production_id",
+        "label": "Production",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "clickhouse_ds"
+        },
+        "query": {
+          "rawSql": "SELECT DISTINCT production_id FROM cinespine.production_events ORDER BY production_id",
+          "queryType": "sql",
+          "editorType": "sql",
+          "format": 1
+        },
+        "definition": "SELECT DISTINCT production_id FROM cinespine.production_events ORDER BY production_id",
+        "refresh": 1,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {
+          "text": "DEMO_PRODUCTION",
+          "value": "DEMO_PRODUCTION"
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Continuity: what the audit found",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Open CRITICAL",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse_ds"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse_ds"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT countIf(is_resolved = 0) AS open_critical FROM cinespine.audit_discrepancies FINAL WHERE production_id = '${production_id}' AND severity = 'CRITICAL'",
+          "refId": "A"
+        }
+      ],
+      "description": "audit_discrepancies is a re-emitted snapshot on a ReplacingMergeTree. Until a merge runs a settled finding is present twice, so every query here reads FINAL; without it a resolved finding counts as still open.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Open WARNING",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse_ds"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse_ds"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT countIf(is_resolved = 0) AS open_warning FROM cinespine.audit_discrepancies FINAL WHERE production_id = '${production_id}' AND severity = 'WARNING'",
+          "refId": "A"
+        }
+      ],
+      "description": "audit_discrepancies is a re-emitted snapshot on a ReplacingMergeTree. Until a merge runs a settled finding is present twice, so every query here reads FINAL; without it a resolved finding counts as still open.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Resolved",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse_ds"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse_ds"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT countIf(is_resolved = 1) AS resolved FROM cinespine.audit_discrepancies FINAL WHERE production_id = '${production_id}'",
+          "refId": "A"
+        }
+      ],
+      "description": "audit_discrepancies is a re-emitted snapshot on a ReplacingMergeTree. Until a merge runs a settled finding is present twice, so every query here reads FINAL; without it a resolved finding counts as still open.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Findings by type",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse_ds"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse_ds"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT discrepancy_type, severity,\n       countIf(is_resolved = 0) AS open,\n       countIf(is_resolved = 1) AS resolved,\n       arraySort(groupUniqArrayIf(shoot_day, is_resolved = 0)) AS open_days\nFROM cinespine.audit_discrepancies FINAL\nWHERE production_id = '${production_id}'\nGROUP BY discrepancy_type, severity\nORDER BY open DESC, multiIf(severity = 'CRITICAL', 0, severity = 'WARNING', 1, 2), discrepancy_type",
+          "refId": "A"
+        }
+      ],
+      "description": "audit_discrepancies is a re-emitted snapshot on a ReplacingMergeTree. Until a merge runs a settled finding is present twice, so every query here reads FINAL; without it a resolved finding counts as still open."
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Open findings",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse_ds"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse_ds"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT severity, shoot_day, discrepancy_type, entity_type, entity_id, description\nFROM cinespine.audit_discrepancies FINAL\nWHERE production_id = '${production_id}' AND is_resolved = 0\nORDER BY multiIf(severity = 'CRITICAL', 0, severity = 'WARNING', 1, 2), shoot_day, discrepancy_type",
+          "refId": "A"
+        }
+      ],
+      "description": "Everything still unsettled, most severe first. Empty is the answer worth wanting."
+    },
+    {
+      "id": 7,
+      "type": "row",
+      "title": "Ingestion: who has filed",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Documents ingested per department",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse_ds"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 14,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse_ds"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT $__timeInterval(created_at) AS time, department, count() AS events\nFROM cinespine.production_events\nWHERE production_id = '${production_id}' AND $__timeFilter(created_at)\nGROUP BY time, department\nORDER BY time",
+          "refId": "A"
+        }
+      ],
+      "description": "One row per parsed fact from a departmental document. A department going flat while others file is the signal.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Last filing per department",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse_ds"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 14,
+        "w": 10,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse_ds"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT department, max(created_at) AS last_filed,\n       dateDiff('minute', max(created_at), now()) AS minutes_ago,\n       count() AS events, uniqExact(shoot_day) AS days\nFROM cinespine.production_events\nWHERE production_id = '${production_id}'\nGROUP BY department\nORDER BY last_filed DESC",
+          "refId": "A"
+        }
+      ],
+      "description": "Freshness board. A department not on this list has never filed for this production."
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Takes: what was shot",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Takes per shoot day",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse_ds"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse_ds"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT shoot_day,\n       uniqExact(slate, take_id) AS takes, uniqExact(slate) AS slates,\n       countIf(is_starred) AS starred, countIf(is_pickup) AS pickups, countIf(is_vfx) AS vfx,\n       countIf(camera_roll = '') AS rows_without_camera_roll\nFROM cinespine.takes_meta FINAL\nWHERE production_id = '${production_id}'\nGROUP BY shoot_day\nORDER BY shoot_day",
+          "refId": "A"
+        }
+      ],
+      "description": "Grain is one row per take per camera roll, so takes is uniqExact(slate, take_id), not count(). sound_roll is not reconciled yet and is left off on purpose."
+    },
+    {
+      "id": 12,
+      "type": "barchart",
+      "title": "Post-production stage per scene and shot",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse_ds"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 23,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse_ds"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT status, count() AS targets\nFROM (\n    SELECT target_type, target_id,\n           argMax(status, created_at) AS status,\n           argMax(action, created_at) AS action\n    FROM cinespine.editorial_tag_events\n    WHERE production_id = '${production_id}'\n    GROUP BY target_type, target_id\n)\nWHERE action != 'cleared' AND status != ''\nGROUP BY status\nORDER BY targets DESC",
+          "refId": "A"
+        }
+      ],
+      "description": "Append-only trail. Current state is the latest event per entity (argMax), never a raw GROUP BY status. A cleared tag is the absence of a state, not one.",
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "always",
+        "legend": {
+          "showLegend": false
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "row",
+      "title": "Requirements: what is being asked",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "Current state by status and priority",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse_ds"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse_ds"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT status, priority, count() AS requirements\nFROM (\n    SELECT requirement_id,\n           argMax(status, created_at) AS status,\n           argMax(priority, created_at) AS priority,\n           argMax(action, created_at) AS last_action\n    FROM cinespine.requirement_events\n    WHERE production_id = '${production_id}'\n    GROUP BY requirement_id\n)\nWHERE last_action != 'deleted'\nGROUP BY status, priority\nORDER BY multiIf(status = 'blocked', 0, status = 'open', 1, status = 'in_progress', 2, 3),\n         multiIf(priority = 'critical', 0, priority = 'high', 1, 2)",
+          "refId": "A"
+        }
+      ],
+      "description": "Append-only trail. Current state is the latest event per entity (argMax), never a raw GROUP BY status. Deleted requirements are excluded."
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Blocked and open, oldest first",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse_ds"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse_ds"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT requirement_id, status, priority, assigned_to,\n       round(dateDiff('hour', raised_at, now()), 1) AS hours_open\nFROM (\n    SELECT requirement_id,\n           argMax(status, created_at) AS status,\n           argMax(priority, created_at) AS priority,\n           argMax(assigned_to, created_at) AS assigned_to,\n           argMax(action, created_at) AS last_action,\n           min(created_at) AS raised_at\n    FROM cinespine.requirement_events\n    WHERE production_id = '${production_id}'\n    GROUP BY requirement_id\n)\nWHERE last_action != 'deleted' AND status IN ('blocked', 'open')\nORDER BY hours_open DESC\nLIMIT 50",
+          "refId": "A"
+        }
+      ],
+      "description": "Ageing of everything nobody has finished. Hours since first raised."
+    },
+    {
+      "id": 16,
+      "type": "row",
+      "title": "Engagement: who is looking",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Actions per hour by kind",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse_ds"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 14,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse_ds"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT $__timeInterval(created_at) AS time, action, count() AS actions\nFROM cinespine.user_activity\nWHERE production_id = '${production_id}' AND $__timeFilter(created_at)\nGROUP BY time, action\nORDER BY time",
+          "refId": "A"
+        }
+      ],
+      "description": "Views and mutations are separate series on purpose; do not sum them. A count of actions is activity, not effort.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 18,
+      "type": "table",
+      "title": "Time to acknowledge, by actor",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse_ds"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 40,
+        "w": 10,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse_ds"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT actor, count() AS acknowledgements,\n       round(quantile(0.5)(seconds_since_target_created) / 60, 1) AS median_minutes,\n       round(max(seconds_since_target_created) / 60, 1) AS slowest_minutes\nFROM cinespine.user_activity\nWHERE production_id = '${production_id}' AND action = 'acknowledged' AND seconds_since_target_created > 0\nGROUP BY actor\nORDER BY median_minutes DESC",
+          "refId": "A"
+        }
+      ],
+      "description": "How long a requirement had existed when its assignee acknowledged it. Rows with no creation time are excluded rather than counted as instant."
+    }
+  ]
+}
