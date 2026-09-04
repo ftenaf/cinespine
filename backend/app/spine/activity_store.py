@@ -46,14 +46,31 @@ logger = logging.getLogger(__name__)
 
 # What somebody did. Deliberately short: a vocabulary that grows on every call
 # site becomes a list nobody can group by.
-ACTIONS = ("viewed", "acknowledged")
+#
+# The first two are what a person tells us about their attention; the rest are
+# what the API saw them change. Kept apart in every query: a view is weak
+# evidence, a mutation is a fact, and summing them makes a number that means
+# neither.
+VIEW_ACTIONS = ("viewed", "acknowledged")
+MUTATION_ACTIONS = (
+    "created", "updated", "resolved", "reopened", "deleted",
+    "tagged", "uploaded", "linked", "unlinked", "ran_agent",
+)
+ACTIONS = VIEW_ACTIONS + MUTATION_ACTIONS
 
 # What they did it to. Mirrors the requirement target levels, plus the two
-# surfaces that carry a day's work.
+# surfaces that carry a day's work, plus what the mutation routes touch.
 TARGET_TYPES = (
     "requirement", "discrepancy", "notification",
     "shoot_day", "scene", "shot", "take", "document", "production",
+    "crew", "script", "breakdown", "tag", "agent",
 )
+
+# When a route has no field naming who acted, the actor is a default and the
+# row says so, so a per-person query can leave those rows out rather than
+# credit the director with everything the API could not attribute.
+ACTOR_SOURCE_KEY = "actor_source"
+ACTOR_SOURCE_DEFAULT = "default"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS user_activity (

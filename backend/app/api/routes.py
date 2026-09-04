@@ -254,6 +254,62 @@ def _require_active_production(production_id: str) -> Dict[str, Any]:
     return production
 
 
+def _record(
+    actor: Optional[str],
+    action: str,
+    target_type: str,
+    target_id: str,
+    production_id: str,
+    shoot_day: str = "",
+    department: str = "",
+    target_label: str = "",
+    context: Optional[Dict[str, Any]] = None,
+    defaulted: bool = False,
+) -> None:
+    """
+    One row in user_activity for something the API just changed.
+
+    Every mutation route calls this after its write succeeded, so the activity
+    ledger can answer "who did what today" and not only "who owns what".
+    Never raises: the write it describes has already happened, and a ledger
+    that fails the save it is recording would be worse than no ledger. Context
+    goes through the same content filter as product analytics, so a note or a
+    filename cannot end up in context_json by way of a new call site.
+
+    `defaulted` marks rows whose actor came from a fallback rather than a
+    field: the row is kept, because the change happened, but tagged so a
+    per-person count can leave it out.
+    """
+    handle = (actor or "").strip() or "@director"
+    if not handle.startswith("@"):
+        handle = f"@{handle}"
+    safe = analytics.safe_properties(context)
+    if defaulted:
+        safe[activity_store.ACTOR_SOURCE_KEY] = activity_store.ACTOR_SOURCE_DEFAULT
+    try:
+        spine_writer.record_activity(
+            production_id=production_id or "",
+            actor=handle,
+            action=action,
+            target_type=target_type,
+            target_id=str(target_id),
+            shoot_day=str(shoot_day or ""),
+            department=department or "",
+            target_label=target_label or "",
+            context=safe,
+        )
+    except activity_store.UnknownActivityValue as exc:
+        logger.warning("activity not recorded for %s %s: %s", action, target_type, exc)
+    except Exception as exc:  # noqa: BLE001 - see docstring
+        logger.warning("activity not recorded for %s %s: %s", action, target_type, exc)
+
+
+def _script_production(script_id: str) -> str:
+    """The production a script-scoped change belongs to, or '' when unlinked."""
+    linked = spine_writer.find_productions_for_script(script_id)
+    return linked[0] if linked else ""
+
+
 def _record_crew_change(
     production: Dict[str, Any],
     action: str,
@@ -263,6 +319,12 @@ def _record_crew_change(
 ) -> None:
     target_handle = handle or (member or {}).get("handle") or ""
     payload = member or {"handle": target_handle}
+    _record(
+        actor, {"upserted": "created", "updated": "updated", "deleted": "deleted"}[action],
+        "crew", target_handle, production["production_id"],
+        department=(member or {}).get("department") or "",
+        defaulted=True,
+    )
     spine_writer.append_event({
         "event_id": str(uuid.uuid4()),
         "production_id": production["production_id"],
@@ -358,7 +420,7 @@ def get_production_vocabulary():
 @router.post("/productions")
 def create_production(req: CreateProductionRequest):
     try:
-        return spine_writer.register_production(
+        created = spine_writer.register_production(
             production_id=req.production_id,
             name=req.name,
             director=req.director,
@@ -367,6 +429,9 @@ def create_production(req: CreateProductionRequest):
         )
     except production_store.UnknownProductionField as e:
         raise HTTPException(status_code=422, detail=str(e))
+    _record(None, "created", "production", created["production_id"],
+            created["production_id"], defaulted=True)
+    return created
 
 
 @router.get("/productions/{production_id}")
@@ -388,6 +453,9 @@ def update_production(production_id: str, req: UpdateProductionRequest):
         raise HTTPException(status_code=422, detail=str(e))
     if not updated:
         raise HTTPException(status_code=404, detail=f"No production {production_id}")
+    _record(None, "updated", "production", updated["production_id"],
+            updated["production_id"], defaulted=True,
+            context={"fields": ",".join(sorted(req.model_dump(exclude_unset=True)))})
     return updated
 
 
@@ -424,7 +492,9 @@ def delete_production(production_id: str):
             ),
         )
 
-    return {"deleted": spine_writer.delete_production(key), "production_id": key}
+    deleted = spine_writer.delete_production(key)
+    _record(None, "deleted", "production", key, key, defaulted=True)
+    return {"deleted": deleted, "production_id": key}
 
 
 # ==========================================
@@ -590,6 +660,8 @@ def delete_document(doc_id: str):
     prod = doc.get("production_id", "DEMO_PRODUCTION") if doc else "DEMO_PRODUCTION"
     s_day = doc.get("shoot_day", "31") if doc else "31"
     fn = doc.get("filename", doc_id) if doc else doc_id
+    _record(None, "deleted", "document", doc_id, prod, shoot_day=s_day,
+            department=(doc or {}).get("department") or "", defaulted=True)
     event_broker.publish_sync(SpineLiveEvent(
         event_type="DOCUMENT_DELETED",
         production_id=prod,
@@ -693,6 +765,11 @@ def upload_document(req: UploadRequest):
         set_attributes(ingest, mirrored_rows=spine_writer.flush_events())
         _project_analytics(envelope.production_id, envelope.shoot_day)
 
+    _upload_actor = req.metadata.get("actor_handle")
+    _record(_upload_actor or "@upload", "uploaded", "document", doc_id,
+            envelope.production_id, shoot_day=envelope.shoot_day,
+            department=department.value, defaulted=not _upload_actor,
+            context={"doc_type": doc_type.value})
     event_broker.publish_sync(SpineLiveEvent(
         event_type="DOCUMENT_INGESTED",
         production_id=envelope.production_id,
@@ -852,6 +929,9 @@ async def upload_document_file(
     spine_writer.flush_events()
     _project_analytics(envelope.production_id, envelope.shoot_day)
 
+    _record("@upload", "uploaded", "document", doc_id, final_prod, shoot_day=final_day,
+            department=classification.department.value, defaulted=True,
+            context={"doc_type": classification.doc_type.value})
     event_broker.publish_sync(SpineLiveEvent(
         event_type="DOCUMENT_INGESTED",
         production_id=final_prod,
@@ -1588,6 +1668,9 @@ def resolve_discrepancy(discrepancy_id: str, req: ResolveDiscrepancyRequest):
         "timestamp": resolution["resolved_at"],
     })
 
+    _record(req.resolved_by, "resolved", "discrepancy", discrepancy_id,
+            req.production_id, shoot_day=req.shoot_day, department="editorial",
+            context={"entity_id": req.entity_id, "resolved_card": req.resolved_card})
     event_broker.publish_sync(SpineLiveEvent(
         event_type="DISCREPANCY_RESOLVED",
         production_id=req.production_id,
@@ -1608,11 +1691,21 @@ def resolve_discrepancy(discrepancy_id: str, req: ResolveDiscrepancyRequest):
 
 
 @router.post("/discrepancies/{discrepancy_id}/unresolve")
-def unresolve_discrepancy(discrepancy_id: str):
+def unresolve_discrepancy(
+    discrepancy_id: str,
+    reopened_by: Optional[str] = None,
+    production_id: str = "",
+    shoot_day: str = "",
+):
     """
     Re-opens an active discrepancy by clearing its resolution record.
     """
     deleted = spine_writer.delete_discrepancy_resolution(discrepancy_id)
+    if deleted:
+        # The resolution row is gone by now and the route never knew the
+        # production; the caller may say, and the row is honest when it did not.
+        _record(reopened_by, "reopened", "discrepancy", discrepancy_id, production_id,
+                shoot_day=shoot_day, department="editorial", defaulted=not reopened_by)
     event_broker.publish_sync(SpineLiveEvent(
         event_type="DISCREPANCY_UNRESOLVED",
         production_id="ALL",
@@ -1892,6 +1985,10 @@ async def run_wrap_rescue_agent(req: RunWrapRescueRequest):
         max_blockers=req.max_blockers,
     )
 
+    _record(result.actor, "ran_agent", "agent", "wrap_rescue", result.production_id,
+            shoot_day=result.shoot_day,
+            context={"blockers": len(result.blockers),
+                     "requirement_actions": len(result.requirement_actions)})
     event_broker.publish_sync(SpineLiveEvent(
         event_type="WRAP_RESCUE_RUN",
         production_id=result.production_id,
@@ -1940,6 +2037,10 @@ def run_assistant_editor_queue(req: RunAssistantQueueRequest):
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
+    _record(result.actor, "ran_agent", "agent", "assistant_editor_queue", result.production_id,
+            shoot_day=result.shoot_day,
+            context={"scenes": len(result.scenes),
+                     "requirement_actions": len(result.requirement_actions)})
     event_broker.publish_sync(SpineLiveEvent(
         event_type="ASSISTANT_QUEUE_RUN",
         production_id=result.production_id,
@@ -2012,6 +2113,12 @@ def create_requirement(req: CreateRequirementRequest):
             "target_label": created["target_label"],
         })
 
+    _record(created["created_by"], "created", "requirement", created["requirement_id"],
+            created["production_id"], shoot_day=created["shoot_day"],
+            target_label=created["target_label"],
+            context={"target_type": created["target_type"], "target_id": created["target_id"],
+                     "priority": created["priority"], "category": created["category"],
+                     "assigned_to": created["assigned_to"]})
     analytics.capture(created["created_by"], "requirement_raised", {
         "production_id": created["production_id"],
         "shoot_day": created["shoot_day"],
@@ -2134,6 +2241,12 @@ def update_requirement(requirement_id: str, updates: UpdateRequirementRequest):
             "target_label": updated["target_label"],
         })
 
+    _record(actor, "updated", "requirement", updated["requirement_id"],
+            updated["production_id"], shoot_day=updated["shoot_day"],
+            target_label=updated["target_label"],
+            context={"fields": ",".join(sorted(update_data)), "status": updated.get("status"),
+                     "assigned_to": updated.get("assigned_to")},
+            defaulted=(updates.updated_by is None))
     now_assigned_to = updated.get("assigned_to")
     if now_assigned_to and now_assigned_to != was_assigned_to:
         notify(
@@ -2227,6 +2340,10 @@ def resolve_requirement(requirement_id: str, body: ResolveRequirementRequest):
             "target_label": resolved["target_label"],
         })
 
+    _record(resolved["resolved_by"], "resolved", "requirement", resolved["requirement_id"],
+            resolved["production_id"], shoot_day=resolved["shoot_day"],
+            target_label=resolved["target_label"],
+            context={"target_type": resolved["target_type"], "priority": resolved["priority"]})
     analytics.capture(resolved["resolved_by"], "requirement_resolved", {
         "production_id": resolved["production_id"],
         "shoot_day": resolved["shoot_day"],
@@ -2260,6 +2377,10 @@ def delete_requirement(requirement_id: str, deleted_by: str = "@user"):
         raise HTTPException(status_code=404, detail="Requirement not found")
 
     spine_writer.delete_requirement(requirement_id, actor=deleted_by)
+    _record(deleted_by, "deleted", "requirement", requirement_id,
+            existing["production_id"], shoot_day=existing["shoot_day"],
+            target_label=existing.get("target_label") or "",
+            defaulted=(deleted_by == "@user"))
     event_broker.publish_sync(SpineLiveEvent(
         event_type="REQUIREMENT_DELETED",
         production_id=existing["production_id"],
@@ -2413,6 +2534,11 @@ def set_tag(request: SetEditorialTagRequest):
     except tag_store.UnknownTagValue as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    _record(tag.get("updated_by"), "tagged", "tag", f"{tag['target_type']}:{tag['target_id']}",
+            tag["production_id"], department="editorial",
+            context={"target_type": tag["target_type"], "target_id": tag["target_id"],
+                     "status": tag.get("status")},
+            defaulted=not tag.get("updated_by"))
     # Editorial progress: how a production moves through the stages, and who
     # moves it. The note somebody typed on the tag is not sent.
     analytics.capture(tag.get("updated_by"), "editorial_tag_set", {
@@ -2451,6 +2577,9 @@ def clear_tag(
         raise HTTPException(status_code=400, detail=str(exc))
     if not cleared:
         raise HTTPException(status_code=404, detail="No tag on that target")
+    _record(cleared_by, "deleted", "tag", f"{target_type}:{target_id}", production_id,
+            department="editorial", context={"target_type": target_type, "target_id": target_id},
+            defaulted=not cleared_by)
 
     # Clearing is as much a change as setting. Publishing only the set left the
     # other editors' boards showing a tag that had been taken off.
@@ -2490,6 +2619,10 @@ def mark_notification_read(notification_id: str):
     if not existing or not spine_writer.mark_notification_read(notification_id):
         raise HTTPException(status_code=404, detail="Notification not found")
 
+    _record(existing["recipient_handle"], "acknowledged", "notification", notification_id,
+            existing["production_id"],
+            context={"notification_type": existing["notification_type"],
+                     "target_type": existing["target_type"], "target_id": existing["target_id"]})
     # How long an alert sat before anybody opened it. handoffs.md: "No
     # acknowledgement is recorded anywhere." This is that record.
     analytics.capture(existing["recipient_handle"], "alert_acknowledged", {
@@ -3055,12 +3188,19 @@ def link_script(req: LinkScriptRequest):
     """
     if not spine_writer.get_screenplay(req.script_id):
         raise HTTPException(status_code=404, detail=f"No screenplay stored under {req.script_id}")
-    return spine_writer.link_production_script(req.production_id, req.script_id)
+    link = spine_writer.link_production_script(req.production_id, req.script_id)
+    _record(None, "linked", "script", req.script_id, req.production_id, defaulted=True)
+    return link
 
 
 @router.delete("/script/link")
 def unlink_script(production_id: str):
-    return {"unlinked": spine_writer.unlink_production_script(production_id)}
+    prior = spine_writer.get_production_script(production_id)
+    unlinked = spine_writer.unlink_production_script(production_id)
+    if unlinked:
+        _record(None, "unlinked", "script", (prior or {}).get("script_id") or "",
+                production_id, defaulted=True)
+    return {"unlinked": unlinked}
 
 
 # How many of the script supervisor's notes on one shot are worth reading
@@ -3310,14 +3450,23 @@ def save_scene_breakdown(script_id: str, scene_number: str, req: SaveBreakdownRe
     prompt, or a re-rendered frame.
     """
     try:
-        return spine_writer.save_scene_breakdown(script_id, scene_number, req.shots)
+        saved = spine_writer.save_scene_breakdown(script_id, scene_number, req.shots)
     except breakdown_store.UnknownBreakdownValue as e:
         raise HTTPException(status_code=422, detail=str(e))
+    _record(None, "updated", "breakdown", f"{script_id}:{scene_number}",
+            _script_production(script_id), defaulted=True,
+            context={"script_id": script_id, "scene_number": scene_number, "shots": len(req.shots)})
+    return saved
 
 
 @router.delete("/script/{script_id}/breakdowns/{scene_number}")
 def delete_scene_breakdown(script_id: str, scene_number: str):
-    return {"deleted": spine_writer.delete_scene_breakdown(script_id, scene_number)}
+    deleted = spine_writer.delete_scene_breakdown(script_id, scene_number)
+    if deleted:
+        _record(None, "deleted", "breakdown", f"{script_id}:{scene_number}",
+                _script_production(script_id), defaulted=True,
+                context={"script_id": script_id, "scene_number": scene_number})
+    return {"deleted": deleted}
 
 
 @router.post("/script/generate-storyboard")
