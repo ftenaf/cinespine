@@ -111,7 +111,7 @@ Local Prometheus proves the query; only Grafana Cloud proves the deployment.
 
 ```bash
 /e/dev/tools/gcx.exe metrics query 'count by (gen_ai_agent_name) (gen_ai_invoke_agent_duration_seconds_count)' --since 30d
-/e/dev/tools/gcx.exe metrics query 'count by (__name__) ({__name__=~"cinespine_.*"})' --since 30d   # expect empty
+/e/dev/tools/gcx.exe metrics query 'count by (__name__) ({__name__=~"cinespine_.*", deployment_environment="cloudrun"})' --since 1h   # six families since 2026-09-04
 ```
 
 `gcx` is on the Windows user PATH but **not** on Git Bash's; call it by full
