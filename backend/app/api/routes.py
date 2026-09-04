@@ -3259,6 +3259,39 @@ async def generate_shot_breakdown(req: ScriptBreakdownRequest):
     }
 
 
+@router.get("/script/{script_id}")
+def get_screenplay(script_id: str):
+    """
+    The stored screenplay, whole: title, scenes, and the character profiles
+    with any edits.
+
+    What the Script Studio reloads after a refresh. Until this existed a
+    loaded script lived only in the tab's memory: the backend had stored it
+    at parse time, breakdowns and profiles were restored from it, but nothing
+    could ask for the script itself, so a refresh emptied the studio.
+    Declared after the static /script/link, /context and /presets routes so
+    the placeholder cannot swallow them.
+    """
+    stored = spine_writer.get_screenplay(script_id)
+    if stored is None:
+        raise HTTPException(status_code=404, detail=f"Unknown script '{script_id}'.")
+    scenes = spine_writer.get_screenplay_scenes(script_id)
+    characters = spine_writer.get_character_profiles(script_id)
+    return {
+        "script_id": script_id,
+        "title": stored.get("title") or "Untitled Screenplay",
+        "author": stored.get("author"),
+        "filename": stored.get("filename"),
+        "scenes": scenes,
+        "scenes_count": len(scenes),
+        "characters": characters,
+        "characters_count": len(characters),
+        # Observations from the original parse are not stored; a reload has
+        # nothing to warn about that the first load did not already show.
+        "parse_warnings": [],
+    }
+
+
 @router.get("/script/{script_id}/breakdowns")
 def list_scene_breakdowns(script_id: str):
     """

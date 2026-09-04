@@ -589,6 +589,13 @@ export async function fetchDashboard(
 // Script context: the scene behind a slate
 // ==========================================
 
+/** The stored screenplay, whole -- what the studio reloads after a refresh. */
+export async function fetchScreenplay(scriptId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/script/${encodeURIComponent(scriptId)}`);
+  if (!res.ok) throw await apiError(res, 'Failed to load the screenplay');
+  return res.json();
+}
+
 export async function fetchScriptContext(
   productionId: string,
   targetType: import('./types').TagTargetType,

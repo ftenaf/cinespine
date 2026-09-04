@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { pushEvent } from '../api';
+import { fetchScreenplay, pushEvent } from '../api';
 import { Film, Camera, Sparkles, Sliders, RotateCw, Maximize2, FileText, Upload, CheckCircle2, Users, ShieldCheck, Loader2, Aperture, Crosshair, Plus, Pencil, Trash2, Link2, Check, X } from 'lucide-react';
 import { CharacterProfileCard } from './CharacterProfileCard';
 // Every screenplay type now lives in types.ts and is re-exported here, because
@@ -117,6 +117,9 @@ function useMeasuredWidth<T extends HTMLElement>(): [React.RefCallback<T>, numbe
 
   return [setNode as React.RefCallback<T>, width];
 }
+
+/** Where the studio remembers which screenplay it had open. */
+const STUDIO_SCRIPT_KEY = 'cinespine.studio.scriptId';
 
 export const ScriptStudio: React.FC = () => {
   // Screenplay Editor State
@@ -313,6 +316,43 @@ export const ScriptStudio: React.FC = () => {
         // needs it, and it says so itself when there is nothing to attach to.
       });
   }, []);
+
+  /**
+   * The loaded script survives a refresh.
+   *
+   * The backend stored it at parse time and restores breakdowns and profiles
+   * per script, but the script itself lived only in this tab's memory, so a
+   * reload emptied the studio. The id is remembered here; on mount it is
+   * asked for whole, and forgotten if the server no longer has it.
+   */
+  useEffect(() => {
+    if (typeof localStorage === 'undefined') return;
+    const remembered = localStorage.getItem(STUDIO_SCRIPT_KEY);
+    if (!remembered) return;
+    let live = true;
+    fetchScreenplay(remembered)
+      .then(data => {
+        if (!live) return;
+        if (data.title) setScriptTitle(data.title);
+        setScriptId(data.script_id || remembered);
+        setParseWarnings([]);
+        setParsedScenes(data.scenes || []);
+        setCharacters(data.characters || []);
+        if (data.characters && data.characters.length > 0) {
+          setSelectedCharId(data.characters[0].id);
+        }
+        setSelectedSceneIndex(0);
+      })
+      .catch(() => {
+        if (live) localStorage.removeItem(STUDIO_SCRIPT_KEY);
+      });
+    return () => { live = false; };
+  }, []);
+
+  useEffect(() => {
+    if (typeof localStorage === 'undefined' || !scriptId) return;
+    localStorage.setItem(STUDIO_SCRIPT_KEY, scriptId);
+  }, [scriptId]);
 
 
   const globalDopSettings: DopSettings = {
