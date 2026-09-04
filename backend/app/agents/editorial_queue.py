@@ -200,10 +200,7 @@ def pre_editing_progress(spine_writer: SpineWriter, production_id: str) -> Dict[
     }
 
 
-import os
 from google.adk.agents import LlmAgent
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
 from backend.app.agents.adk_helpers import tool
 
 class AssistantEditorQueueAgent(LlmAgent):
@@ -254,19 +251,10 @@ class AssistantEditorQueueAgent(LlmAgent):
         assignee: Optional[str],
         max_scenes: int,
     ) -> AssistantQueueResult:
-
-        # Try to use ADK Runner if API key is present
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        if api_key:
-            try:
-                # ADK demonstration: Setup runner and session, even if we just fallback immediately after
-                # or we just instantiate it to prove usage for judges
-                session = InMemorySessionService()
-                runner = Runner(agent=self, session_service=session, app_name="agents")
-            except Exception as e:  # noqa: S110
-                pass
-
-        # Deterministic execution
+        # Deterministic on purpose: this plans a batch and writes requirements,
+        # and no model is asked anything. A Runner was built here and never
+        # called, "to prove usage for judges" -- see
+        # references/findings/agent-telemetry-coverage.md.
         actor = _normalize_handle(actor, ASSISTANT_QUEUE_ACTOR)
         production = self.spine_writer.get_production(production_id)
         if not production:

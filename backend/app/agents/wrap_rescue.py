@@ -901,8 +901,6 @@ def rank_blockers(
 
 
 from google.adk.agents import LlmAgent
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
 from backend.app.agents.adk_helpers import tool
 
 class WrapRescueAgent(LlmAgent):
@@ -967,14 +965,12 @@ class WrapRescueAgent(LlmAgent):
         actor: str,
         max_blockers: int,
     ) -> WrapRescueResult:
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        if api_key:
-            try:
-                session = InMemorySessionService()
-                runner = Runner(agent=self, session_service=session, app_name="agents")
-            except Exception:  # noqa: S110
-                pass
-
+        # Deterministic on purpose. This agent ranks blockers and writes
+        # requirements; an LLM deciding the tool order would make every
+        # mutation nondeterministic for no gain. A Runner was built here and
+        # never called, "to prove usage" -- see
+        # references/findings/agent-telemetry-coverage.md. The one ADK agent
+        # that runs is the memo drafter in GeminiEnterpriseMemoRuntime.
         actor = actor if actor.startswith("@") else f"@{actor}"
         steps: List[AgentStep] = []
         tool_calls: List[ToolCallTrace] = []

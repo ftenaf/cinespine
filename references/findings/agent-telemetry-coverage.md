@@ -3,7 +3,7 @@ type: findings
 title: Two of the three agents never run as agents
 description: Why gen_ai_invoke_agent_* carries one agent name, verified against Grafana Cloud on 2026-09-03
 tags: [findings, observability, agents, adk]
-status: open
+status: confirmed
 evidence: gcx metrics query over 30d of Grafana Cloud, plus a local OTLP stack driven through both agent endpoints on 2026-09-03
 ---
 
@@ -88,8 +88,16 @@ system. That system does not reach Grafana Cloud
 ([OBSERVABILITY.md](../../docs/OBSERVABILITY.md) §4b), so this argues for
 closing that bridge rather than adding another unexported metric.
 
-The discarded `Runner` blocks are dead code whose own comment admits it. Worth
-deleting or making real, separately from observability.
+The discarded `Runner` blocks were dead code whose own comment admitted it.
+**Decided 2026-09-04: deleted, not made real.** Both agents rank and write
+requirements; an LLM choosing the tool order would make every mutation
+nondeterministic and the exact-outcome tests meaningless, for a metric that a
+custom `BaseAgent` through a `Runner` would still report as zero tool calls.
+Each run now carries a `cinespine.agent.*` span (OBSERVABILITY.md §3.0) with
+its blockers, actions and failed tool calls, which is the per-run record the
+ADK metrics could not give. The one ADK agent that runs, the memo drafter, is
+the place to add agentic behaviour if it is ever wanted: give it the read-only
+MCP tools, and let a model drive something that cannot write.
 
 ## Also confirmed
 

@@ -11,6 +11,14 @@ Newest first. Each entry names what produced it.
 
 ## 2026-09-04
 
+**The two Runners nobody ran are gone.** `WrapRescueAgent` and
+`AssistantEditorQueueAgent` built an ADK `Runner` "to prove usage for judges"
+and never called it. Deleted rather than made real: both rank and write
+requirements, and an LLM choosing the tool order would trade deterministic,
+tested mutations for a metric a non-LLM agent would still report as zero tool
+calls. The `cinespine.agent.*` spans are the per-run record now. Finding
+`agent-telemetry-coverage.md` is closed with the decision.
+
 **The pipeline was invisible between an HTTP span and a SQLite read.** Every
 span came from an auto-instrumentor; ingest, parsing, reconciliation, the
 ClickHouse mirror and the MCP tool calls -- the product -- left no trace of
