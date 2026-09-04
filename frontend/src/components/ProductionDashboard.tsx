@@ -9,6 +9,7 @@ import {
 } from '../types';
 import { fetchDashboard } from '../api';
 import { collapseFeed } from '../tagFeed';
+import { ActivityCard } from './ActivityCard';
 
 /**
  * Where a production has got to, and what it is waiting on.
@@ -371,8 +372,15 @@ export function ProductionDashboardPanel({ productionId, reloadKey }: {
 
       <PreEditingProgressCard progress={board.pre_editing} />
 
+      {/* What people own beside what they did. The second is read from the
+          analytical spine and says so when there is none, without taking the
+          board down with it. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <CrewWorkloadCard workload={board.crew_workload} />
+        <ActivityCard productionId={productionId} reloadKey={reloadKey} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
         <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
           <div className="flex items-baseline justify-between mb-3">
