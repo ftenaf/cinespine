@@ -203,6 +203,8 @@ An uptime check watches `/api/health/deep` from outside (OBSERVABILITY.md §6).
 Created once with:
 
 ```bash
+# From PowerShell, not Git Bash: bash rewrites --path=/api/... into /C:/Program Files/Git/api/...,
+# and MSYS_NO_PATHCONV=1 breaks the gcloud wrapper itself.
 gcloud monitoring uptime create cinespine-deep-health --project=cinespine --resource-type=uptime-url --resource-labels=host=cinespine-35447568692.europe-west4.run.app,project_id=cinespine --protocol=https --path=/api/health/deep --port=443 --period=5 --timeout=10
 ```
 

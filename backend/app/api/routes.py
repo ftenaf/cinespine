@@ -312,7 +312,7 @@ async def deep_health_check(mcp: bool = False):
 
     report = await health.deep_health(
         spine_writer,
-        mcp_client=HTTPClickHouseMCPClient(timeout=5.0) if mcp else None,
+        mcp_client=HTTPClickHouseMCPClient(timeout=25.0) if mcp else None,  # cold start is ~21s
         version=__version__,
     )
     return JSONResponse(report, status_code=503 if report["status"] == "down" else 200)
