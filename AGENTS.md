@@ -55,7 +55,7 @@ Disagreements between these axes are the primary product of the event spine.
 
 ## Observability
 
-`docs/OBSERVABILITY.md` is the reference. Three things that have each cost a
+`docs/OBSERVABILITY.md` is the reference. Four things that have each cost a
 debugging session, so read them before touching a dashboard or a metric:
 
 - **One exporter, since 2026-09-04.** `gen_ai_*`, `http_*` and `cinespine_*`
@@ -73,9 +73,11 @@ debugging session, so read them before touching a dashboard or a metric:
   and both agent runs carry one, with `cinespine.production_id` and
   `cinespine.shoot_day` on every one. Add a span, not a log line, when a new
   step needs to be found later. stdout is JSON off a laptop.
-- **The agent dimension covers one agent of three.** `WrapRescueAgent` and
-  `AssistantEditorQueueAgent` build an ADK `Runner` and discard it, so they emit
-  no `gen_ai_invoke_agent_*`. See
+- **The agent dimension covers one agent of three, by decision.** `WrapRescueAgent`
+  and `AssistantEditorQueueAgent` are deterministic step loops and never run
+  through ADK, so they emit no `gen_ai_invoke_agent_*`; their
+  `cinespine.agent.*` spans are the per-run record. The `Runner` each once built
+  and discarded is gone. See
   [references/findings/agent-telemetry-coverage.md](references/findings/agent-telemetry-coverage.md).
 
 ## Agent Guidelines & Tools

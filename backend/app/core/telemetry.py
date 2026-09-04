@@ -1,5 +1,6 @@
 """
-Lighthouse Telemetry and Prometheus Metrics Exporter.
+Telemetry: the OTel resource and its guard, the business metrics, the
+pipeline's spans, structured logs, and the exporter setup.
 
 Evidence:
 - references/domain/handoffs.md ('Department sync latency and lost acknowledgements')

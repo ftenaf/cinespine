@@ -1,8 +1,11 @@
 # The check was created in the Grafana UI (that is what initialises Synthetic
-# Monitoring for a stack); this manifest is its definition, applied with:
+# Monitoring for a stack). This manifest is its intended definition and has
+# NOT been applied: the SM API accepts only its own access token and refused
+# writes with "check creation denied" while the stack's publisher token is
+# invalid (OBSERVABILITY.md §6). When writes work:
 #   gcx synthetic-monitoring checks update cinespine-deep-health-88757 -f grafana/synthetic/deep-health.yaml
 #
-# The outside probe of /api/health/deep. Every five minutes from three
+# The outside probe of /api/health/deep. Every five minutes from five
 # European probes, expecting a 2xx: the endpoint answers 503 when SQLite will
 # not take a write, and nothing at all when the service or the platform is
 # down -- which the "backend telemetry silent" alert cannot tell apart from a

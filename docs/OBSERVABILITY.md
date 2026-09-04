@@ -298,9 +298,11 @@ instrumentation without extra wiring.
 
 It would be the data behind "which agent is expensive, and whether it is the
 model or the tool loop", except that **it describes one agent out of three**.
-`WrapRescueAgent` and `AssistantEditorQueueAgent` construct an ADK `Runner` and
-never call it, so ADK never invokes them and records nothing; the only name that
-appears is `wrap_rescue_handoff_agent`, the inline agent that drafts the memo.
+`WrapRescueAgent` and `AssistantEditorQueueAgent` never run through ADK — they
+are deterministic step loops, and the `Runner` each once built and discarded
+was deleted on 2026-09-04 — so ADK records nothing for them; the only name
+that appears is `wrap_rescue_handoff_agent`, the inline agent that drafts the
+memo. Their `cinespine.agent.*` spans (§3.0) are the per-run record instead.
 Confirmed against thirty days of Grafana Cloud, not inferred:
 
 ```bash
@@ -598,8 +600,10 @@ denied`). A Grafana service-account token is not accepted there at all.
 
 ## 7. Verifying it end to end
 
-Backend, from the logs: find any request line and confirm it carries
-`trace_id=` and `trace_sampled=True`.
+Backend, from the logs: find any line written inside a request and confirm
+it is one JSON object with `severity`, `trace_id` and
+`"logging.googleapis.com/trace_sampled": true` (§2). On a laptop the lines are
+text and carry `trace_id=` inline instead.
 
 Dependencies, from the service:
 

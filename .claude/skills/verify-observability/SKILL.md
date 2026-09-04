@@ -1,6 +1,6 @@
 ---
 name: verify-observability
-description: Verify a CineSpine metrics, dashboard or telemetry change against a running stack rather than against configuration. Use when editing grafana/dashboards/*, grafana/prometheus.yml, backend/app/core/telemetry.py, any prometheus_client metric, OTel exporter settings, any business metric in backend/app/core/telemetry.py, or when asked whether a metric "actually reaches Grafana", or to push a dashboard to Grafana Cloud. Covers the local OTLP loop, querying production with gcx, and pushing grafana/dashboards/*.json to Grafana Cloud with gcx.
+description: Verify a CineSpine metrics, dashboard or telemetry change against a running stack rather than against configuration. Use when editing grafana/dashboards/*, grafana/prometheus.yml, backend/app/core/telemetry.py or any business metric in it, OTel exporter settings, or when asked whether a metric "actually reaches Grafana", or to push a dashboard to Grafana Cloud. Covers the local OTLP loop, querying production with gcx, and pushing grafana/dashboards/*.json to Grafana Cloud with gcx.
 ---
 
 # Verifying observability changes
