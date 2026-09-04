@@ -199,6 +199,13 @@ Notes on the flags that are not obvious:
 
 ## 4. After the first deploy
 
+An uptime check watches `/api/health/deep` from outside (OBSERVABILITY.md §6).
+Created once with:
+
+```bash
+gcloud monitoring uptime create cinespine-deep-health --project=cinespine --resource-type=uptime-url --resource-labels=host=cinespine-35447568692.europe-west4.run.app,project_id=cinespine --protocol=https --path=/api/health/deep --port=443 --period=5 --timeout=10
+```
+
 **Add the new origin to Faro.** In Grafana Frontend Observability, add the
 service URL to allowed origins. Until you do, the browser blocks every beacon
 and it looks identical from both ends — the frontend appears not to send and

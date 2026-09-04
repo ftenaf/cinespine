@@ -1,0 +1,32 @@
+# Created with: gcx api /api/plugins/grafana-slo-app/resources/v1/slo -d @<spec as JSON>
+# (gcx resources push slo -p grafana/slo/ updates one that exists; it cannot create.)
+# 2.5s is a bucket boundary of the OTel HTTP duration histogram; the SLO is the
+# share of uploads that landed under it. Parsing, the spine write and the
+# ClickHouse mirror all sit inside this request.
+apiVersion: slo.ext.grafana.app/v1alpha1
+kind: SLO
+metadata:
+  name: cinespine-upload-latency
+spec:
+  destinationDatasource:
+    uid: grafanacloud-prom
+  name: CineSpine upload latency
+  description: >-
+    Share of POST /api/upload requests completed within 2.5 seconds. A document
+    is parsed, written to the spine and mirrored to ClickHouse inside this
+    request, so it is the product's own latency, not the platform's.
+  labels:
+    - key: team
+      value: cinespine
+    - key: service
+      value: cinespine-backend
+  objectives:
+    - value: 0.95
+      window: 28d
+  query:
+    type: freeform
+    freeform:
+      query: >-
+        sum(rate(http_server_request_duration_seconds_bucket{job="cinespine-backend", deployment_environment="cloudrun", http_route="/api/upload", le="2.5"}[$__rate_interval]))
+        /
+        sum(rate(http_server_request_duration_seconds_count{job="cinespine-backend", deployment_environment="cloudrun", http_route="/api/upload"}[$__rate_interval]))

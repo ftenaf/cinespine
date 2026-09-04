@@ -6,7 +6,7 @@
     "list": [
       {
         "name": "price_in",
-        "label": "Input price (USD / 1M tokens)",
+        "label": "Flash input price (USD / 1M tokens)",
         "type": "custom",
         "query": "0.30",
         "current": {
@@ -20,11 +20,11 @@
             "selected": true
           }
         ],
-        "description": "Applied to every model on this dashboard. Fine while the router only reaches for Flash-tier models (llm_router.FLASH_FALLBACK_MODELS); wrong the moment CINESPINE_GEMINI_PRO_MODEL is set and Pro-tier calls land in the same series."
+        "description": "Applied to every model whose name does not contain \"pro\". Gemini Flash and Flash-Lite tiers; check the model legend on the tokens panel."
       },
       {
         "name": "price_out",
-        "label": "Output price (USD / 1M tokens)",
+        "label": "Flash output price (USD / 1M tokens)",
         "type": "custom",
         "query": "2.50",
         "current": {
@@ -39,6 +39,50 @@
           }
         ],
         "description": "Output is priced far above input, which is why the split below matters."
+      },
+      {
+        "type": "custom",
+        "name": "price_in_pro",
+        "label": "Pro input price (USD / 1M tokens)",
+        "description": "Applied to every model whose name contains \"pro\" (gemini-*-pro, gemini-3-pro-image).",
+        "query": "1.25",
+        "current": {
+          "text": "1.25",
+          "value": "1.25"
+        },
+        "options": [
+          {
+            "text": "1.25",
+            "value": "1.25",
+            "selected": true
+          }
+        ],
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "allowCustomValue": true
+      },
+      {
+        "type": "custom",
+        "name": "price_out_pro",
+        "label": "Pro output price (USD / 1M tokens)",
+        "description": "Pro-tier output. Set from the current Google price list; nothing here knows a price.",
+        "query": "10",
+        "current": {
+          "text": "10",
+          "value": "10"
+        },
+        "options": [
+          {
+            "text": "10",
+            "value": "10",
+            "selected": true
+          }
+        ],
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "allowCustomValue": true
       }
     ]
   },
@@ -46,7 +90,7 @@
     {
       "type": "stat",
       "title": "Estimated Spend (selected range)",
-      "description": "An estimate: token counts multiplied by the price variables above. Nothing in the codebase knows a price, and no metric here carries dollars -- Grafana's own AI Observability cost panels read gen_ai_usage_cost_USD_sum, which is emitted by the OpenLIT SDK this project removed. So this number moves when Google reprices and nobody edits the variable. Read it as an order of magnitude.",
+      "description": "An estimate: token counts multiplied by the price variables above, one pair for Flash-tier models and one for anything with \"pro\" in its name. Nothing in the codebase knows a price, and no metric here carries dollars -- Grafana's own AI Observability cost panels read gen_ai_usage_cost_USD_sum, which is emitted by the OpenLIT SDK this project removed. So this number moves when Google reprices and nobody edits the variables. Read it as an order of magnitude.",
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -61,7 +105,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\"}[$__range])) / 1e6 * $price_in\n+\nsum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\"}[$__range])) / 1e6 * $price_out",
+          "expr": "sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\", gen_ai_request_model!~\".*pro.*\"}[$__range])) / 1e6 * $price_in\n+ sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\", gen_ai_request_model!~\".*pro.*\"}[$__range])) / 1e6 * $price_out\n+ sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\", gen_ai_request_model=~\".*pro.*\"}[$__range])) / 1e6 * $price_in_pro\n+ sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\", gen_ai_request_model=~\".*pro.*\"}[$__range])) / 1e6 * $price_out_pro",
           "legendFormat": "Estimated",
           "datasource": {
             "type": "prometheus",
@@ -77,7 +121,7 @@
     {
       "type": "timeseries",
       "title": "Estimated Spend Rate by Model (USD/hour)",
-      "description": "Each side is aggregated to gen_ai_request_model before the addition. Without that the two selectors differ on gen_ai_token_type, the binary match finds no partner on either side, and the panel returns an empty vector -- silently, and indistinguishably from no traffic.\n\n15m windows because the OTel reader exports on a 60s interval; a shorter range than roughly 4 export intervals produces gaps rather than a rate.",
+      "description": "Each side is aggregated to gen_ai_request_model before the addition. Without that the two selectors differ on gen_ai_token_type, the binary match finds no partner on either side, and the panel returns an empty vector -- silently, and indistinguishably from no traffic.\n\nFlash and Pro tiers are priced separately, split on the model name; `or` unions the two halves because no model is in both.\n\n15m windows because the OTel reader exports on a 60s interval; a shorter range than roughly 4 export intervals produces gaps rather than a rate.",
       "gridPos": {
         "h": 6,
         "w": 18,
@@ -92,7 +136,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (gen_ai_request_model) (rate(gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\"}[15m])) * 3600 / 1e6 * $price_in\n+\nsum by (gen_ai_request_model) (rate(gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\"}[15m])) * 3600 / 1e6 * $price_out",
+          "expr": "(sum by (gen_ai_request_model) (rate(gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\", gen_ai_request_model!~\".*pro.*\"}[15m])) * 3600 / 1e6 * $price_in\n + sum by (gen_ai_request_model) (rate(gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\", gen_ai_request_model!~\".*pro.*\"}[15m])) * 3600 / 1e6 * $price_out)\nor\n(sum by (gen_ai_request_model) (rate(gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\", gen_ai_request_model=~\".*pro.*\"}[15m])) * 3600 / 1e6 * $price_in_pro\n + sum by (gen_ai_request_model) (rate(gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\", gen_ai_request_model=~\".*pro.*\"}[15m])) * 3600 / 1e6 * $price_out_pro)",
           "legendFormat": "{{gen_ai_request_model}}",
           "datasource": {
             "type": "prometheus",

@@ -1,0 +1,33 @@
+# Created with: gcx api /api/plugins/grafana-slo-app/resources/v1/slo -d @<spec as JSON>
+# (gcx resources push slo -p grafana/slo/ updates one that exists; it cannot create.)
+# The agent degrades rather than fails when the MCP server is away (it still
+# answers 200 with a "stop_before_mutation" step), so this measures the run
+# completing, not the MCP server being awake. The MCP dimension is on the
+# cinespine.agent.wrap_rescue span.
+apiVersion: slo.ext.grafana.app/v1alpha1
+kind: SLO
+metadata:
+  name: cinespine-wrap-rescue-success
+spec:
+  destinationDatasource:
+    uid: grafanacloud-prom
+  name: CineSpine Wrap Rescue run success
+  description: >-
+    Share of Wrap Rescue agent runs that completed without a 5xx. Runs where
+    ClickHouse MCP was unavailable still complete and count as success here;
+    the span carries that dimension.
+  labels:
+    - key: team
+      value: cinespine
+    - key: service
+      value: cinespine-backend
+  objectives:
+    - value: 0.95
+      window: 28d
+  query:
+    type: freeform
+    freeform:
+      query: >-
+        sum(rate(http_server_request_duration_seconds_count{job="cinespine-backend", deployment_environment="cloudrun", http_route="/api/agents/wrap-rescue/run", http_response_status_code!~"5.."}[$__rate_interval]))
+        /
+        sum(rate(http_server_request_duration_seconds_count{job="cinespine-backend", deployment_environment="cloudrun", http_route="/api/agents/wrap-rescue/run"}[$__rate_interval]))

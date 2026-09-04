@@ -208,6 +208,22 @@ def append_event(event: Dict[str, Any]) -> None:
         conn.commit()
 
 
+def probe_write() -> None:
+    """
+    Proves the spine can take a write right now. Raises if it cannot.
+
+    One row in, one row out, on the same connection and lock every real
+    write uses. It exists because of an afternoon of "database or disk is
+    full" errors that /health, which checked nothing, reported as healthy.
+    """
+    conn = _conn()
+    with _lock:
+        conn.execute("CREATE TABLE IF NOT EXISTS health_probe (probed_at TEXT NOT NULL)")
+        conn.execute("DELETE FROM health_probe")
+        conn.execute("INSERT INTO health_probe (probed_at) VALUES (?)", (datetime.now(timezone.utc).isoformat(),))
+        conn.commit()
+
+
 def append_events(events: List[Dict[str, Any]]) -> int:
     """Records several readings in one transaction."""
     if not events:

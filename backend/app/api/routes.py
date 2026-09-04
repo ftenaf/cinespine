@@ -8,7 +8,7 @@ import hashlib
 from dataclasses import asdict
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Response, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from backend.app.streaming.models import EventEnvelope, AxisType, DepartmentType, DocumentType
 from backend.app.streaming.bus import EventBus, EventHandlerError
@@ -39,6 +39,7 @@ from backend.app.parsers.pdf_parsers import extract_text_from_pdf, extract_thumb
 from backend.app.normalizers.takes import normalize_take
 from backend.app.normalizers.slates import normalize_slate
 from backend.app.script.scene_lookup import build_scene_context, scene_numbers_for_target
+from backend.app import __version__
 from backend.app.core.telemetry import TelemetryExporter, set_attributes, span
 from backend.app.core import analytics
 from backend.app.core import privacy
@@ -294,7 +295,27 @@ def _record_crew_change(
 
 @router.get("/health")
 def health_check():
-    return {"status": "ok", "version": "0.1.0", "service": "cinespine"}
+    """Is the process up. Cloud Run's startup probe; it checks nothing else."""
+    return {"status": "ok", "version": __version__, "service": "cinespine"}
+
+
+@router.get("/health/deep")
+async def deep_health_check(mcp: bool = False):
+    """
+    Can the service do its job: SQLite takes a write, ClickHouse answers,
+    and -- only when asked, because it scales to zero -- the MCP server
+    speaks. 503 when the spine is down, 200 otherwise, with each check
+    named and timed. See backend/app/core/health.py.
+    """
+    from backend.app.agents.wrap_rescue import HTTPClickHouseMCPClient
+    from backend.app.core import health
+
+    report = await health.deep_health(
+        spine_writer,
+        mcp_client=HTTPClickHouseMCPClient(timeout=5.0) if mcp else None,
+        version=__version__,
+    )
+    return JSONResponse(report, status_code=503 if report["status"] == "down" else 200)
 
 
 @router.get("/events/subscribe")

@@ -1,0 +1,30 @@
+# Created with: gcx api /api/plugins/grafana-slo-app/resources/v1/slo -d @<spec as JSON>
+# (gcx resources push slo -p grafana/slo/ updates one that exists; it cannot create.)
+# Reads the stable HTTP conventions the backend emits (OTEL_SEMCONV_STABILITY_OPT_IN=http).
+# Only production counts: deployment_environment=cloudrun.
+apiVersion: slo.ext.grafana.app/v1alpha1
+kind: SLO
+metadata:
+  name: cinespine-backend-availability
+spec:
+  destinationDatasource:
+    uid: grafanacloud-prom
+  name: CineSpine backend availability
+  description: >-
+    Share of API requests on Cloud Run answered without a 5xx. One instance is
+    always warm, so this is the service, not the platform's cold path.
+  labels:
+    - key: team
+      value: cinespine
+    - key: service
+      value: cinespine-backend
+  objectives:
+    - value: 0.995
+      window: 28d
+  query:
+    type: freeform
+    freeform:
+      query: >-
+        sum(rate(http_server_request_duration_seconds_count{job="cinespine-backend", deployment_environment="cloudrun", http_response_status_code!~"5.."}[$__rate_interval]))
+        /
+        sum(rate(http_server_request_duration_seconds_count{job="cinespine-backend", deployment_environment="cloudrun"}[$__rate_interval]))

@@ -11,6 +11,22 @@ Newest first. Each entry names what produced it.
 
 ## 2026-09-04
 
+**A full disk reported healthy.** `/api/health` returned `{"status": "ok"}`
+through an afternoon of "database or disk is full" errors, because it checked
+nothing. `/api/health/deep` now proves the spine takes a write, asks ClickHouse
+for `SELECT 1`, and probes the MCP handshake only on request -- the MCP server
+scales to zero, and a routine probe that asked for it would wake it every
+interval. SQLite down is a 503; the mirror away is degraded and a 200. A Google
+Cloud uptime check watches the deep endpoint from outside, which the "telemetry
+silent" alert cannot do when the exporter dies with the service. Three SLOs in
+`grafana/slo/` read the HTTP conventions: availability, upload latency under
+2.5s, Wrap Rescue run success.
+
+**One price pair priced every model.** The AI cost dashboard applied Flash
+prices to Pro-tier calls, and the model legend already showed
+`gemini-3-pro-image`. Two pairs now, split on whether the model name contains
+"pro", unioned with `or` because no model is in both halves.
+
 **The two Runners nobody ran are gone.** `WrapRescueAgent` and
 `AssistantEditorQueueAgent` built an ADK `Runner` "to prove usage for judges"
 and never called it. Deleted rather than made real: both rank and write

@@ -535,10 +535,68 @@ nothing.
 
 ---
 
-## 6. Verifying it end to end
+## 6. Health, SLOs and the outside probe
+
+### `/api/health` versus `/api/health/deep`
+
+`/api/health` says the process is up. It is what Cloud Run's startup probe
+needs and it checks nothing else — which is how an afternoon of "database or
+disk is full" errors reported healthy.
+
+`/api/health/deep` (`backend/app/core/health.py`) asks whether the service
+can do its job, one dependency at a time, each probed the way the app uses it
+and timed:
+
+| Check | How | If it fails |
+| :--- | :--- | :--- |
+| `sqlite` | a real write on the spine's connection, plus free disk beside the file | **down**, HTTP 503 |
+| `clickhouse` | `SELECT 1` on the writer's client, and whether the mirror is shut for cooldown | **degraded**, HTTP 200 |
+| `mcp` | the MCP `initialize` handshake — only with `?mcp=1` | degraded |
+
+The MCP server scales to zero and takes ~20s to wake, so a routine probe must
+not ask for it; a synthetic check that did would spin it up every interval.
+The response names the deployment (`environment`, `instance`) so a reader of
+the JSON knows which revision answered.
+
+### SLOs
+
+Three, in `grafana/slo/`. Created once through the SLO plugin API (`gcx api
+/api/plugins/grafana-slo-app/resources/v1/slo -d @<spec as JSON>`; `gcx resources
+push slo` updates but cannot create). Queries use `$__rate_interval`, which the
+validator requires, read the stable HTTP conventions and select
+`deployment_environment=cloudrun`:
+
+| SLO | Objective | Measures |
+| :--- | :--- | :--- |
+| backend availability | 99.5% / 28d | requests answered without a 5xx |
+| upload latency | 95% / 28d | `POST /api/upload` under 2.5s, a bucket boundary of the histogram |
+| Wrap Rescue run success | 95% / 28d | agent runs completing without a 5xx; MCP-away runs still complete |
+
+At demo volume the error budgets barely move; the SLOs exist so that when
+traffic is real the alert is "burning budget", not a threshold somebody
+guessed.
+
+### The outside probe
+
+A Google Cloud Monitoring uptime check hits `/api/health/deep` from three
+regions every five minutes and expects a 2xx. It is the only thing that
+notices the service is down when the exporter is down with it, which the
+"backend telemetry silent" alert in §4d cannot distinguish from an outage of
+the pipeline. Grafana Synthetic Monitoring was the first choice and needs
+`gcx cloud login` renewed before it can be configured from here.
+
+---
+
+## 7. Verifying it end to end
 
 Backend, from the logs: find any request line and confirm it carries
 `trace_id=` and `trace_sampled=True`.
+
+Dependencies, from the service:
+
+```bash
+curl -s https://cinespine-35447568692.europe-west4.run.app/api/health/deep | python -m json.tool
+```
 
 Metrics, from Grafana Cloud rather than from the service — nothing serves them
 any more:
