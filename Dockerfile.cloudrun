@@ -79,6 +79,13 @@ RUN uv sync --frozen
 # Where main.py looks: os.path.dirname(__file__)/../../frontend/dist.
 COPY --from=frontend /build/dist ./frontend/dist
 
+# Litestream replicates spine.db to Cloud Storage and restores it on boot, so
+# a revision deploy no longer starts with an empty spine. One static binary;
+# see deploy/litestream.yml for why this and not a Cloud Run volume.
+COPY --from=litestream/litestream:0.3.13 /usr/local/bin/litestream /usr/local/bin/litestream
+COPY deploy/litestream.yml deploy/entrypoint.sh ./deploy/
+RUN chmod +x ./deploy/entrypoint.sh
+
 # Documentation only -- Cloud Run ignores EXPOSE and injects $PORT.
 EXPOSE 8080
 
@@ -86,6 +93,7 @@ EXPOSE 8080
 # every start, and in this image that cost 11.4 seconds compiling bytecode
 # before uvicorn was even reached. Cloud Run charges that to every cold start.
 #
-# `sh -c` rather than exec form so ${PORT} expands. Cloud Run sets it and will
-# not route to a container listening anywhere else.
-CMD ["sh", "-c", "/app/.venv/bin/python -m uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# The entrypoint restores spine.db from the bucket, then runs that interpreter
+# under `litestream replicate`. CINESPINE_LITESTREAM=0 skips both and runs
+# uvicorn bare, for a local run of this image without GCS credentials.
+CMD ["/app/deploy/entrypoint.sh"]

@@ -1,0 +1,23 @@
+# Litestream: continuous replication of spine.db to Cloud Storage, and a
+# restore from it on boot. Read by deploy/entrypoint.sh on Cloud Run only.
+#
+# Cloud Run has no persistent disk. Its two volume types do not fit SQLite:
+# a Cloud Storage FUSE mount has no byte-range writes and no POSIX locks, and
+# Filestore NFS makes WAL mode unsafe and costs a fixed instance. Litestream
+# keeps the database on the instance's local disk, ships every WAL segment to
+# the bucket as it lands, and pulls the latest snapshot back before uvicorn
+# starts. A revision deploy no longer empties the spine.
+#
+# Credentials come from the service account on the instance metadata server;
+# nothing to configure. The bucket is regional to keep the data in-region.
+dbs:
+  - path: ${CINESPINE_DB_PATH}
+    replicas:
+      - type: gcs
+        bucket: cinespine-spine-db
+        path: spine
+        # How long a stale WAL segment stays in the bucket. Point-in-time
+        # restore reaches this far back; older generations cost nothing to keep
+        # but this is a 2 MB database, not an archive.
+        retention: 72h
+        sync-interval: 1s

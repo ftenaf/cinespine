@@ -31,9 +31,23 @@ So this deployment pins to a single instance:
 ```
 
 `max=1` keeps two instances from diverging into two databases. `min=1` keeps the
-instance warm so no user pays the cold start, and stops a scale-to-zero from
-wiping state. **A revision deploy still resets the database** — reseed with
-`GET /api/events/demo`, which is idempotent.
+instance warm so no user pays the cold start.
+
+The file itself survives deploys through **Litestream**: the container runs
+uvicorn under `litestream replicate`, which ships every WAL segment to
+`gs://cinespine-spine-db` within a second of it landing, and the entrypoint
+restores the latest snapshot before uvicorn starts on an instance that has no
+database yet. `deploy/litestream.yml` and `deploy/entrypoint.sh` are the whole
+mechanism; the app does not know it is there.
+
+Why not a Cloud Run volume: there is no persistent disk. A Cloud Storage FUSE
+mount has no byte-range writes and no POSIX locks, which SQLite needs; Filestore
+NFS makes WAL mode unsafe and costs a fixed instance. Litestream keeps SQLite on
+local disk with WAL on and costs cents in storage.
+
+What this makes strict: `max-instances=1` is now a correctness invariant, not a
+convenience. Two instances would both restore the same snapshot, both replicate
+into the same bucket path, and the replica would be garbage. Do not raise it.
 
 ClickHouse is the analytical mirror, not the source: the app degrades to the
 in-memory spine when it is unreachable, so a ClickHouse outage costs analytics
@@ -92,6 +106,22 @@ gcloud projects add-iam-policy-binding cinespine --member="serviceAccount:cinesp
 ```
 
 Add `roles/storage.objectAdmin` only if you keep the GCS document archive on.
+
+### The spine.db replica bucket
+
+Regional, same region as the service, no public access. Litestream writes
+snapshots and WAL segments here and prunes them itself, so no lifecycle rule:
+
+```bash
+gcloud storage buckets create gs://cinespine-spine-db --project=cinespine --location=europe-west4 --uniform-bucket-level-access --public-access-prevention
+```
+
+```bash
+gcloud storage buckets add-iam-policy-binding gs://cinespine-spine-db --member="serviceAccount:cinespine-run@cinespine.iam.gserviceaccount.com" --role="roles/storage.objectAdmin"
+```
+
+Bucket-scoped, not project-wide: the service account gets to write this bucket
+and nothing else in Cloud Storage.
 
 ### Secrets
 
@@ -214,7 +244,9 @@ and it looks identical from both ends — the frontend appears not to send and
 Grafana appears not to receive. See [CLICKHOUSE_MCP.md](CLICKHOUSE_MCP.md) for
 the same class of silent failure on the backend side.
 
-**Seed the demo**, since a fresh revision starts with an empty `spine.db`:
+**Seed the demo** on the very first deploy, when the replica bucket is still
+empty. Every later revision restores the previous one's database, so this is
+idempotent and needed once:
 
 ```bash
 curl -s "$(gcloud run services describe cinespine --region=europe-west4 --project=cinespine --format='value(status.url)')/api/events/demo"
@@ -231,6 +263,38 @@ Expect **3** discrepancies. Then `GET /api/wrap-rescue/demo` and expect **3**
 blockers and **3** requirement actions, with every `run_select_query` in
 `tool_calls` showing `rows > 0`. All calls `ok=true` with `rows=0` everywhere is
 the signature of a broken MCP transport, not a quiet day.
+
+---
+
+## 4a. The database across deploys
+
+**Prove it** after the first Litestream deploy: create something, deploy again,
+ask for it back.
+
+```bash
+gcloud storage ls -l gs://cinespine-spine-db/spine/
+```
+
+shows a `generations/<id>/snapshots/` directory and a growing `wal/` directory.
+Nothing there after a deploy plus one write means the service account cannot
+reach the bucket — check the Cloud Run logs for a `litestream` line saying so,
+because the app itself keeps working on the local file and never notices.
+
+**Read production data locally** without touching the service:
+
+```bash
+litestream restore -o /tmp/spine-prod.db gcs://cinespine-spine-db/spine
+```
+
+**Point-in-time**: `litestream restore -timestamp 2026-09-04T12:00:00Z ...`
+reaches back as far as `retention` in `deploy/litestream.yml` (72h).
+
+**Start over** deliberately: delete `gs://cinespine-spine-db/spine/` and
+deploy. The entrypoint's `-if-replica-exists` makes an empty bucket a fresh
+start rather than an error.
+
+**Run the image without GCS**, locally or anywhere without the service account:
+`CINESPINE_LITESTREAM=0` runs uvicorn bare.
 
 ---
 
