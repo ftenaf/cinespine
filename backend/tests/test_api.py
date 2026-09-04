@@ -97,12 +97,17 @@ def test_api_upload_multipart_file(client):
     assert del_response.json()["status"] == "DELETED"
 
 
-def test_api_metrics_endpoint(client):
+def test_the_scrape_endpoint_is_gone(client):
+    """
+    /api/metrics served prometheus_client objects for something to scrape.
+    Nothing scrapes a Cloud Run service; the business metrics are OTel
+    instruments now and leave through the same exporter as everything else.
+    """
     response = client.get("/api/metrics")
-    assert response.status_code == 200
-    assert b"cinespine_ingested_events_total" in response.content
-    assert b"cinespine_llm_tokens_consumed_total" in response.content
-    assert b"cinespine_sse_active_connections" in response.content
+    # The SPA catch-all answers unknown paths with index.html, so the check is
+    # that nothing resembling an exposition comes back, not the status code.
+    assert "cinespine_" not in response.text
+    assert "text/plain" not in response.headers.get("content-type", "")
 
 
 def test_api_document_raw_pdf_streaming(client, monkeypatch):

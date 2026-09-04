@@ -1,6 +1,9 @@
 apiVersion: 1
 datasources:
   - name: Prometheus
+    # The uid Grafana Cloud gives its Prometheus datasource. The dashboards pin
+    # it, so one JSON renders in both places without an import-time remap.
+    uid: grafanacloud-prom
     type: prometheus
     access: proxy
     url: http://prometheus:9090

@@ -2659,14 +2659,6 @@ def get_activity(production_id: str, target_type: str, target_id: str):
     }
 
 
-@router.get("/metrics")
-def get_prometheus_metrics():
-    return Response(
-        content=TelemetryExporter.get_metrics_payload(),
-        media_type=TelemetryExporter.get_content_type(),
-    )
-
-
 # ---------------------------------------------------------------------------
 # Script Breakdown, DoP Cinematography & Previz Storyboard Endpoints
 # ---------------------------------------------------------------------------

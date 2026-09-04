@@ -9,6 +9,33 @@ tags: [log]
 
 Newest first. Each entry names what produced it.
 
+## 2026-09-04
+
+**The business metrics never reached production, by construction.** The
+`cinespine_*` family was `prometheus_client`, served at `/api/metrics` for a
+scraper; nothing scrapes a Cloud Run service, so for the whole life of the
+deployment the discrepancy gauge, the sync-lag matrix and the ingest counters
+reached nothing while `gen_ai_*` beside them arrived every minute. They are OTel
+instruments on the same meter provider now. Names survive the OTLP translation
+unchanged (`cinespine.ingested_events` + `{event}` -> `_total`, unit `s` ->
+`_seconds`), so the dashboards did not change; the endpoint, the scrape job, the
+library and the two dead `cinespine_llm_*` metrics are gone.
+
+Two things the tests taught: an OTel gauge point is handed out **once per
+collection** and then cleared, so a test reader has to remember what it saw;
+and pytest loads `conftest.py` under its own module name, so importing it by
+path makes a second copy with a second, unattached reader. The helpers live in
+`backend/tests/otel_metrics.py` for that reason.
+
+**RED by endpoint was impossible: the HTTP histogram had no route.** The
+FastAPI instrumentation emits the pre-1.0 conventions unless told otherwise,
+and `http_server_duration_milliseconds` leaves `http.route` off its attributes
+however well the spans are named. `telemetry.py` sets
+`OTEL_SEMCONV_STABILITY_OPT_IN=http` before the instrumentors build their
+metrics; the family is `http_server_request_duration_seconds` with
+`http_route`, `http_request_method` and `http_response_status_code`. The Cloud
+5xx alert reads the new name.
+
 ## 2026-09-03
 
 **A wrong method on any API route was a 500, and the instrumentation was the

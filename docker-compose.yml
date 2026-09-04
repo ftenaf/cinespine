@@ -90,19 +90,15 @@ services:
       - ./grafana/prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
       - "9090:9090"
-    # Two intake paths, because the two metric systems arrive differently.
-    # cinespine_* is prometheus_client, scraped from /api/metrics. gen_ai_* is
-    # the OTel meter provider, which pushes and is never scraped -- so without
-    # the OTLP receiver the local stack sees only half the metrics and the AI
-    # dashboard is dead here while working in Grafana Cloud.
+    # One intake. Every metric family is OTel and pushed, so Prometheus is
+    # here for its OTLP receiver and nothing else; there is no scrape job.
     #
-    # `command` replaces the image's CMD rather than extending it, so the
-    # defaults have to be restated alongside the new flag.
+    # `command` replaces the image's CMD rather than extending it. The image's
+    # CMD is exactly the first two flags, restated here so the receiver flag
+    # can be added.
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      - --web.console.libraries=/usr/share/prometheus/console_libraries
-      - --web.console.templates=/usr/share/prometheus/consoles
       - --web.enable-otlp-receiver
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -5,47 +5,99 @@
     {
       "type": "stat",
       "title": "Active Discrepancies",
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
       "targets": [
         {
           "expr": "sum(cinespine_active_discrepancies)",
-          "legendFormat": "Total"
+          "legendFormat": "Total",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          }
         }
-      ]
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      }
     },
     {
       "type": "timeseries",
       "title": "Active Discrepancies by Kind",
       "description": "Was a lag from wrap, which cannot be computed: the report states wrap as a time of day with no date. This breakdown is what the gauge gained instead, now that it carries production, day, severity and kind.",
-      "gridPos": { "h": 6, "w": 16, "x": 8, "y": 0 },
+      "gridPos": {
+        "h": 6,
+        "w": 16,
+        "x": 8,
+        "y": 0
+      },
       "targets": [
         {
           "expr": "sum by (discrepancy_type) (cinespine_active_discrepancies)",
-          "legendFormat": "{{discrepancy_type}}"
+          "legendFormat": "{{discrepancy_type}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          }
         }
-      ]
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      }
     },
     {
       "type": "timeseries",
       "title": "Active SSE Streaming Connections",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
       "targets": [
         {
           "expr": "cinespine_sse_active_connections",
-          "legendFormat": "{{user_role}}"
+          "legendFormat": "{{user_role}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          }
         }
-      ]
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      }
     },
     {
       "type": "timeseries",
       "title": "Ingested Events",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
       "targets": [
         {
           "expr": "rate(cinespine_ingested_events_total[5m])",
-          "legendFormat": "{{department}} - {{axis}}"
+          "legendFormat": "{{department}} - {{axis}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          }
         }
-      ]
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      }
     }
   ],
   "schemaVersion": 38

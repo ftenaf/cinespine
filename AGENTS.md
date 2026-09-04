@@ -58,12 +58,13 @@ Disagreements between these axes are the primary product of the event spine.
 `docs/OBSERVABILITY.md` is the reference. Three things that have each cost a
 debugging session, so read them before touching a dashboard or a metric:
 
-- **Two metric systems, one exporter.** `gen_ai_*` comes from the OTel meter
-  provider and is **pushed**. `cinespine_*` comes from `prometheus_client` and
-  is **scraped** from `/api/metrics` (not `/metrics`). The OTel exporter does
-  not carry `cinespine_*`, so it is absent from Grafana Cloud — verified empty
-  over 30 days. A panel querying the wrong half returns an empty vector, which
-  renders identically to a healthy, quiet system.
+- **One exporter, since 2026-09-04.** `gen_ai_*`, `http_*` and `cinespine_*`
+  are all OTel instruments, pushed every 60s. Before that `cinespine_*` was
+  `prometheus_client`, scraped from `/api/metrics`, and absent from Grafana
+  Cloud for the whole life of the deployment because nothing scrapes a Cloud
+  Run service. The lesson outlives the split: a panel querying a name nothing
+  emits returns an empty vector, which renders identically to a healthy, quiet
+  system. Check the name exists with `gcx` before trusting a blank.
 - **Verify against a running stack, never against config.** Use the
   `verify-observability` skill in `.claude/skills/`. Every defect in this area
   was a configuration that read correctly.

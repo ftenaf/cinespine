@@ -340,9 +340,9 @@ agents are legible rather than opaque:
   This replaced OpenLIT, which hard-depends on `anthropic`, `openai` and
   `boto3` — three vendor SDKs nothing here calls — and spent ~34s at init
   patching them all. Attaching now costs 0.00s and the image is 39 MB smaller.
-* **Prometheus metrics** at `GET /api/metrics` — discrepancies by day and
-  severity, ingested events by department and axis, parser rejections, live SSE
-  connections.
+* **Business metrics** as OTel instruments (`cinespine_*`) — discrepancies by
+  day and severity, ingested events by department and axis, parser rejections,
+  cache hits, live SSE connections — pushed with the traces, not scraped.
 * **Faro RUM** from the SPA, with the caveat that costs the most time: the
   collector's allowed-origins list must contain **every** origin serving the
   app, and Cloud Run issues two hostnames per service. A rejected preflight is

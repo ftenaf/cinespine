@@ -296,7 +296,7 @@ def _call_gemini(prompt: str) -> str:
     """
     from google import genai
     from backend.app.script.llm_router import get_model_candidates
-    from backend.app.core.telemetry import LLM_TOKENS_CONSUMED, AI_CACHE_HITS, LLM_LATENCY
+    from backend.app.core.telemetry import TelemetryExporter
 
     # Rich narrative descriptions are the 'complex' end of the routing.
     candidates = get_model_candidates(prompt, task_complexity="complex")
@@ -317,21 +317,20 @@ def _call_gemini(prompt: str) -> str:
         cached = get_cached_response(req_hash)
         if cached:
             logger.info("Character inference cache hit for %s (%s)", req_hash, model)
-            AI_CACHE_HITS.labels(model=model, status="hit").inc()
+            TelemetryExporter.record_cache_lookup(model, "hit")
             return cached["text"]
 
         logger.info("Character inference cache miss for %s (%s)", req_hash, model)
-        AI_CACHE_HITS.labels(model=model, status="miss").inc()
+        TelemetryExporter.record_cache_lookup(model, "miss")
 
         response = None
         for attempt in range(TRANSIENT_RETRIES + 1):
             try:
-                with LLM_LATENCY.labels(model=model).time():
-                    response = client.models.generate_content(
-                        model=model,
-                        contents=prompt,
-                        config={"response_mime_type": "application/json", "temperature": 0.4},
-                    )
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config={"response_mime_type": "application/json", "temperature": 0.4},
+                )
                 break
             except Exception as exc:  # noqa: BLE001 - any failure means try again or move on
                 last_error = exc
@@ -352,12 +351,8 @@ def _call_gemini(prompt: str) -> str:
         if text:
             set_cached_response(req_hash, {"text": text})
 
-        usage = getattr(response, "usage_metadata", None)
-        if usage and usage.total_token_count:
-            LLM_TOKENS_CONSUMED.labels(
-                model=model, task_complexity="complex"
-            ).inc(usage.total_token_count)
-
+        # Token usage and latency are recorded by the google-genai
+        # instrumentation as gen_ai_*, split into input and output.
         return text
 
     raise RuntimeError(

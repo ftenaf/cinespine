@@ -13,19 +13,17 @@ from backend.app.core import telemetry
 from backend.app.core.telemetry import TelemetryExporter
 from backend.app.main import app
 from backend.app.reconciliation.models import DiscrepancyType, Severity
+from backend.tests.otel_metrics import metric_points
 
 client = TestClient(app)
 
 
 def series():
-    """The gauge's current samples, keyed by its four labels."""
-    out = {}
-    for metric in telemetry.ACTIVE_DISCREPANCIES.collect():
-        for sample in metric.samples:
-            lb = sample.labels
-            out[(lb["production_id"], lb["shoot_day"],
-                 lb["severity"], lb["discrepancy_type"])] = sample.value
-    return out
+    """The gauge's current points, keyed by its four attributes."""
+    return {
+        (a["production_id"], a["shoot_day"], a["severity"], a["discrepancy_type"]): v
+        for a, v in metric_points("cinespine.active_discrepancies")
+    }
 
 
 def a_discrepancy(severity=Severity.CRITICAL, kind=DiscrepancyType.ROLL_MISMATCH, resolved=False):
@@ -113,7 +111,7 @@ def test_a_kind_nobody_declared_is_ignored_rather_than_invented():
 
 
 # --------------------------------------------------------------------------- #
-# Through the API, and out of /metrics
+# Through the API, and out of the exporter
 # --------------------------------------------------------------------------- #
 
 def test_asking_for_a_day_publishes_its_count():
@@ -128,11 +126,15 @@ def test_asking_for_a_day_publishes_its_count():
     assert written, "querying a day published nothing"
 
 
-def test_the_gauge_appears_in_the_metrics_endpoint():
-    TelemetryExporter.record_discrepancies("GAUGE_SCRAPE", "31", [a_discrepancy()])
-    body = client.get("/api/metrics").text
-    assert "cinespine_active_discrepancies" in body
-    assert 'production_id="GAUGE_SCRAPE"' in body
+def test_the_gauge_leaves_through_the_otel_exporter():
+    """
+    It used to be served at /api/metrics for a scraper that, on Cloud Run,
+    never came. Now it is an OTel gauge and goes out with gen_ai_*.
+    """
+    TelemetryExporter.record_discrepancies("GAUGE_EXPORT", "31", [a_discrepancy()])
+    assert any(a["production_id"] == "GAUGE_EXPORT"
+               for a, _ in metric_points("cinespine.active_discrepancies"))
+    assert "cinespine_" not in client.get("/api/metrics").text
 
 
 # --------------------------------------------------------------------------- #
@@ -153,8 +155,12 @@ def test_the_sync_lag_gauge_is_back_and_measurable():
     assert hasattr(telemetry, "DEPARTMENT_SYNC_LAG")
     assert hasattr(TelemetryExporter, "record_sync_lag")
 
-    labels = telemetry.DEPARTMENT_SYNC_LAG._labelnames
-    assert "measurement" in labels, (
+    TelemetryExporter.record_sync_lag("GAUGE_MEASURED", [
+        {"shoot_day": "31", "department": "camera", "lag_seconds": 120.0, "measurement": "handover"},
+    ])
+    points = [a for a, _ in metric_points("cinespine.department_sync_lag")
+              if a["production_id"] == "GAUGE_MEASURED"]
+    assert points and points[0]["measurement"] == "handover", (
         "without it a backfill and a handover are one number on a dashboard"
     )
 
@@ -168,5 +174,5 @@ def test_it_still_publishes_nothing_it_cannot_measure():
     TelemetryExporter.record_sync_lag("GAUGE_UNMEASURED", [
         {"shoot_day": "31", "department": "camera", "lag_seconds": None, "measurement": None},
     ])
-    body = client.get("/api/metrics").text
-    assert 'production_id="GAUGE_UNMEASURED"' not in body
+    assert not [a for a, _ in metric_points("cinespine.department_sync_lag")
+                if a["production_id"] == "GAUGE_UNMEASURED"]

@@ -3,9 +3,10 @@
 Telemetry reaches Grafana Cloud from three places: the backend exports
 OpenTelemetry traces, logs and metrics, the GenAI instrumentation emits spans
 and metrics for the agents' model calls, and the browser sends RUM through
-Faro. The backend also serves `prometheus_client` metrics at `/api/metrics`,
-and those reach nothing in production — nothing scrapes a Cloud Run service.
-§4 is the split.
+Faro. The business metrics (`cinespine_*`) are OTel instruments on the same
+exporter since 2026-09-04. Before that they were served at `/api/metrics` for a
+scraper that, on Cloud Run, never came; §4 keeps that split on record because
+every defect in this area came from it.
 
 The agents' spans follow the OpenTelemetry **GenAI semantic conventions**, so
 LLM calls, tool calls and token usage arrive in the standard shape and are
@@ -28,7 +29,7 @@ from configuration.
 | Traces | FastAPI, httpx | OTLP HTTP | `OTEL_EXPORTER_OTLP_ENDPOINT` |
 | Logs | Python `logging`, trace-correlated | OTLP HTTP | same endpoint |
 | Metrics (OTel) | GenAI instrumentation, OTel meters | OTLP HTTP | same endpoint |
-| Metrics (business) | `prometheus_client` at `/api/metrics` | scrape | always on |
+| Metrics (business) | OTel meters in `telemetry.py` (`cinespine_*`) | OTLP HTTP | same endpoint |
 | Agent / GenAI spans | `opentelemetry-instrumentation-google-genai` | OTLP HTTP | inherits the OTel config |
 | Browser RUM | `@grafana/faro-web-sdk` | Faro collector | `VITE_GRAFANA_FARO_URL` |
 
@@ -202,9 +203,13 @@ changes. `CINESPINE_DISABLE_GENAI_TELEMETRY=1` turns instrumentation off.
 
 ## 4. Metrics
 
-There are **two metric systems here, and only one of them reaches Grafana.**
-Worth stating plainly, because the names look alike and the distinction is
-invisible from a dashboard that happens to be querying the half that works.
+There **were** two metric systems here, and only one of them reached Grafana.
+Since 2026-09-04 there is one: the business metrics are OTel instruments and go
+out with `gen_ai_*`. The split stays written down because the names looked
+alike and the distinction was invisible from a dashboard that happened to be
+querying the half that worked — and a name nothing emits still renders as an
+empty, healthy-looking panel. Check the name exists with `gcx` before trusting
+a blank.
 
 ### 4a. OpenTelemetry metrics — exported
 
@@ -231,7 +236,18 @@ gen_ai_client_operation_duration_seconds_{sum,count,bucket}
 gen_ai_invoke_agent_duration_seconds_{sum,count,bucket}
 gen_ai_invoke_agent_inference_calls_{sum,count,bucket}
 gen_ai_invoke_agent_tool_calls_{sum,count,bucket}
+http_server_request_duration_seconds_{sum,count,bucket}  # by http_route, method, status
+http_server_active_requests
+http_client_request_duration_seconds_{sum,count,bucket}
+cinespine_*                                               # §4b
 ```
+
+The HTTP families carry `http_route` because `telemetry.py` sets
+`OTEL_SEMCONV_STABILITY_OPT_IN=http` before the FastAPI and httpx
+instrumentations build their metrics. The pre-1.0 conventions they emit by
+default (`http_server_duration_milliseconds`) leave the route off the
+histogram, so RED by endpoint was impossible however correctly the spans were
+named.
 
 The `gen_ai_invoke_agent_*` family is the agent dimension rather than the model
 one — duration, inference calls and tool calls **per agent run**, from ADK's own
@@ -252,28 +268,39 @@ gcx metrics query 'count by (gen_ai_agent_name) (gen_ai_invoke_agent_duration_se
 The instrumentation is correct and is reporting the truth. See
 [references/findings/agent-telemetry-coverage.md](../references/findings/agent-telemetry-coverage.md).
 
-### 4b. Business metrics — served, not exported
+### 4b. Business metrics — exported since 2026-09-04
 
-`GET /api/metrics` serves the Prometheus exposition format. These are
-`prometheus_client` objects, a **separate library from the OTel meter provider
-above**, so the exporter in 4a does not carry them. They are reachable by
-scrape or by hand and are currently absent from Grafana; closing that needs
-either a scrape target or a prometheus→OTel bridge.
-
-Verified live:
+The `cinespine_*` family is defined in `telemetry.py` as instruments on the
+meter provider from 4a, so it leaves on the same 60s export as everything
+else:
 
 ```
-cinespine_active_discrepancies      # by production, shoot_day, severity, type
-cinespine_ingested_events_total     # by department, axis
-cinespine_parser_rejections_total   # by doc_type, error_type
-cinespine_sse_active_connections    # by user_role
+cinespine_active_discrepancies        # gauge, by production, shoot_day, severity, type
+cinespine_department_sync_lag_seconds # gauge, by production, shoot_day, department, measurement
+cinespine_ingested_events_total       # counter, by department, axis
+cinespine_parser_rejections_total     # counter, by doc_type, error_type
+cinespine_ai_cache_hits_total         # counter, by model, status
+cinespine_sse_active_connections      # up-down counter, by user_role
 ```
 
-Also defined, and emitted once the paths that produce them run:
-`cinespine_llm_tokens_consumed_total`, `cinespine_llm_inference_duration_seconds`,
-`cinespine_ai_cache_hits_total`, `cinespine_department_sync_lag_seconds`. The
-first two no longer have a reader anywhere — the dashboard that queried them
-was moved onto `gen_ai_*` below — so they are emitted into nothing.
+The names are the Prometheus spellings the OTLP translation produces: a
+counter named `cinespine.ingested_events` arrives as
+`cinespine_ingested_events_total`, a gauge with unit `s` gains `_seconds`, and a
+unit in braces is an annotation the translation drops. That is why the
+dashboards did not have to change.
+
+Until 2026-09-04 these were `prometheus_client` objects served at
+`GET /api/metrics` — a **separate library from the OTel meter provider**, so
+the exporter did not carry them. Nothing scrapes a Cloud Run service, so for
+the whole life of the deployment they reached nothing, while `gen_ai_*` beside
+them arrived every minute. The endpoint, the scrape job and the library are
+gone.
+
+Gone with them: `cinespine_llm_tokens_consumed_total` and
+`cinespine_llm_inference_duration_seconds`. Hand-placed at two of eight model
+call sites, counting total tokens only, and read by nothing once the AI cost
+dashboard moved onto `gen_ai_client_token_usage`, which the google-genai
+instrumentation records for every call and splits into input and output.
 
 #### The dashboard that queried the wrong half
 
@@ -287,7 +314,7 @@ timeseries panel is indistinguishable from a quiet system.
 and `gen_ai_client_operation_duration_seconds`, which are exported. Two things
 that were not obvious while rewriting it:
 
-- The hand-placed `cinespine_llm_tokens_consumed_total` counter exists at
+- The hand-placed `cinespine_llm_tokens_consumed_total` counter existed at
   **two** call sites (`character_ai.py`, `google_cloud.py`) and records
   `total_token_count` only. `gen_ai_client_token_usage` covers every
   google-genai call and splits input from output. Output is priced far above
@@ -307,9 +334,10 @@ panels, but they query `gen_ai_usage_cost_USD_sum`, which is emitted by the
 Installing that integration against this stack lights up its latency panels and
 leaves the cost and token ones empty.
 
-The cache-hit-ratio panel still reads `cinespine_ai_cache_hits_total`, because
-the GenAI conventions have no equivalent: a cache hit never reaches the SDK, so
-instrumentation that wraps the SDK cannot see it.
+The cache-hit-ratio panel reads `cinespine_ai_cache_hits_total`, because the
+GenAI conventions have no equivalent: a cache hit never reaches the SDK, so
+instrumentation that wraps the SDK cannot see it. It was the one blank panel
+in Cloud until the business metrics moved onto the exporter.
 
 **The latency panels are means, not p95, and that is deliberate.** p95 is the
 better question and the wrong query at this volume. A demo makes a handful of
@@ -345,35 +373,28 @@ declare tools in `super().__init__(tools=[...])` that ADK never dispatches —
 their step loops call those methods directly. So the count is right, and will
 stay 0 until tool use moves inside an agent that is actually invoked.
 
-### 4c. The local stack needs both intakes
+### 4c. The local stack has one intake
 
 `docker compose --profile observability up -d` runs Prometheus and Grafana
-locally, and the same split bites there in two ways that were both silently
-broken until 2026-09-03:
+locally. Prometheus is there for one reason: `--web.enable-otlp-receiver`
+opens `/api/v1/otlp/v1/metrics`, and the backend pushes every metric family to
+it. Point the backend at it with `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`; that
+overrides the metrics signal only, so traces and logs keep going wherever
+`OTEL_EXPORTER_OTLP_ENDPOINT` points. The `verify-observability` skill sets
+**both** to localhost on purpose: a laptop run then pushes nothing into the
+production stack, and the traces and logs 404 against local Prometheus, which
+is harmless.
 
-- **Scrape path.** The config had no `metrics_path`, so it scraped
-  `/metrics`. The app serves `/api/metrics` — the route is on a router with
-  `prefix="/api"` and nothing is mounted at the root. The target reported
-  healthy at the TCP level and 404'd on every scrape, so *no* `cinespine_*`
-  series ever existed locally and every local dashboard was empty.
-- **Push path.** `gen_ai_*` is pushed by the OTel meter provider and is never
-  scraped, so a plain Prometheus never sees it. `--web.enable-otlp-receiver`
-  opens `/api/v1/otlp/v1/metrics` to receive it. Point the backend at it with
-  `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`. That overrides the metrics signal
-  only, so traces and logs keep going wherever `OTEL_EXPORTER_OTLP_ENDPOINT`
-  points. The `verify-observability` skill sets **both** to localhost on
-  purpose: a laptop run then pushes nothing into the production stack, and the
-  traces and logs 404 against local Prometheus, which is harmless.
+There is no scrape job any more. Until 2026-09-04 there was, and it was
+silently broken until the day before: the config had no `metrics_path`, so it
+asked for `/metrics` while the app served `/api/metrics`, the target reported
+healthy at the TCP level and 404'd on every scrape, and no `cinespine_*` series
+ever existed locally. Every local dashboard was empty and looked quiet.
 
-A fresh process exposes **no** `cinespine_*` samples at all — every one of them
-is labelled, and a labelled `prometheus_client` metric has no series until the
-first `.labels(...)` call. Only the `# HELP` lines are there. So a scrape can be
-genuinely working and still look identical to the 404 it replaced until demo
-traffic runs:
-
-```bash
-curl -s http://localhost:8000/api/metrics | grep -c '^cinespine_'   # 0 on a cold process, ~50 after /api/events/demo
-```
+A fresh process still exports **no** `cinespine_*` series: an instrument with
+no recordings has no data points to send. A working pipeline and a broken one
+look identical until demo traffic runs, so drive some before concluding
+anything.
 
 `cinespine_active_discrepancies` is labelled by production **and shoot day** on
 purpose: without the day, the second day observed overwrites the first and the
@@ -395,7 +416,7 @@ arrive:
 | :--- | :--- | :--- |
 | backend telemetry silent | `http_server_active_requests` | absent for 20m — one instance is always warm, so silence is an outage or a dead exporter |
 | backend error logs | Loki, `detected_level="error"` | more than 10 lines in 10m |
-| backend 5xx responses | `http_server_duration_milliseconds_count` | any 5xx in 15m |
+| backend 5xx responses | `http_server_request_duration_seconds_count{http_response_status_code=~"5.."}` | any 5xx in 15m |
 | GenAI call failures | `gen_ai_client_operation_duration_seconds_count{error_type!=""}` | any failure in 15m, by error type and model |
 
 All four select `deployment_environment!="local"`, so a laptop run that opts
@@ -460,10 +481,11 @@ nothing.
 Backend, from the logs: find any request line and confirm it carries
 `trace_id=` and `trace_sampled=True`.
 
-Metrics:
+Metrics, from Grafana Cloud rather than from the service — nothing serves them
+any more:
 
 ```bash
-curl -s https://cinespine-35447568692.europe-west4.run.app/api/metrics | grep -c '^cinespine_'
+gcx metrics query 'count by (__name__) ({__name__=~"cinespine_.*", deployment_environment="cloudrun"})' --since 1h
 ```
 
 Browser, from the app's own console — counts requests in the current document

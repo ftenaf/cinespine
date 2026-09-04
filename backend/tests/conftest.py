@@ -105,3 +105,6 @@ def reset_gcs_availability_cache():
     google_cloud.reset_gcs_availability()
     yield
     google_cloud.reset_gcs_availability()
+
+# Installs the in-memory metrics reader for the whole session; see otel_metrics.py.
+from backend.tests import otel_metrics as _otel_metrics_support  # noqa: E402,F401

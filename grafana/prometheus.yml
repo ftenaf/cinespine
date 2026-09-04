@@ -1,15 +1,16 @@
-# Prometheus configuration
+# Prometheus configuration for the local observability profile.
+#
+# There is nothing to scrape. Every metric family the backend produces --
+# gen_ai_*, http_*, cinespine_* -- is an OTel instrument pushed to the OTLP
+# receiver that docker-compose.yml enables with --web.enable-otlp-receiver.
+# Point the backend at http://localhost:9090/api/v1/otlp/v1/metrics via
+# OTEL_EXPORTER_OTLP_METRICS_ENDPOINT (the verify-observability skill does).
+#
+# A scrape job for /api/metrics lived here until 2026-09-04. It was silently
+# broken until the day before (no metrics_path, so it asked for /metrics and
+# 404'd while reporting healthy), and the endpoint it scraped is gone.
 global:
-  scrape_interval: 5s
+  scrape_interval: 15s
   evaluation_interval: 15s
 
-scrape_configs:
-  # The app serves the exposition format at /api/metrics, not /metrics: the
-  # route is defined on a router with prefix="/api" and nothing is mounted at
-  # the root. Without this line the scrape 404s, and every panel querying
-  # cinespine_* renders as an empty timeseries -- which looks like a quiet
-  # system rather than a missing target.
-  - job_name: 'cinespine_backend'
-    metrics_path: /api/metrics
-    static_configs:
-      - targets: ['host.docker.internal:8000']
+scrape_configs: []

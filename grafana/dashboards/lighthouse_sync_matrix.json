@@ -1,5 +1,7 @@
 {
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -10,68 +12,134 @@
     {
       "title": "Discrepancy Severity Gauge",
       "type": "gauge",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
       "targets": [
         {
           "expr": "sum(cinespine_active_discrepancies{severity='CRITICAL'})",
           "legendFormat": "Critical Discrepancies",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "red", "value": 5 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
             ]
           },
           "max": 20,
           "min": 0
         }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
       }
     },
     {
       "title": "Department Sync Lag",
       "description": "Seconds between wrap and a department’s first filing. Computable since the shoot day gained a calendar date. Split by measurement: a backfill is paperwork imported long after the shoot, whose lag is correct and describes nothing about the night it was filed — do not read the two as one number.",
       "type": "bargauge",
-      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 0
+      },
       "targets": [
         {
           "expr": "sum by (department, measurement) (cinespine_department_sync_lag_seconds)",
           "legendFormat": "{{department}} ({{measurement}})",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "color": { "mode": "palette-classic" }
+          "color": {
+            "mode": "palette-classic"
+          }
         }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
       }
     },
     {
       "title": "Error Flow Breakdown by Department",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
       "targets": [
         {
           "expr": "rate(cinespine_parser_rejections_total[5m])",
           "legendFormat": "{{doc_type}} - {{error_type}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          }
         }
-      ]
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      }
     }
   ],
   "refresh": "5s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["cinespine", "telemetry", "lighthouse"],
-  "time": { "from": "now-1h", "to": "now" },
-  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m"] },
+  "tags": [
+    "cinespine",
+    "telemetry",
+    "lighthouse"
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m"
+    ]
+  },
   "timezone": "browser",
   "title": "CineSpine Lighthouse Observability",
   "version": 1

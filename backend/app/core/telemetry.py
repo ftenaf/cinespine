@@ -9,55 +9,65 @@ import socket
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 from urllib.parse import urlparse
 
-from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from opentelemetry import metrics as otel_metrics
 
 from backend.app import __version__
 from backend.app.reconciliation.models import DiscrepancyType, Severity
 
-# Metrics
-INGESTED_EVENTS = Counter(
-    "cinespine_ingested_events_total",
-    "Total production events ingested onto the spine",
-    ["department", "axis"],
+# The FastAPI and httpx instrumentations read this before they build their
+# metrics. Without it they emit the pre-1.0 HTTP conventions, whose server
+# duration histogram carries no http.route -- so RED by endpoint was impossible
+# in Grafana however correctly the spans were named. "http" selects the stable
+# conventions: http_server_request_duration_seconds with http_route,
+# http_request_method and http_response_status_code.
+os.environ.setdefault("OTEL_SEMCONV_STABILITY_OPT_IN", "http")
+
+# -----------------------------------------------------------------------------
+# Business metrics
+# -----------------------------------------------------------------------------
+#
+# These were prometheus_client objects served at /api/metrics for something to
+# scrape. Nothing scrapes a Cloud Run service, so in production they reached
+# nothing while the OTel exporter beside them carried gen_ai_* out every 60s --
+# two metric systems, one exporter, and every dashboard on the wrong half
+# blank. They are OTel instruments now and leave with everything else.
+#
+# Names keep their Prometheus spelling on arrival: a counter named
+# cinespine.ingested_events lands as cinespine_ingested_events_total, a gauge
+# with unit "s" gains _seconds, and a unit in braces is an annotation the
+# translation drops. The dashboards did not have to change.
+#
+# Instruments are created against the global meter at import, before
+# setup_otlp() installs a provider; the API hands back proxies that bind to
+# whichever provider arrives, so import order does not matter.
+_meter = otel_metrics.get_meter("cinespine")
+
+INGESTED_EVENTS = _meter.create_counter(
+    "cinespine.ingested_events", unit="{event}",
+    description="Production events ingested onto the spine, by department and axis",
 )
 
-LLM_TOKENS_CONSUMED = Counter(
-    "cinespine_llm_tokens_consumed_total",
-    "Total tokens consumed by generative tasks",
-    ["model", "task_complexity"]
+AI_CACHE_HITS = _meter.create_counter(
+    "cinespine.ai_cache_hits", unit="{lookup}",
+    description="LLM inference cache lookups, by model and hit/miss status",
 )
 
-AI_CACHE_HITS = Counter(
-    "cinespine_ai_cache_hits_total",
-    "Cache hit ratio for LLM inference",
-    ["model", "status"]
+SSE_ACTIVE_CONNECTIONS = _meter.create_up_down_counter(
+    "cinespine.sse_active_connections", unit="{connection}",
+    description="Server-Sent Event streaming clients currently connected, by user role",
 )
 
-LLM_LATENCY = Histogram(
-    "cinespine_llm_inference_duration_seconds",
-    "Time spent waiting for Gemini/Imagen API responses",
-    ["model"]
-)
-
-SSE_ACTIVE_CONNECTIONS = Gauge(
-    "cinespine_sse_active_connections",
-    "Number of active Server-Sent Event streaming clients",
-    ["user_role"]
-)
-
-PARSER_REJECTIONS = Counter(
-    "cinespine_parser_rejections_total",
-    "Total document parsing rejections routed to DLQ",
-    ["doc_type", "error_type"],
+PARSER_REJECTIONS = _meter.create_counter(
+    "cinespine.parser_rejections", unit="{document}",
+    description="Document parsing rejections routed to the DLQ, by document and error type",
 )
 
 # Labelled by day as well as by kind. Without production and shoot_day the
 # second day observed would overwrite the first, and the board would show
 # whichever day somebody happened to open last while looking like a total.
-ACTIVE_DISCREPANCIES = Gauge(
-    "cinespine_active_discrepancies",
-    "Unresolved discrepancies on a shoot day, by severity and kind",
-    ["production_id", "shoot_day", "severity", "discrepancy_type"],
+ACTIVE_DISCREPANCIES = _meter.create_gauge(
+    "cinespine.active_discrepancies", unit="{discrepancy}",
+    description="Unresolved discrepancies on a shoot day, by severity and kind",
 )
 
 # Back, and computable now. It was removed on 2026-08-30 because wrap is stated
@@ -71,21 +81,36 @@ ACTIVE_DISCREPANCIES = Gauge(
 # filed, and 780 hours in a matrix a reader expects to be hours would tell them
 # something false in a form that looks true. A dashboard can show handovers and
 # backfills; it must not show them as one number.
-DEPARTMENT_SYNC_LAG = Gauge(
-    "cinespine_department_sync_lag_seconds",
-    "Seconds between wrap and a department's first filing for that shoot day",
-    ["production_id", "shoot_day", "department", "measurement"],
+DEPARTMENT_SYNC_LAG = _meter.create_gauge(
+    "cinespine.department_sync_lag", unit="s",
+    description="Seconds between wrap and a department's first filing for that shoot day",
 )
+
+# Gone: cinespine_llm_tokens_consumed_total and
+# cinespine_llm_inference_duration_seconds. Hand-placed at two of eight model
+# call sites, counting total tokens only, and read by nothing since the AI
+# cost dashboard moved onto gen_ai_client_token_usage, which the google-genai
+# instrumentation records for every call and splits into input and output.
 
 
 class TelemetryExporter:
     @staticmethod
     def record_ingest(department: str, axis: str) -> None:
-        INGESTED_EVENTS.labels(department=department, axis=axis).inc()
+        INGESTED_EVENTS.add(1, {"department": department, "axis": axis})
 
     @staticmethod
     def record_rejection(doc_type: str, error_type: str) -> None:
-        PARSER_REJECTIONS.labels(doc_type=doc_type, error_type=error_type).inc()
+        PARSER_REJECTIONS.add(1, {"doc_type": doc_type, "error_type": error_type})
+
+    @staticmethod
+    def record_cache_lookup(model: str, status: str) -> None:
+        """One inference cache lookup; status is "hit" or "miss"."""
+        AI_CACHE_HITS.add(1, {"model": model, "status": status})
+
+    @staticmethod
+    def record_sse_connection(user_role: str, delta: int) -> None:
+        """+1 when a stream opens, -1 when it closes."""
+        SSE_ACTIVE_CONNECTIONS.add(delta, {"user_role": user_role})
 
     @staticmethod
     def record_discrepancies(
@@ -116,10 +141,10 @@ class TelemetryExporter:
                 counts[key] += 1
 
         for (severity, kind), count in counts.items():
-            ACTIVE_DISCREPANCIES.labels(
-                production_id=production_id, shoot_day=shoot_day,
-                severity=severity, discrepancy_type=kind,
-            ).set(count)
+            ACTIVE_DISCREPANCIES.set(count, {
+                "production_id": production_id, "shoot_day": shoot_day,
+                "severity": severity, "discrepancy_type": kind,
+            })
 
     @staticmethod
     def record_sync_lag(production_id: str, rows: Iterable[Dict[str, Any]]) -> None:
@@ -135,20 +160,12 @@ class TelemetryExporter:
             measurement = row.get("measurement")
             if seconds is None or not measurement:
                 continue
-            DEPARTMENT_SYNC_LAG.labels(
-                production_id=production_id,
-                shoot_day=str(row.get("shoot_day", "")),
-                department=str(row.get("department", "")),
-                measurement=measurement,
-            ).set(seconds)
-
-    @staticmethod
-    def get_metrics_payload() -> bytes:
-        return generate_latest()
-
-    @staticmethod
-    def get_content_type() -> str:
-        return CONTENT_TYPE_LATEST
+            DEPARTMENT_SYNC_LAG.set(seconds, {
+                "production_id": production_id,
+                "shoot_day": str(row.get("shoot_day", "")),
+                "department": str(row.get("department", "")),
+                "measurement": measurement,
+            })
 
 
 # -----------------------------------------------------------------------------
@@ -372,10 +389,10 @@ def setup_otlp(app_name: str = "cinespine-backend"):
     # `gen_ai.*` or `cinespine_*` returned an empty vector while Tempo held the
     # matching spans.
     #
-    # Push, not scrape. `/api/metrics` still serves the exposition format, but
-    # nothing scrapes a Cloud Run service: it has no stable address to be
-    # scraped at, and a scale-to-zero instance is not there to answer. The
-    # exporter carries them out instead.
+    # Push, not scrape. Nothing scrapes a Cloud Run service: it has no stable
+    # address to be scraped at, and a scale-to-zero instance is not there to
+    # answer. The exporter carries everything out, the business metrics above
+    # included since 2026-09-04.
     #
     # This provider is what the GenAI instrumentation records against, so token
     # counts and call durations become queryable as series rather than only as

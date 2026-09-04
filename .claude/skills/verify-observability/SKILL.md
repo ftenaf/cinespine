@@ -1,6 +1,6 @@
 ---
 name: verify-observability
-description: Verify a CineSpine metrics, dashboard or telemetry change against a running stack rather than against configuration. Use when editing grafana/dashboards/*, grafana/prometheus.yml, backend/app/core/telemetry.py, any prometheus_client metric, OTel exporter settings, or when asked whether a metric "actually reaches Grafana", or to push a dashboard to Grafana Cloud. Covers the local OTLP loop, querying production with gcx, and pushing grafana/dashboards/*.json to Grafana Cloud with gcx.
+description: Verify a CineSpine metrics, dashboard or telemetry change against a running stack rather than against configuration. Use when editing grafana/dashboards/*, grafana/prometheus.yml, backend/app/core/telemetry.py, any prometheus_client metric, OTel exporter settings, any business metric in backend/app/core/telemetry.py, or when asked whether a metric "actually reaches Grafana", or to push a dashboard to Grafana Cloud. Covers the local OTLP loop, querying production with gcx, and pushing grafana/dashboards/*.json to Grafana Cloud with gcx.
 ---
 
 # Verifying observability changes
@@ -10,13 +10,15 @@ scrape target can be `up` and 404 every request; a panel can return an empty
 vector that renders identically to a healthy, quiet system. **Do not report an
 observability change as working on the strength of the diff.**
 
-Read `docs/OBSERVABILITY.md` first. The split it describes — `gen_ai_*` pushed,
-`cinespine_*` scraped — decides which half of this procedure you need.
+Read `docs/OBSERVABILITY.md` first. Every metric family is OTel and pushed
+since 2026-09-04; §4 there records the scrape-versus-push split that used to
+exist, which is where every defect in this area came from.
 
 ## 1. Bring up the stack
 
-Prometheus scrapes `host.docker.internal:8000`, so the **backend runs on the
-host**, not in compose. Only the dependencies go in Docker.
+The backend pushes to Prometheus's OTLP receiver on `localhost:9090`, so the
+**backend runs on the host**, not in compose. Only the dependencies go in
+Docker.
 
 ```bash
 docker compose up -d clickhouse mcp-clickhouse
@@ -61,9 +63,8 @@ taskkill //F //PID $PID
 
 ## 3. Drive real traffic
 
-A cold process exposes **no** `cinespine_*` samples — every metric is labelled,
-and a labelled `prometheus_client` metric has no series until its first
-`.labels()` call. Only `# HELP` lines are there, so a working scrape and a 404
+A cold process exports **no** `cinespine_*` series — an instrument with no
+recordings has no data points to send — so a working pipeline and a broken one
 look identical until something runs.
 
 ```bash
@@ -73,7 +74,6 @@ curl -s http://localhost:8000/api/wrap-rescue/demo          # ADK agent + Gemini
 curl -s -X POST http://localhost:8000/api/script/parse \
      -H 'Content-Type: application/json' \
      -d '{"script_text":"INT. A - NIGHT\n\nMARA\nHello.\n","title":"Probe","production_id":"DEMO_PRODUCTION"}'
-curl -s http://localhost:8000/api/metrics | grep -c '^cinespine_'   # expect ~50, not 0
 ```
 
 ## 4. Query, after waiting for the export
@@ -82,13 +82,9 @@ The metric reader exports on a **60s interval**, so wait ~70s before querying or
 you will conclude a working exporter is broken.
 
 ```bash
-curl -s "http://localhost:9090/api/v1/targets" | python -c "
-import json,sys
-for t in json.load(sys.stdin)['data']['activeTargets']: print(t['scrapeUrl'],'->',t['health'],t.get('lastError',''))"
-
 curl -s "http://localhost:9090/api/v1/label/__name__/values" | python -c "
 import json,sys
-print([x for x in json.load(sys.stdin)['data'] if x.startswith(('gen_ai','cinespine_'))])"
+print([x for x in json.load(sys.stdin)['data'] if x.startswith(('gen_ai','cinespine_','http_server'))])"
 
 curl -s --get http://localhost:9090/api/v1/query --data-urlencode 'query=<the panel expr>' | python -c "
 import json,sys
@@ -105,8 +101,9 @@ render as a blank panel and none of which error:
   returns nothing. Aggregate each side first.
 - **NaN.** `histogram_quantile` over `rate()` of flat bucket counters. Demo
   traffic is far too sparse to move them; use `sum / count` instead.
-- **Empty vector.** Querying `cinespine_*` where only `gen_ai_*` is exported, or
-  the reverse.
+- **Empty vector.** Querying a name nothing emits. The old scrape-only
+  `cinespine_*` and the deleted `cinespine_llm_*` pair are the historical
+  examples; check the name against the label-values query above.
 
 ## 5. Check production with gcx
 

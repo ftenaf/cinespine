@@ -139,14 +139,12 @@ def test_an_unusable_window_falls_back_rather_than_breaking(monkeypatch, bad):
 # --------------------------------------------------------------------------- #
 
 def series():
-    from backend.app.core import telemetry
+    from backend.tests.otel_metrics import metric_points
 
-    out = {}
-    for metric in telemetry.DEPARTMENT_SYNC_LAG.collect():
-        for sample in metric.samples:
-            lb = sample.labels
-            out[(lb["production_id"], lb["shoot_day"], lb["department"], lb["measurement"])] = sample.value
-    return out
+    return {
+        (a["production_id"], a["shoot_day"], a["department"], a["measurement"]): v
+        for a, v in metric_points("cinespine.department_sync_lag")
+    }
 
 
 def test_a_measured_row_reaches_the_gauge():
