@@ -79,7 +79,7 @@ function useMeasuredWidth<T extends HTMLElement>(): [React.RefCallback<T>, numbe
 /** Where the studio remembers which screenplay it had open. */
 const STUDIO_SCRIPT_KEY = 'cinespine.studio.scriptId';
 
-export const ScriptStudio: React.FC = () => {
+export const ScriptStudio: React.FC<{ productionId?: string }> = ({ productionId }) => {
   // Screenplay Editor State
   const [scriptTitle, setScriptTitle] = useState<string>('Demo Production');
   const [parsedScenes, setParsedScenes] = useState<ScreenplayScene[]>([]);
@@ -306,6 +306,35 @@ export const ScriptStudio: React.FC = () => {
       });
     return () => { live = false; };
   }, []);
+
+  useEffect(() => {
+    if (!productionId) return;
+    let live = true;
+    fetch(`/api/script/link?production_id=${encodeURIComponent(productionId)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (!live) return;
+        if (data && data.script_id && data.script_id !== scriptId) {
+          fetchScreenplay(data.script_id)
+            .then(scriptData => {
+              if (!live) return;
+              if (scriptData.title) setScriptTitle(scriptData.title);
+              setScriptId(data.script_id);
+              setParseWarnings([]);
+              setParsedScenes(scriptData.scenes || []);
+              setCharacters(scriptData.characters || []);
+              if (scriptData.characters && scriptData.characters.length > 0) {
+                setSelectedCharId(scriptData.characters[0].id);
+              }
+              setSelectedSceneIndex(0);
+              setShotsMap(scriptData.shots || {});
+            })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [productionId, scriptId]);
 
   useEffect(() => {
     if (typeof localStorage === 'undefined' || !scriptId) return;
@@ -1503,7 +1532,7 @@ export const ScriptStudio: React.FC = () => {
                       </div>
                       <h4 className="text-xs font-bold truncate text-slate-100">{sc.heading}</h4>
                       <p className="text-[11px] text-gray-300 line-clamp-2 mt-1 leading-relaxed">
-                        {sc.action_blocks[0] || 'No action description'}
+                        {sc.action_blocks?.[0] || 'No action description'}
                       </p>
                         {sc.characters && sc.characters.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-2">

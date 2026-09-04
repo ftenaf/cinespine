@@ -1130,7 +1130,7 @@ export default function App() {
       {/* ===================================================================== */}
       {currentPillar === 'studio' && (
         <main className="flex-1 w-full h-[calc(100vh-65px)] overflow-hidden bg-[#090D16]">
-          <ScriptStudio />
+          <ScriptStudio productionId={selectedProductionId} />
         </main>
       )}
 
