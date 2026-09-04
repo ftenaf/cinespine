@@ -334,3 +334,33 @@ def test_the_two_copies_of_the_trail_agree_on_the_order():
     mirrored = dict(zip(columns, rows[0]))
     assert mirrored["event_id"] == stored["event_id"]
     assert mirrored["created_at"].isoformat().startswith(stored["created_at"][:19])
+
+
+
+def test_reopening_clears_the_resolution():
+    """
+    Open again and still "resolved by @editor" is two claims that cannot both
+    be true. The note survives on the resolved event; the row stops making
+    the claim.
+    """
+    req = raise_requirement()
+    rid = req["requirement_id"]
+    client.post(f"/api/requirements/{rid}/resolve", json={
+        "resolution_note": "swapped the roll", "resolved_by": "@editor",
+    })
+    resolved = client.get(f"/api/requirements/{rid}").json()
+    assert resolved["resolved_by"] == "@editor" and resolved["resolved_at"]
+
+    reopened = client.patch(f"/api/requirements/{rid}", json={
+        "status": "in_progress", "updated_by": "@director",
+    }).json()
+    assert reopened["status"] == "in_progress"
+    assert reopened["resolved_by"] is None
+    assert reopened["resolved_at"] is None
+    assert reopened["resolution_note"] is None
+    assert client.get(f"/api/requirements/{rid}").json()["resolved_by"] is None
+
+    entries = trail(rid)
+    assert entries[0]["action"] == "reopened"
+    assert "resolved_by" in entries[0]["changes"]
+    assert [e for e in entries if e["action"] == "resolved"][0]["note"] == "swapped the roll"

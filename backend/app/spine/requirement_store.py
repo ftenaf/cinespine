@@ -380,6 +380,17 @@ def update(
         if not changes:
             return before
 
+        # Re-opening takes the resolution with it. A requirement that is open
+        # again and still says "@editor resolved this: done" is two claims
+        # that cannot both be true, and the board, the crew workload and the
+        # analytics all read those columns as "is this done". The account of
+        # what was done survives on the resolved event, which is where a trail
+        # belongs.
+        if "status" in changes and before.get("status") == "resolved" and changes["status"][1] != "resolved":
+            for field in ("resolution_note", "resolved_by", "resolved_at"):
+                if before.get(field) is not None:
+                    changes[field] = [before.get(field), None]
+
         timestamp = _now()
         after = {**before, **{f: v[1] for f, v in changes.items()}, "updated_at": timestamp}
 
