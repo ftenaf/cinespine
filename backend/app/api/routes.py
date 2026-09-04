@@ -2703,6 +2703,13 @@ def get_production_analytics(production_id: str):
         "unacknowledged_requirements": spine_analytics.unacknowledged_requirements(client, production_id),
         "unreviewed_days": spine_analytics.unreviewed_days(client, production_id),
         "department_attention": spine_analytics.department_attention(client, production_id),
+        # Workload: what people did, from the ledger every mutation route
+        # writes. Views and mutations arrive as separate columns and the
+        # surface must keep them apart; a count of actions is activity, not
+        # effort, and the card says so.
+        "actions_by_actor_and_day": spine_analytics.actions_by_actor_and_day(client, production_id),
+        "actions_by_department_and_hour": spine_analytics.actions_by_department_and_hour(client, production_id),
+        "first_touch_lag": spine_analytics.first_touch_lag(client, production_id),
         "tables": spine_analytics.table_sizes(client),
     }
 

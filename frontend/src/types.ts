@@ -790,6 +790,21 @@ export interface ProductionAnalytics {
     category: string; requirements: number;
     avg_hours_open: number; longest_hours_open: number; ever_blocked: number;
   }>;
+  /* Workload: what people did, from the activity ledger. `mutations` and
+     `views` are separate on purpose and must never be summed. Rows whose actor
+     was a server-side fallback are already excluded from the per-actor
+     query. A count of actions is activity, not effort. */
+  actions_by_actor_and_day?: AnalyticsRows<{
+    actor: string; shoot_day: string; mutations: number; views: number;
+    distinct_targets: number; first_action_at: string; last_action_at: string;
+  }>;
+  actions_by_department_and_hour?: AnalyticsRows<{
+    department: string; hour: number; mutations: number; views: number;
+  }>;
+  first_touch_lag?: AnalyticsRows<{
+    actor: string; requirements: number; touched: number;
+    median_minutes: number | null; p90_minutes: number | null;
+  }>;
   tables?: AnalyticsRows<{ table: string; rows: number }>;
 }
 

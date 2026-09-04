@@ -31,6 +31,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 from backend.app.core import sync_lag
+from backend.app.spine import activity_store
 from backend.app.spine.clickhouse import database
 
 
@@ -424,6 +425,132 @@ def department_attention(client: Any, production_id: str) -> Optional[List[Dict[
         WHERE production_id = {production_id:String}
         GROUP BY department, actor
         ORDER BY acknowledgements DESC, views DESC
+    """, {"production_id": production_id})
+
+
+# --------------------------------------------------------------------------- #
+# Workload: what people did, as opposed to what they own.
+#
+# crew_workload answers "who owns how many open requirements". These answer
+# "who did what, and when", from the activity ledger every mutation route
+# writes. Three rules, applied in the SQL rather than left to the reader:
+#
+#   * Views and mutations are never summed. A view is weak evidence about
+#     attention; a mutation is a fact. Two columns, always.
+#   * Rows whose actor was a fallback (actor_source=default) are left out of
+#     anything grouped by person. The change happened, but nobody can say who
+#     made it, and crediting the director with it would be a fiction.
+#   * A count of actions is activity, not effort. A tag set in two seconds
+#     and a discrepancy resolved after an hour's search are one row each.
+#     The surface says so; the query cannot.
+# --------------------------------------------------------------------------- #
+
+_ATTRIBUTED = (
+    "JSONExtractString(context_json, '" + activity_store.ACTOR_SOURCE_KEY + "') != '"
+    + activity_store.ACTOR_SOURCE_DEFAULT + "'"
+)
+
+
+def _action_sets() -> Dict[str, Any]:
+    return {
+        "mutations": list(activity_store.MUTATION_ACTIONS),
+        "views": list(activity_store.VIEW_ACTIONS),
+    }
+
+
+def actions_by_actor_and_day(client: Any, production_id: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    What each person did on each shoot day.
+
+    Grouped by the shoot day the target belongs to, not the calendar day of
+    the click: paperwork for day 31 filed on the morning of day 32 is day 31's
+    work. Rows with no shoot day (a production rename, a crew change) group
+    under ''.
+    """
+    return _rows(client, """
+        SELECT actor,
+               shoot_day,
+               countIf(action IN {mutations:Array(String)}) AS mutations,
+               countIf(action IN {views:Array(String)}) AS views,
+               uniqExact(target_type, target_id) AS distinct_targets,
+               min(created_at) AS first_action_at,
+               max(created_at) AS last_action_at
+        FROM {db}.user_activity
+        WHERE production_id = {production_id:String}
+          AND """ + _ATTRIBUTED + """
+        GROUP BY actor, shoot_day
+        ORDER BY shoot_day DESC, mutations DESC, views DESC
+    """, {"production_id": production_id, **_action_sets()})
+
+
+def actions_by_department_and_hour(client: Any, production_id: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    When each department does its paperwork, by hour of day (UTC).
+
+    The question behind it: does sound file at wrap or the next morning, and
+    is editorial working the night. Departments, not people, so the defaulted
+    rows stay in: a change with no named actor still happened at that hour.
+    """
+    return _rows(client, """
+        SELECT department,
+               toHour(created_at) AS hour,
+               countIf(action IN {mutations:Array(String)}) AS mutations,
+               countIf(action IN {views:Array(String)}) AS views
+        FROM {db}.user_activity
+        WHERE production_id = {production_id:String}
+        GROUP BY department, hour
+        ORDER BY department, hour
+    """, {"production_id": production_id, **_action_sets()})
+
+
+def first_touch_lag(client: Any, production_id: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    How long a requirement waits for its assignee, per assignee.
+
+    From the ledger alone: the `created` row carries the assignee, and the
+    assignee's first row of any other kind on the same requirement -- a view,
+    an acknowledgement, an update -- is the first touch. Requirements the
+    assignee never touched count in `requirements` and not in `touched`; the
+    gap between the two is the number that matters most.
+
+    Percentiles over the touched ones only. NULL lags are skipped by the
+    aggregate, which is the intended reading: "how long did it take when it
+    happened", beside "how often it did not".
+    """
+    return _rows(client, """
+        WITH raised AS (
+            SELECT target_id AS requirement_id,
+                   JSONExtractString(context_json, 'assigned_to') AS assignee,
+                   min(created_at) AS raised_at
+            FROM {db}.user_activity
+            WHERE production_id = {production_id:String}
+              AND target_type = 'requirement'
+              AND action = 'created'
+              AND assignee != ''
+            GROUP BY requirement_id, assignee
+        ),
+        touched AS (
+            SELECT target_id AS requirement_id,
+                   actor,
+                   min(created_at) AS first_touch_at
+            FROM {db}.user_activity
+            WHERE production_id = {production_id:String}
+              AND target_type = 'requirement'
+              AND action != 'created'
+            GROUP BY requirement_id, actor
+        )
+        SELECT raised.assignee AS actor,
+               count() AS requirements,
+               countIf(touched.first_touch_at IS NOT NULL) AS touched,
+               round(quantile(0.5)(dateDiff('second', raised.raised_at, touched.first_touch_at)) / 60, 1) AS median_minutes,
+               round(quantile(0.9)(dateDiff('second', raised.raised_at, touched.first_touch_at)) / 60, 1) AS p90_minutes
+        FROM raised
+        LEFT JOIN touched
+          ON touched.requirement_id = raised.requirement_id
+         AND touched.actor = raised.assignee
+        GROUP BY actor
+        ORDER BY requirements - touched DESC, p90_minutes DESC
+        SETTINGS join_use_nulls = 1
     """, {"production_id": production_id})
 
 
