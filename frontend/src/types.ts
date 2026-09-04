@@ -786,6 +786,12 @@ export interface ProductionAnalytics {
     slates: number; takes: number; departments: string[];
   }>;
   editorial_state?: AnalyticsRows<{ status: string; targets: number }>;
+  /* The audit as it stands, deduplicated server-side. `open` and `resolved`
+     are the two sides of one ledger; a finding is on exactly one of them. */
+  discrepancy_health?: AnalyticsRows<{
+    discrepancy_type: string; severity: string; open: number; resolved: number;
+    open_days: string[]; example: string;
+  }>;
   requirement_ageing?: AnalyticsRows<{
     category: string; requirements: number;
     avg_hours_open: number; longest_hours_open: number; ever_blocked: number;

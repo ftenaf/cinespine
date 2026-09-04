@@ -296,6 +296,36 @@ export function AnalyticsPanel({ productionId, reloadKey }: {
       </Section>
 
       <Section
+        title="What the audit found"
+        subtitle="Findings by type, as they stand now. Deduplicated at read time, so a finding a later document settled is counted once, as settled."
+      >
+        <Rows
+          rows={data.discrepancy_health}
+          empty="The audit has found nothing to report."
+          render={(row, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-x-3 text-[11px]">
+              <span className={`font-mono w-16 ${
+                row.severity === 'CRITICAL' ? 'text-red-300'
+                : row.severity === 'WARNING' ? 'text-amber-300' : 'text-gray-400'}`}>
+                {row.severity}
+              </span>
+              <span className="text-gray-200">{row.discrepancy_type}</span>
+              {row.open > 0
+                ? <span className="text-gray-300">{row.open} open</span>
+                : <span className="text-gray-500">none open</span>}
+              <span className="text-gray-500">{row.resolved} resolved</span>
+              {row.open_days.length > 0 && (
+                <span className="text-gray-500">
+                  {row.open_days.length === 1 ? `day ${row.open_days[0]}` : `days ${row.open_days.join(', ')}`}
+                </span>
+              )}
+              {row.example && <span className="text-gray-600 truncate max-w-md" title={row.example}>{row.example}</span>}
+            </div>
+          )}
+        />
+      </Section>
+
+      <Section
         title="How long work sits"
         subtitle="Read from the requirement trail rather than the current rows, so something blocked for a week and then resolved still says so."
       >

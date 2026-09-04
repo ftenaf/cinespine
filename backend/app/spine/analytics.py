@@ -164,6 +164,39 @@ def scene_coverage(client: Any, production_id: str) -> Optional[List[Dict[str, A
     """, {"production_id": production_id})
 
 
+def discrepancy_health(client: Any, production_id: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    What the audit found, by type and severity, as it currently stands.
+
+    audit_discrepancies is a snapshot table, not a trail: the writer re-emits
+    every discrepancy each time it recomputes them, with is_resolved updated,
+    and the ReplacingMergeTree keeps the newest version per key -- but only
+    once a merge has run. Until then both versions are present, and a plain
+    count reports a discrepancy as both open and settled at the same time.
+    FINAL collapses that at read time, and on a table this small it costs
+    nothing. The demo today has six rows for three findings; without FINAL
+    every one of them looks unresolved.
+
+    Rows are grouped by type and severity so the panel can say "offloads are
+    the backlog" rather than list findings one by one; the day range is kept
+    so a type that only fires on one day says which.
+    """
+    return _rows(client, """
+        SELECT discrepancy_type,
+               severity,
+               countIf(is_resolved = 0) AS open,
+               countIf(is_resolved = 1) AS resolved,
+               arraySort(groupUniqArrayIf(shoot_day, is_resolved = 0)) AS open_days,
+               anyIf(description, is_resolved = 0) AS example
+        FROM {db}.audit_discrepancies FINAL
+        WHERE production_id = {production_id:String}
+        GROUP BY discrepancy_type, severity
+        ORDER BY open DESC,
+                 multiIf(severity = 'CRITICAL', 0, severity = 'WARNING', 1, 2),
+                 discrepancy_type
+    """, {"production_id": production_id})
+
+
 def editorial_state(client: Any, production_id: str) -> Optional[List[Dict[str, Any]]]:
     """
     Where every scene and shot has got to, derived from the trail alone.

@@ -39,6 +39,7 @@ def test_every_query_answers_none_without_a_client():
     assert analytics.roll_disagreements(None, PROD) is None
     assert analytics.scene_coverage(None, PROD) is None
     assert analytics.editorial_state(None, PROD) is None
+    assert analytics.discrepancy_health(None, PROD) is None
     assert analytics.requirement_ageing(None, PROD) is None
     assert analytics.table_sizes(None) is None
 
@@ -118,6 +119,23 @@ def test_the_editorial_state_is_derived_from_the_trail(live):
     rows = analytics.editorial_state(live, "DEMO_PRODUCTION")
     assert rows is not None
     assert all({"status", "targets"} <= set(r) for r in rows)
+
+
+def test_discrepancy_health_reads_the_snapshot_not_its_history(live):
+    """
+    The snapshot is re-emitted with is_resolved updated and the older version
+    lingers until a merge. A finding must appear on one side of the ledger,
+    never both.
+    """
+    rows = analytics.discrepancy_health(live, "DEMO_PRODUCTION")
+    assert rows is not None
+    assert all({"discrepancy_type", "severity", "open", "resolved", "open_days", "example"} <= set(r) for r in rows)
+    raw = live.query(
+        "SELECT uniqExact(production_id, shoot_day, discrepancy_type, entity_id) "
+        "FROM {db}.audit_discrepancies WHERE production_id = 'DEMO_PRODUCTION'"
+        .replace("{db}", __import__("backend.app.spine.clickhouse", fromlist=["database"]).database())
+    ).result_rows[0][0]
+    assert sum(r["open"] + r["resolved"] for r in rows) == raw
 
 
 def test_requirement_ageing_runs(live):

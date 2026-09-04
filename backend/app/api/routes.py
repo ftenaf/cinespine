@@ -2690,6 +2690,10 @@ def get_production_analytics(production_id: str):
         "roll_disagreements": spine_analytics.roll_disagreements(client, production_id),
         "scene_coverage": spine_analytics.scene_coverage(client, production_id),
         "editorial_state": spine_analytics.editorial_state(client, production_id),
+        # The audit as it stands. Read with FINAL because the table is a
+        # snapshot that gets re-emitted, and an unmerged older version would
+        # count a settled finding as still open.
+        "discrepancy_health": spine_analytics.discrepancy_health(client, production_id),
         "requirement_ageing": spine_analytics.requirement_ageing(client, production_id),
         # The acknowledgement axis. REQ-10 asks for a department sync matrix
         # and it was a gauge that could never fill; these answer the same
