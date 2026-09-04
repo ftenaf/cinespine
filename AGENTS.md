@@ -68,6 +68,11 @@ debugging session, so read them before touching a dashboard or a metric:
 - **Verify against a running stack, never against config.** Use the
   `verify-observability` skill in `.claude/skills/`. Every defect in this area
   was a configuration that read correctly.
+- **The pipeline has its own spans.** `telemetry.span("cinespine.<step>", ...)`
+  is the seam; ingest, parse, reconcile, the mirror insert, MCP tool calls
+  and both agent runs carry one, with `cinespine.production_id` and
+  `cinespine.shoot_day` on every one. Add a span, not a log line, when a new
+  step needs to be found later. stdout is JSON off a laptop.
 - **The agent dimension covers one agent of three.** `WrapRescueAgent` and
   `AssistantEditorQueueAgent` build an ADK `Runner` and discard it, so they emit
   no `gen_ai_invoke_agent_*`. See

@@ -10,6 +10,7 @@ import logging
 from typing import Dict, Any
 from backend.app.streaming.models import EventEnvelope, DocumentType
 from backend.app.streaming.bus import EventBus, EventHandlerError
+from backend.app.core.telemetry import span
 from backend.app.parsers.sound_ale import parse_sound_ale
 from backend.app.parsers.camera_csv import parse_camera_csv
 from backend.app.parsers.silverstack_xml import parse_silverstack_xml
@@ -45,17 +46,43 @@ class IngestionDispatcher:
         self.bus = bus
         self._wire_subscribers()
 
+    @staticmethod
+    def _traced(handler):
+        """
+        Wraps a raw-document handler in a `cinespine.parse` span.
+
+        The span carries what the parser was given -- which document, from
+        which department, for which day -- so a parser that raised, or one
+        that quietly emitted nothing, can be found by those ids in Tempo
+        rather than by reading the upload's log lines in order.
+        """
+        def traced(envelope: EventEnvelope) -> None:
+            with span(
+                "cinespine.parse",
+                **{
+                    "cinespine.handler": handler.__name__,
+                    "cinespine.production_id": envelope.production_id,
+                    "cinespine.shoot_day": envelope.shoot_day,
+                    "cinespine.department": envelope.department.value,
+                    "cinespine.axis": envelope.axis.value,
+                    "cinespine.doc_type": envelope.doc_type.value,
+                },
+            ):
+                return handler(envelope)
+        traced.__name__ = f"traced_{handler.__name__}"
+        return traced
+
     def _wire_subscribers(self) -> None:
-        self.bus.subscribe("production.raw.sound", self.handle_sound_drop)
-        self.bus.subscribe("production.raw.camera", self.handle_camera_drop)
-        self.bus.subscribe("production.raw.dit", self.handle_silverstack_drop)
-        self.bus.subscribe("production.raw.silverstack", self.handle_silverstack_drop)
-        self.bus.subscribe("production.raw.script", self.handle_script_drop)
+        self.bus.subscribe("production.raw.sound", self._traced(self.handle_sound_drop))
+        self.bus.subscribe("production.raw.camera", self._traced(self.handle_camera_drop))
+        self.bus.subscribe("production.raw.dit", self._traced(self.handle_silverstack_drop))
+        self.bus.subscribe("production.raw.silverstack", self._traced(self.handle_silverstack_drop))
+        self.bus.subscribe("production.raw.script", self._traced(self.handle_script_drop))
         # Office had no subscriber at all. Its documents were classified,
         # published to a topic nobody listened on, and produced nothing --
         # while the upload reported INGESTED. The confident nothing, on the
         # axis the whole architecture is named for.
-        self.bus.subscribe("production.raw.office", self.handle_office_drop)
+        self.bus.subscribe("production.raw.office", self._traced(self.handle_office_drop))
 
         # What day of the calendar this shoot day was. Subscribed to every raw
         # topic rather than folded into the parsers, for two reasons: every
@@ -67,7 +94,7 @@ class IngestionDispatcher:
             "production.raw.sound", "production.raw.camera", "production.raw.dit",
             "production.raw.silverstack", "production.raw.script", "production.raw.office",
         ):
-            self.bus.subscribe(topic, self.handle_shoot_date)
+            self.bus.subscribe(topic, self._traced(self.handle_shoot_date))
 
     def handle_shoot_date(self, envelope: EventEnvelope) -> None:
         """

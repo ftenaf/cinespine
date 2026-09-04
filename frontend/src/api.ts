@@ -1,6 +1,25 @@
 import { TakeRecord, Discrepancy, Production, SourceDocumentSummary, SourceDocument, UploadResult } from './types';
 
+import { faro } from '@grafana/faro-web-sdk';
+
 const API_BASE = '/api';
+
+/**
+ * One Faro event for an action a person will later want to find the trace
+ * of. Faro is optional (no VITE_GRAFANA_FARO_URL, no Faro), so this is a
+ * no-op without it. Ids and counts only, never a filename or content.
+ */
+function pushEvent(name: string, attributes: Record<string, string | number | boolean | null | undefined>): void {
+  try {
+    const clean: Record<string, string> = {};
+    for (const [key, value] of Object.entries(attributes)) {
+      if (value !== null && value !== undefined) clean[key] = String(value);
+    }
+    faro?.api?.pushEvent(name, clean);
+  } catch {
+    // Telemetry never breaks the action it describes.
+  }
+}
 
 /**
  * An error carrying the HTTP status and the server's own explanation.
@@ -134,7 +153,13 @@ export async function uploadDocument(payload: {
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw await apiError(res, 'Upload failed');
-  return res.json();
+  const result = await res.json();
+  pushEvent('cinespine.upload', {
+    production_id: result.production_id, shoot_day: result.shoot_day,
+    doc_type: result.detected_doc_type, department: result.detected_department,
+    status: result.status,
+  });
+  return result;
 }
 
 export async function uploadFile(file: File, productionId?: string, shootDay?: string): Promise<UploadResult> {
@@ -148,7 +173,13 @@ export async function uploadFile(file: File, productionId?: string, shootDay?: s
     body: formData,
   });
   if (!res.ok) throw await apiError(res, 'File upload failed');
-  return res.json();
+  const result = await res.json();
+  pushEvent('cinespine.upload_file', {
+    production_id: productionId, shoot_day: shootDay, bytes: file.size,
+    doc_type: result.detected_doc_type, department: result.detected_department,
+    status: result.status,
+  });
+  return result;
 }
 
 export async function askAssistant(productionId: string, shootDay: string, slate: string, takeId: string): Promise<string> {
@@ -371,7 +402,13 @@ export async function runWrapRescueAgent(payload: {
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw await apiError(res, 'Wrap Rescue Agent failed');
-  return res.json();
+  const result: import('./types').WrapRescueResult = await res.json();
+  pushEvent('cinespine.wrap_rescue', {
+    production_id: result.production_id, shoot_day: result.shoot_day,
+    mcp_available: result.mcp_status?.available, blockers: result.blockers?.length,
+    requirement_actions: result.requirement_actions?.length,
+  });
+  return result;
 }
 
 export async function runAssistantEditorQueue(payload: {
@@ -387,7 +424,12 @@ export async function runAssistantEditorQueue(payload: {
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw await apiError(res, 'Assistant Editor Queue failed');
-  return res.json();
+  const result: import('./types').AssistantQueueResult = await res.json();
+  pushEvent('cinespine.assistant_editor_queue', {
+    production_id: result.production_id, shoot_day: result.shoot_day,
+    scenes: result.scenes?.length, requirement_actions: result.requirement_actions?.length,
+  });
+  return result;
 }
 
 export async function fetchAssistantEditorQueueAssignments(

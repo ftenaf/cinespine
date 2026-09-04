@@ -12,6 +12,8 @@ import asyncio
 import importlib.util
 import json
 import logging
+
+from backend.app.core.telemetry import set_attributes, span
 import os
 import uuid
 from datetime import datetime, timezone
@@ -378,19 +380,26 @@ class HTTPClickHouseMCPClient:
 
     async def _call_tool(self, name: str, arguments: Dict[str, Any]) -> tuple[Any, ToolCallTrace]:
         trace = ToolCallTrace(tool=name, arguments=arguments, ok=False)
-        try:
-            await self._ensure_initialized()
-            result = await self._post_rpc(
-                "tools/call",
-                {"name": name, "arguments": arguments},
-            )
-            rows = _coerce_rows(result)
-            trace.ok = True
-            trace.rows = len(rows)
-            return result, trace
-        except Exception as exc:  # noqa: BLE001 - the agent degrades and reports the broken tool
-            trace.error = str(exc)
-            return [], trace
+        # One span per tool call, named by the tool. The httpx instrumentation
+        # hangs the POST underneath it; this one says which tool it was for
+        # and whether the answer counted as rows.
+        with span("cinespine.mcp.tool", **{"cinespine.tool": name}) as current:
+            try:
+                await self._ensure_initialized()
+                result = await self._post_rpc(
+                    "tools/call",
+                    {"name": name, "arguments": arguments},
+                )
+                rows = _coerce_rows(result)
+                trace.ok = True
+                trace.rows = len(rows)
+                set_attributes(current, **{"cinespine.ok": True, "cinespine.rows": len(rows)})
+                return result, trace
+            except Exception as exc:  # noqa: BLE001 - the agent degrades and reports the broken tool
+                trace.error = str(exc)
+                current.record_exception(exc)
+                set_attributes(current, **{"cinespine.ok": False, "cinespine.error": _describe(exc)})
+                return [], trace
 
     async def list_tables(self, db: str) -> tuple[Any, ToolCallTrace]:
         return await self._call_tool(
@@ -911,8 +920,8 @@ class WrapRescueAgent(LlmAgent):
             name="wrap_rescue_agent",
             instruction="Orchestrate wrap rescue checks.",
             tools=[
-                self._refresh_analytical_spine, 
-                self._query_clickhouse_mcp, 
+                self._refresh_analytical_spine,
+                self._query_clickhouse_mcp,
                 self._apply_requirement_actions,
                 self.get_total_requirements_by_day_and_role,
                 self.get_unacknowledged_requirements_blocking_wrap
@@ -930,6 +939,33 @@ class WrapRescueAgent(LlmAgent):
         shoot_day: str,
         actor: str = WRAP_RESCUE_ACTOR,
         max_blockers: int = 5,
+    ) -> WrapRescueResult:
+        """
+        One run under a `cinespine.agent.wrap_rescue` span.
+
+        The MCP tool calls, the mirror writes and the Gemini memo hang beneath
+        it, so a slow run reads as one tree from the request to the model.
+        """
+        with span(
+            "cinespine.agent.wrap_rescue",
+            **{"cinespine.production_id": production_id, "cinespine.shoot_day": shoot_day, "cinespine.actor": actor},
+        ) as current:
+            result = await self._run(production_id, shoot_day, actor, max_blockers)
+            set_attributes(current, **{
+                "cinespine.mcp_available": result.mcp_status.available,
+                "cinespine.blockers": len(result.blockers),
+                "cinespine.requirement_actions": len(result.requirement_actions),
+                "cinespine.tool_calls": len(result.tool_calls),
+                "cinespine.tool_calls_failed": sum(1 for c in result.tool_calls if not c.ok),
+            })
+            return result
+
+    async def _run(
+        self,
+        production_id: str,
+        shoot_day: str,
+        actor: str,
+        max_blockers: int,
     ) -> WrapRescueResult:
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         if api_key:

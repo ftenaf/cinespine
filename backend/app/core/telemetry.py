@@ -4,12 +4,17 @@ Lighthouse Telemetry and Prometheus Metrics Exporter.
 Evidence:
 - references/domain/handoffs.md ('Department sync latency and lost acknowledgements')
 """
+import json
+import logging
 import os
 import socket
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from typing import Any, Dict, Iterable, Iterator, Mapping, Optional, Tuple
 from urllib.parse import urlparse
 
 from opentelemetry import metrics as otel_metrics
+from opentelemetry import trace as otel_trace
 
 from backend.app import __version__
 from backend.app.reconciliation.models import DiscrepancyType, Severity
@@ -166,6 +171,121 @@ class TelemetryExporter:
                 "department": str(row.get("department", "")),
                 "measurement": measurement,
             })
+
+
+# -----------------------------------------------------------------------------
+# Spans for the pipeline
+# -----------------------------------------------------------------------------
+#
+# Until 2026-09-04 every span came from an auto-instrumentor: the HTTP request,
+# the outbound httpx call, the Gemini call. Ingest, parsing, reconciliation,
+# the ClickHouse mirror and the MCP tool calls -- the product -- were invisible
+# between them. These are the seams; each carries the ids a reader would
+# otherwise have to dig out of a log line.
+_tracer = otel_trace.get_tracer("cinespine")
+
+_ATTRIBUTE_TYPES = (str, bool, int, float)
+
+
+def _clean(attributes: Mapping[str, Any]) -> Dict[str, Any]:
+    """Drops Nones and stringifies anything OTel cannot carry as-is."""
+    out: Dict[str, Any] = {}
+    for key, value in attributes.items():
+        if value is None:
+            continue
+        out[key] = value if isinstance(value, _ATTRIBUTE_TYPES) else str(value)
+    return out
+
+
+@contextmanager
+def span(name: str, **attributes: Any) -> Iterator[otel_trace.Span]:
+    """
+    One step of the pipeline, as a span under whatever is current.
+
+    Attribute keys are the caller's; the convention is ``cinespine.<thing>``
+    so the product's dimensions sort together in Tempo. An exception raised
+    inside is recorded on the span, marks it as an error, and propagates.
+    With no tracer provider installed this costs a no-op span and nothing
+    else.
+    """
+    with _tracer.start_as_current_span(name, attributes=_clean(attributes)) as current:
+        yield current
+
+
+def set_attributes(current: otel_trace.Span, **attributes: Any) -> None:
+    """Attributes known only once the step has run."""
+    current.set_attributes(_clean(attributes))
+
+
+# -----------------------------------------------------------------------------
+# Structured logs
+# -----------------------------------------------------------------------------
+#
+# Cloud Run reads stdout. As plain text every line landed at severity DEFAULT
+# with the trace id buried mid-string, so Cloud Logging could neither filter
+# by level nor link a line to its trace, and Loki's `detected_level` was a
+# guess. One JSON object per line fixes both: `severity` is what Cloud Logging
+# parses, the `logging.googleapis.com/*` keys are how it links to the trace,
+# and the flat `trace_id`/`span_id` are for everyone else.
+
+
+class JsonLogFormatter(logging.Formatter):
+    def __init__(self, project_id: Optional[str] = None):
+        super().__init__()
+        self.project_id = project_id
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: Dict[str, Any] = {
+            "time": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "severity": record.levelname,
+            "message": record.getMessage(),
+            "logger": record.name,
+        }
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        context = otel_trace.get_current_span().get_span_context()
+        if context.is_valid:
+            trace_id = format(context.trace_id, "032x")
+            span_id = format(context.span_id, "016x")
+            payload["trace_id"] = trace_id
+            payload["span_id"] = span_id
+            payload["logging.googleapis.com/spanId"] = span_id
+            payload["logging.googleapis.com/trace_sampled"] = bool(context.trace_flags.sampled)
+            if self.project_id:
+                payload["logging.googleapis.com/trace"] = f"projects/{self.project_id}/traces/{trace_id}"
+        return json.dumps(payload, default=str)
+
+
+def structured_logging_wanted(environ: Optional[Mapping[str, str]] = None) -> bool:
+    """JSON everywhere but a laptop, where a person is reading the terminal."""
+    env = os.environ if environ is None else environ
+    explicit = (env.get("CINESPINE_LOG_FORMAT") or "").strip().lower()
+    if explicit in ("json", "text"):
+        return explicit == "json"
+    return deployment_environment(env) != "local"
+
+
+def configure_structured_logging(environ: Optional[Mapping[str, str]] = None) -> bool:
+    """
+    Puts the JSON formatter on every handler that writes to the console.
+
+    uvicorn installs its handlers before the app is imported, so they are
+    already there to be reformatted; the root logger gets a stdout handler if
+    nothing gave it one. The OTLP log handler is left alone -- it carries the
+    record's fields natively. Returns whether anything changed.
+    """
+    env = os.environ if environ is None else environ
+    if not structured_logging_wanted(env):
+        return False
+    formatter = JsonLogFormatter(project_id=env.get("GOOGLE_CLOUD_PROJECT"))
+    root = logging.getLogger()
+    if not any(isinstance(h, logging.StreamHandler) for h in root.handlers):
+        root.addHandler(logging.StreamHandler())
+    for name in ("", "uvicorn", "uvicorn.error", "uvicorn.access"):
+        for handler in logging.getLogger(name).handlers:
+            if type(handler) is logging.StreamHandler:
+                handler.setFormatter(formatter)
+    return True
 
 
 # -----------------------------------------------------------------------------

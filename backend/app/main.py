@@ -17,8 +17,15 @@ app = FastAPI(
 )
 
 # Initialize OpenTelemetry
-from backend.app.core.telemetry import backport_fastapi_route_details, setup_otlp
+from backend.app.core.telemetry import (
+    backport_fastapi_route_details,
+    configure_structured_logging,
+    setup_otlp,
+)
 setup_otlp()
+# After setup_otlp: the logging instrumentation it installs reformats the root
+# handler, and this has the last word on what stdout looks like.
+configure_structured_logging()
 
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor

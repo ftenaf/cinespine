@@ -11,6 +11,27 @@ Newest first. Each entry names what produced it.
 
 ## 2026-09-04
 
+**The pipeline was invisible between an HTTP span and a SQLite read.** Every
+span came from an auto-instrumentor; ingest, parsing, reconciliation, the
+ClickHouse mirror and the MCP tool calls -- the product -- left no trace of
+their own. `telemetry.span()` now wraps each seam with the production, day,
+department, axis and document type on it, the reconcile span carries each
+unresolved discrepancy as an event, and the mirror insert is traced because
+`clickhouse_connect` is not httpx and nothing else could see it. The two agents
+that never run through ADK get a run span each, which is the only per-run
+record of them.
+
+**Cloud Logging read every line at severity DEFAULT.** The backend wrote plain
+text to stdout, so Cloud Run could neither filter by level nor link a line to
+its trace, and Loki's `detected_level` was a guess. One JSON object per line
+now, with `severity` and the `logging.googleapis.com/*` trace keys, anywhere
+`deployment.environment` is not `local`.
+
+**The browser's trace stopped at the fetch.** Faro ran without its tracing
+instrumentation, so no `traceparent` reached the backend and a slow upload
+could only be matched to its server spans by timestamp. `TracingInstrumentation`
+is on; same origin everywhere, so nothing to allow-list.
+
 **The business metrics never reached production, by construction.** The
 `cinespine_*` family was `prometheus_client`, served at `/api/metrics` for a
 scraper; nothing scrapes a Cloud Run service, so for the whole life of the

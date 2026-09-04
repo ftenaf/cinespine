@@ -39,7 +39,7 @@ from backend.app.parsers.pdf_parsers import extract_text_from_pdf, extract_thumb
 from backend.app.normalizers.takes import normalize_take
 from backend.app.normalizers.slates import normalize_slate
 from backend.app.script.scene_lookup import build_scene_context, scene_numbers_for_target
-from backend.app.core.telemetry import TelemetryExporter
+from backend.app.core.telemetry import TelemetryExporter, set_attributes, span
 from backend.app.core import analytics
 from backend.app.core import privacy
 from backend.app.storage.gcs_client import gcs
@@ -532,7 +532,7 @@ def get_document_raw(doc_id: str):
     # the stored bytes were absent, which reached the real paperwork by name
     # and would have walked straight around the gate above. Documents are
     # stored with their bytes now, so the fallback answered nothing anyway.
-    
+
     # Check if the file is in GCS first
     gcs_uri = doc.get("metadata", {}).get("gcs_uri")
     if gcs_uri and gcs.is_enabled:
@@ -543,10 +543,10 @@ def get_document_raw(doc_id: str):
 
     if not raw_bytes:
         raw_bytes = privacy.redact(doc.get("content", "")).encode("utf-8")
-    
+
     is_pdf = filename.lower().endswith(".pdf") or doc.get("doc_type") == "pdf"
     media_type = "application/pdf" if is_pdf else "text/plain; charset=utf-8"
-    
+
     return Response(
         content=raw_bytes,
         media_type=media_type,
@@ -610,7 +610,7 @@ def upload_document(req: UploadRequest):
     Ingests document with automatic type, department, production, shoot day inference, and duplicate prevention.
     """
     classification = classify_document(filename=req.filename, content=req.raw_content)
-    
+
     production_id = req.production_id or classification.inferred_production_id or "DEMO_PRODUCTION"
     shoot_day = req.shoot_day or classification.inferred_shoot_day or "31"
     axis = req.axis or classification.axis
@@ -658,14 +658,26 @@ def upload_document(req: UploadRequest):
     )
 
     topic = f"production.raw.{department.value}"
-    try:
-        event_bus.publish(topic, envelope)
-    except EventHandlerError as exc:
-        raise _ingest_failed(exc, doc_id, filename)
-    # The document is ingested; send its events on together rather than
-    # leaving them buffered until the next upload.
-    spine_writer.flush_events()
-    _project_analytics(envelope.production_id, envelope.shoot_day)
+    with span(
+        "cinespine.ingest",
+        **{
+            "cinespine.production_id": envelope.production_id,
+            "cinespine.shoot_day": envelope.shoot_day,
+            "cinespine.department": department.value,
+            "cinespine.axis": axis.value,
+            "cinespine.doc_type": doc_type.value,
+            "cinespine.doc_id": doc_id,
+            "cinespine.bytes": len(req.raw_content),
+        },
+    ) as ingest:
+        try:
+            event_bus.publish(topic, envelope)
+        except EventHandlerError as exc:
+            raise _ingest_failed(exc, doc_id, filename)
+        # The document is ingested; send its events on together rather than
+        # leaving them buffered until the next upload.
+        set_attributes(ingest, **{"cinespine.mirrored_rows": spine_writer.flush_events()})
+        _project_analytics(envelope.production_id, envelope.shoot_day)
 
     event_broker.publish_sync(SpineLiveEvent(
         event_type="DOCUMENT_INGESTED",
@@ -3354,12 +3366,12 @@ async def demo_inject_events():
     import hashlib
     from backend.app.parsers.classifier import classify_document
     from backend.app.parsers.pdf_parsers import extract_text_from_pdf
-    
+
     # Ensure the DEMO_PRODUCTION and demo script are seeded before we inject events
     spine_writer.seed_defaults()
-    
+
     EXAMPLES_DIR = os.environ.get("CINESPINE_EXAMPLES_DIR", "data/examples")
-    
+
     demo_files = [
         "demo_script.fountain",
         "DEMO_TCLog_Synthetic.pdf",
@@ -3372,12 +3384,12 @@ async def demo_inject_events():
         "DEMO_Day2_SoundLog.txt",
         "DEMO_Day2_Silverstack_Offload.txt",
     ]
-    
+
     for filename in demo_files:
         filepath = os.path.join(EXAMPLES_DIR, filename)
         if not os.path.exists(filepath):
             continue
-            
+
         with open(filepath, "rb") as f:
             content_bytes = f.read()
             try:
@@ -3387,11 +3399,11 @@ async def demo_inject_events():
                     raw_text = content_bytes.decode("utf-8", errors="ignore")
             except Exception:
                 raw_text = content_bytes.decode("utf-8", errors="ignore")
-                
+
             classification = classify_document(filename, raw_text)
             checksum = hashlib.sha256(content_bytes).hexdigest()
             shoot_day = "32" if "Day2" in filename else "31"
-            
+
             doc_id = spine_writer.store_document(
                 production_id="DEMO_PRODUCTION",
                 shoot_day=shoot_day,
@@ -3403,7 +3415,7 @@ async def demo_inject_events():
                 raw_bytes=content_bytes,
                 metadata={"demo": True, "synthetic": True},
             )
-            
+
             envelope = EventEnvelope(
                 production_id="DEMO_PRODUCTION",
                 shoot_day=shoot_day,
@@ -3418,7 +3430,7 @@ async def demo_inject_events():
             event_bus.publish(topic, envelope)
 
     spine_writer.flush_events()
-    
+
     _seed_demo_requirement()
 
     _project_analytics("DEMO_PRODUCTION", "31")

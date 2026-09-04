@@ -82,6 +82,21 @@ Both a span exporter and a log exporter are installed, against the same
 `Resource` (`service.name=cinespine-backend`), so traces and logs land under
 one service rather than two.
 
+### stdout is one JSON object per line
+
+Since 2026-09-04, anywhere but a laptop. Cloud Run reads stdout, and as plain
+text every line landed in Cloud Logging at severity `DEFAULT` with the trace
+id buried mid-string: no filtering by level, no link from a line to its trace,
+and Loki's `detected_level` reduced to a guess. `JsonLogFormatter` in
+`telemetry.py` writes `severity`, `message`, `logger`, `time`, the flat
+`trace_id`/`span_id`, and the `logging.googleapis.com/trace`, `spanId` and
+`trace_sampled` keys Cloud Logging turns into a trace link. uvicorn's own
+loggers get the same formatter, so access lines are JSON too.
+
+`CINESPINE_LOG_FORMAT=json|text` overrides the default, which is JSON unless
+`deployment.environment` is `local`. The OTLP log handler is untouched; it
+carried the fields natively all along.
+
 ---
 
 ## 3. Agent observability
@@ -93,6 +108,34 @@ and the Wrap Rescue memo. Spans cover `generate_content` and `execute_tool`, so
 an agent run reads as a tree rather than one opaque HTTP span.
 
 It attaches in **0.00s** and runs inline in `setup_otlp()`.
+
+### 3.0. The pipeline's own spans
+
+Until 2026-09-04 every span came from an auto-instrumentor: the HTTP request,
+the outbound httpx call, the Gemini call. Ingest, parsing, reconciliation,
+the ClickHouse mirror and the MCP tool calls — the product — were invisible
+between them. `telemetry.span()` is the seam; these carry it, each with the
+ids a reader would otherwise dig out of a log line (`cinespine.production_id`,
+`cinespine.shoot_day`, `cinespine.department`, `cinespine.axis`,
+`cinespine.doc_type`):
+
+| Span | Where | Says |
+| :--- | :--- | :--- |
+| `cinespine.ingest` | `POST /api/upload` | the document's ids, its size, how many rows the mirror took |
+| `cinespine.parse` | every raw-topic handler in `IngestionDispatcher` | which parser ran for which document; a parser that raised is an error span here |
+| `cinespine.reconcile` | `query_production_discrepancies` | events in, discrepancies out by severity, and each unresolved one as a span event (capped at 25) |
+| `cinespine.mirror.insert` | `SpineWriter._try_insert` | table, rows, ok — `clickhouse_connect` is not httpx, so nothing else sees this call |
+| `cinespine.mcp.tool` | `HTTPClickHouseMCPClient._call_tool` | the tool, whether it answered, how many rows; the httpx POST hangs beneath |
+| `cinespine.agent.wrap_rescue` | `WrapRescueAgent.run` | blockers, requirement actions, tool calls and how many failed |
+| `cinespine.agent.assistant_editor_queue` | `AssistantEditorQueueAgent.run` | scenes, assignees, requirement actions |
+
+Two of those agents are where the `gen_ai_invoke_agent_*` metrics in §4a
+cannot reach (§3.1): they never run through ADK, so these spans are the only
+per-run record of them.
+
+Query them in Tempo by attribute, not by name:
+`{ span.cinespine.production_id = "DEMO_PRODUCTION" && span.cinespine.shoot_day = "31" }`
+returns one production day's ingests, reconciliations and agent runs as trees.
 
 ### What it replaced, and why
 
@@ -444,6 +487,22 @@ already written and `main.tsx` silently skips Faro when the URL is absent.
 ARG VITE_GRAFANA_FARO_URL
 ENV VITE_GRAFANA_FARO_URL=$VITE_GRAFANA_FARO_URL
 ```
+
+### The browser's trace continues into the backend
+
+Since 2026-09-04 `main.tsx` adds Faro's `TracingInstrumentation`. Every
+`fetch` to `/api` carries a `traceparent` header, so a click in the SPA and
+the `cinespine.*` spans it causes are **one trace**: the upload button, the
+HTTP request, the parsers, the mirror insert. Before this the frontend and
+backend traces were disjoint and a slow upload could only be correlated by
+timestamp. Same origin in the Vite proxy and in the Cloud Run build, so no
+CORS allow-list is needed for propagation.
+
+`api.ts` also pushes a Faro event on the actions somebody will want to find
+a trace by — `cinespine.upload`, `cinespine.upload_file`,
+`cinespine.wrap_rescue`, `cinespine.assistant_editor_queue` — with ids and
+counts only, never a filename or content, per the rule `analytics.ts`
+states for PostHog.
 
 ### Allowed origins are the thing that breaks
 

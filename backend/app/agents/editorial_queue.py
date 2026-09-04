@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Literal, Optional, cast
 from pydantic import BaseModel, Field
 
 from backend.app.core import analytics
+from backend.app.core.telemetry import set_attributes, span
 from backend.app.integrations.cloud_logging import AgentCloudLogger
 from backend.app.spine import requirement_store
 from backend.app.spine.writer import SpineWriter
@@ -231,7 +232,29 @@ class AssistantEditorQueueAgent(LlmAgent):
         assignee: Optional[str] = None,
         max_scenes: int = 6,
     ) -> AssistantQueueResult:
-        
+        """One run under a `cinespine.agent.assistant_editor_queue` span."""
+        with span(
+            "cinespine.agent.assistant_editor_queue",
+            **{"cinespine.production_id": production_id, "cinespine.shoot_day": shoot_day, "cinespine.actor": actor},
+        ) as current:
+            result = self._run(production_id, shoot_day, actor, assignee, max_scenes)
+            set_attributes(current, **{
+                "cinespine.shoot_day": result.shoot_day,
+                "cinespine.scenes": len(result.scenes),
+                "cinespine.requirement_actions": len(result.requirement_actions),
+                "cinespine.assignees": len(result.assignees),
+            })
+            return result
+
+    def _run(
+        self,
+        production_id: str,
+        shoot_day: Optional[str],
+        actor: str,
+        assignee: Optional[str],
+        max_scenes: int,
+    ) -> AssistantQueueResult:
+
         # Try to use ADK Runner if API key is present
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         if api_key:
@@ -242,7 +265,7 @@ class AssistantEditorQueueAgent(LlmAgent):
                 runner = Runner(agent=self, session_service=session, app_name="agents")
             except Exception as e:  # noqa: S110
                 pass
-                
+
         # Deterministic execution
         actor = _normalize_handle(actor, ASSISTANT_QUEUE_ACTOR)
         production = self.spine_writer.get_production(production_id)
@@ -702,10 +725,10 @@ class AssistantEditorQueueAgent(LlmAgent):
         import difflib
         import uuid
         from datetime import datetime, timezone
-        
+
         if not stt_transcript or not script_dialogue:
             return
-        
+
         similarity = difflib.SequenceMatcher(None, stt_transcript.lower(), script_dialogue.lower()).ratio()
         if similarity < threshold:
             discrepancy_id = str(uuid.uuid4())
@@ -713,7 +736,7 @@ class AssistantEditorQueueAgent(LlmAgent):
                 "event_id": str(uuid.uuid4()),
                 "production_id": production_id,
                 "shoot_day": shoot_day,
-                "axis": "intent", 
+                "axis": "intent",
                 "department": "editorial",
                 "doc_type": "discrepancy",
                 "entity_type": "discrepancy",

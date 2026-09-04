@@ -13,6 +13,7 @@
   "dependencies": {
     "@grafana/faro-react": "^2.11.0",
     "@grafana/faro-web-sdk": "^2.11.0",
+    "@grafana/faro-web-tracing": "^2.11.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.378.0",
     "posthog-js": "^1.422.5",
