@@ -25,8 +25,20 @@ if [ "${CINESPINE_LITESTREAM:-1}" = "1" ]; then
     # restore that keeps failing exits non-zero on purpose: starting uvicorn
     # on an empty file would fork the data, and Cloud Run keeps the previous
     # revision serving when this one does not come up.
+    # CINESPINE_RESTORE_GENERATION pins the restore to one generation instead
+    # of the newest. For recovery: on 2026-09-06 the newest generation held a
+    # zero-byte WAL piece (a failed upload) that every restore tripped on, so
+    # a clean copy was restored locally to the last good index, replicated
+    # into a fresh generation, and the next revision was pointed at it. Unset
+    # once that revision is up; its own replication becomes the newest.
+    generation_flag=""
+    if [ -n "${CINESPINE_RESTORE_GENERATION:-}" ]; then
+        generation_flag="-generation $CINESPINE_RESTORE_GENERATION"
+        echo "litestream restore pinned to generation $CINESPINE_RESTORE_GENERATION"
+    fi
     attempt=1
-    until litestream restore -if-db-not-exists -if-replica-exists \
+    # shellcheck disable=SC2086 -- generation_flag is two words on purpose
+    until litestream restore -if-db-not-exists -if-replica-exists $generation_flag \
             -config /app/deploy/litestream.yml "$CINESPINE_DB_PATH"; do
         if [ "$attempt" -ge 5 ]; then
             echo "litestream restore failed $attempt times; not starting on an empty database" >&2
