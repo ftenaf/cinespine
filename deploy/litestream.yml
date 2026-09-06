@@ -21,3 +21,8 @@ dbs:
         # but this is a 2 MB database, not an archive.
         retention: 72h
         sync-interval: 1s
+        # A fresh snapshot every hour, so a restore replays at most an hour of
+        # WAL segments rather than every segment since the generation began
+        # (760 of them after two days, on 2026-09-06). Restore has to finish
+        # inside Cloud Run's 240 s startup window.
+        snapshot-interval: 1h
