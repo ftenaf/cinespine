@@ -34,6 +34,9 @@ ENV VITE_GRAFANA_FARO_URL=$VITE_GRAFANA_FARO_URL
 # and the backend's service.version say the same thing as the image tag.
 ARG GIT_SHA=unknown
 ENV VITE_APP_VERSION=$GIT_SHA
+# Matches the backend's deployment.environment (telemetry.py: "cloudrun" when
+# K_SERVICE is set), so frontend and backend telemetry share one label.
+ENV VITE_APP_ENVIRONMENT=cloudrun
 
 WORKDIR /build
 

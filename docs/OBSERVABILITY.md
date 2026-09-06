@@ -59,6 +59,12 @@ Run's. Two consequences:
 - **Dashboards and alerts filter on the label.** The Cloud alert rules select
   `deployment_environment!="local"`, which also matches series from builds
   older than the label.
+- **The browser says the same word.** Faro's `app.environment` comes from
+  `VITE_APP_ENVIRONMENT`, set to `cloudrun` in `Dockerfile.cloudrun` and
+  defaulting to `local`, not from Vite's `MODE`, which read `production` for
+  any optimised build wherever it ran. In Loki the frontend rows carry it as
+  `app_environment`; rows from images before 2026-09-06 still say
+  `production`.
 
 ---
 

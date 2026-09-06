@@ -13,7 +13,11 @@ if (faroUrl) {
     app: {
       name: 'cinespine-frontend',
       version: import.meta.env.VITE_APP_VERSION || 'dev',
-      environment: import.meta.env.MODE
+      // The same word the backend puts in deployment.environment ("cloudrun"
+      // on Cloud Run, "local" elsewhere), so one label selects both halves of
+      // a request in Grafana. Vite's MODE said "production" for any optimised
+      // build, including one running on a laptop.
+      environment: import.meta.env.VITE_APP_ENVIRONMENT || 'local',
     },
     instrumentations: [
       ...getWebInstrumentations(),
