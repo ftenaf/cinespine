@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { RefreshCw, PlayCircle, Terminal } from 'lucide-react';
+import { useWebMCP } from '../hooks/useWebMCP';
 
 const API_BASE_URL = '/api';
 
@@ -73,6 +74,40 @@ export const HackathonDemo: React.FC = () => {
       setIsRunning(false);
     }
   };
+
+  useWebMCP([
+    {
+      // Named for what it does. It truncates every table in the spine; the
+      // 2026-09-06 data loss started with this button. The spec has no consent
+      // step yet, so the page requires the agent to say it means it.
+      name: 'wipe_all_production_data',
+      description: 'IRREVERSIBLE. Deletes every production, requirement, screenplay and event in the spine, then reloads the page. Only for resetting a demo environment. Requires confirm=true.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          confirm: { type: 'boolean', description: 'Must be true. The agent should ask the user first.' }
+        },
+        required: ['confirm']
+      },
+      annotations: { destructiveHint: true },
+      execute: async (inputs: { confirm?: boolean }) => {
+        if (inputs?.confirm !== true) {
+          return { error: 'Refused: confirm=true is required, and the user should be asked before wiping the spine.' };
+        }
+        await factoryReset();
+        return { message: 'Factory reset initiated; the page will reload.' };
+      }
+    },
+    {
+      name: 'run_full_demo',
+      description: 'Run the full end-to-end hackathon demo automatically.',
+      inputSchema: { type: 'object', properties: {} },
+      execute: async () => {
+        await runDemo();
+        return { message: 'Full demo initiated.' };
+      }
+    }
+  ]);
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">

@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { runWrapRescueAgent } from '../api';
 import { WrapRescueResult } from '../types';
+import { useWebMCP } from '../hooks/useWebMCP';
 
 const STEP_STYLE: Record<string, string> = {
   ok: 'text-emerald-300 bg-emerald-950/40 border-emerald-900',
@@ -44,13 +45,16 @@ export function WrapRescueAgentPanel({
     setError(null);
   }, [defaultDay, productionId]);
 
-  const run = async () => {
+  // `day` is a parameter, not read from state: a caller that has just set
+  // the day (the WebMCP tool) would otherwise run with the previous one,
+  // because the setter has not re-rendered this closure yet.
+  const run = async (day: string = shootDay) => {
     setIsRunning(true);
     setError(null);
     try {
       const next = await runWrapRescueAgent({
         production_id: productionId,
-        shoot_day: shootDay || defaultDay,
+        shoot_day: day || defaultDay,
         actor: currentUserHandle || '@assistant_editor',
         max_blockers: 5,
       });
@@ -62,6 +66,25 @@ export function WrapRescueAgentPanel({
       setIsRunning(false);
     }
   };
+
+  useWebMCP([
+    {
+      name: 'trigger_wrap_rescue_agent',
+      description: 'Run the Google ADK Wrap Rescue Agent against the current production.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          shootDay: { type: 'string' }
+        }
+      },
+      execute: async (inputs) => {
+        const day = inputs.shootDay || shootDay;
+        if (inputs.shootDay) setShootDay(inputs.shootDay);
+        await run(day);
+        return { message: `Wrap Rescue Agent ran for day ${day || defaultDay}.` };
+      }
+    }
+  ]);
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 space-y-4">
@@ -95,7 +118,7 @@ export function WrapRescueAgentPanel({
             ))}
           </select>
           <button
-            onClick={run}
+            onClick={() => run()}
             disabled={isRunning}
             className="flex items-center gap-1.5 text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
           >

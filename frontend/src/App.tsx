@@ -32,6 +32,7 @@ import { RequirementRow } from './components/RequirementsBoard';
 import { identify, startAnalytics, trackView } from './analytics';
 import { ProductionsHub } from './components/ProductionsHub';
 import { HackathonDemo } from './components/HackathonDemo';
+import { useWebMCP } from './hooks/useWebMCP';
 
 
 
@@ -179,6 +180,29 @@ export default function App() {
   const [confirmPrompt, setConfirmPrompt] = useState<ConfirmPrompt | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+
+  useWebMCP([
+    {
+      name: 'navigate_app',
+      description: 'Navigate to a different pillar or tab in the application.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          pillar: { type: 'string', enum: ['studio', 'spine', 'productions', 'demo'] },
+          tab: { type: 'string', enum: ['master', 'sequences', 'scenes', 'discrepancies', 'documents', 'requirements'] },
+          productionId: { type: 'string' },
+          shootDay: { type: 'string' }
+        }
+      },
+      execute: async (inputs: Record<string, any>) => {
+        if (inputs.pillar) setCurrentPillar(inputs.pillar);
+        if (inputs.tab) setActiveTab(inputs.tab);
+        if (inputs.productionId) setSelectedProductionId(inputs.productionId);
+        if (inputs.shootDay) setSelectedDay(inputs.shootDay);
+        return { message: 'Navigated successfully.' };
+      }
+    }
+  ]);
 
   const loadProductions = async () => {
     try {

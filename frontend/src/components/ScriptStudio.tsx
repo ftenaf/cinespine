@@ -38,6 +38,7 @@ import {
   saveDeletedPresets,
   mergeActivePresets
 } from '../presets';
+import { useWebMCP } from '../hooks/useWebMCP';
 
 
 /**
@@ -135,6 +136,79 @@ export const ScriptStudio: React.FC<{ productionId?: string }> = ({ productionId
   const [showCamSettings, setShowCamSettings] = useState<boolean>(false);
   const [showShotScript, setShowShotScript] = useState<boolean>(false);
   const [popupCharacter, setPopupCharacter] = useState<CharacterProfile | null>(null);
+
+  useWebMCP([
+    {
+      name: 'set_dop_settings',
+      description: 'Configure the Director of Photography settings in the studio.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          preset: { type: 'string', description: 'Name of the DoP preset (e.g. "Roger Deakins")' },
+          focal_length: { type: 'number', description: 'Lens focal length in mm' },
+          aperture: { type: 'string', description: 'Lens aperture (e.g. "T2.8")' },
+          color_temp: { type: 'number', description: 'Color temperature in Kelvin' },
+          lighting_ratio: { type: 'string', description: 'Lighting ratio (e.g. "4:1")' },
+          sensor_format: { type: 'string', description: 'Sensor format ID (e.g. "super35", "fullframe")' },
+          focus_distance: { type: 'number', description: 'Focus distance in meters' }
+        }
+      },
+      execute: (inputs: any) => {
+        // The two modes are exclusive: a preset ignores the matrix fields and
+        // the matrix ignores the preset. An agent that sends both would get
+        // the preset and silently lose its overrides, so the request is
+        // refused rather than half-applied.
+        const overrides = ['focal_length', 'aperture', 'color_temp', 'lighting_ratio', 'sensor_format', 'focus_distance']
+          .filter(k => inputs[k] !== undefined && inputs[k] !== null && inputs[k] !== '');
+        if (inputs.preset && overrides.length > 0) {
+          return { error: `Send either preset or the matrix fields (${overrides.join(', ')}), not both: a preset ignores them.` };
+        }
+        if (inputs.preset) {
+          if (!presetsDict[inputs.preset]) {
+            return { error: `Unknown preset "${inputs.preset}". Known: ${Object.keys(presetsDict).join(', ')}.` };
+          }
+          setDopMode('preset');
+          setSelectedPreset(inputs.preset);
+          return { success: true, message: `DoP preset set to ${inputs.preset}.` };
+        }
+        if (overrides.length === 0) {
+          return { error: 'Nothing to set: give a preset or at least one matrix field.' };
+        }
+        setDopMode('matrix');
+        if (inputs.focal_length) setCustomFocalLength(inputs.focal_length);
+        if (inputs.aperture) setCustomAperture(inputs.aperture);
+        if (inputs.color_temp) setCustomColorTemp(inputs.color_temp);
+        if (inputs.lighting_ratio) setCustomLightingRatio(inputs.lighting_ratio);
+        if (inputs.sensor_format) setCustomSensorFormat(inputs.sensor_format);
+        if (inputs.focus_distance) setFocusDistanceM(inputs.focus_distance);
+        return { success: true, message: `DoP matrix updated: ${overrides.join(', ')}.` };
+      }
+    },
+    {
+      name: 'generate_dop_test_render',
+      description: 'Trigger the AI to generate a storyboard test render with the current DoP settings.',
+      inputSchema: { type: 'object', properties: {} },
+      execute: async () => {
+        await handleExecuteDoPTestRender();
+        return { success: true, message: 'Test render generated.' };
+      }
+    },
+    {
+      name: 'select_character',
+      description: 'Select a character from the loaded screenplay to view their profile.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          character_id: { type: 'string', description: 'The ID of the character to select' }
+        },
+        required: ['character_id']
+      },
+      execute: (inputs: any) => {
+        setSelectedCharId(inputs.character_id);
+        return { success: true, message: `Character ${inputs.character_id} selected.` };
+      }
+    }
+  ]);
 
   // Re-compute active presets dictionary whenever backend, custom, or deleted presets change
   useEffect(() => {

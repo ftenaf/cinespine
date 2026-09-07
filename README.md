@@ -202,6 +202,7 @@ CineSpine decouples filmmaking operations into two distinct, distraction-free he
 
 ### 2. 🎥 AI-Cam Breakdown & Master DoP Studio
 * **Multi-Format Screenplay Ingestion:** Parses `.fountain`, `.md` (Markdown), `.txt` (Plaintext), `.pdf`, and `.fdx` (Final Draft) scripts.
+* **Instant Demo Mode:** Features a 1-click **"Load Demo Script"** button that instantly pulls in a sample `.fountain` screenplay to populate the engine, automatically persisting the active script across UI refreshes.
 * **Transition-Aware Scene Breakdown (`CUT TO:` Support):** Automatically detects screenplay transition slugs (e.g. `CUT TO:`, `SMASH CUT TO:`, `MATCH CUT TO:`, `DISSOLVE TO:`, `CUT TO BLACK.`) as explicit shot boundaries. CineSpine divides the scene into sequential shot setups matching the script's visual cuts, inferring shot dynamics (e.g. Close-Ups, Over-The-Shoulder, Wide Masters) for each cut segment.
 * **Autonomous & Dynamic Multi-Camera Rig Management:**
   * Generates synchronized **Camera A** ($28\text{mm}$ Wide Master), **Camera B** ($50\text{mm}$ Medium / OTS), and **Camera C** ($85\text{mm}$ Profile / Macro).
@@ -268,10 +269,11 @@ end-of-day requirements across all active assistant editors. Each assigned assis
 complete, resolving the requirement with `resolved_by` and `resolved_at` audit fields, and the production
 dashboard shows pre-editing progress by assistant with a completion chart. The same dashboard also includes
 a production-wide **Crew Workload** view so coordinators can see every crew member's active requirements,
-blocked items, completed count and current task targets at a glance. Beside it, an **Activity** card reads
-the activity ledger every mutation route writes: changes made and things viewed per person and shoot day,
+blocked items, completed count and current task targets at a glance. Beside it, an **Activity Ledger** card reads
+the `{db}.user_activity` ClickHouse table that every mutation route writes to: changes made and things viewed per person and shoot day,
 kept apart on purpose, plus the median time from a requirement being raised to its assignee first touching
-it. It counts actions, not effort, and says so.
+it. It runs complex analytical queries directly over ClickHouse to track crew workload without hammering the operational database.
+It counts actions, not effort, and says so on the card.
 
 ### 4. 📡 Append-Only Event Spine & Real-Time SSE Bus
 * Backed by **ClickHouse** and SQLite for zero-data-loss event streaming.
@@ -394,7 +396,7 @@ any of it, degrading gracefully rather than failing.
 | `CINESPINE_GEMINI_MODEL` | `gemini-3.6-flash` | Model used for character inference. |
 | `CINESPINE_AI_CHARACTER_TIMEOUT` | `60` | Seconds before inference is abandoned. A timeout discards the whole inference, so leave headroom: measured round trips on a five-scene script are 22–27s. |
 | `CINESPINE_DISABLE_AI_CHARACTER_INFERENCE` | *unset* | Set to `1` to skip inference entirely. Useful for offline work and required for a hermetic test run. |
-| `CINESPINE_DB_PATH` | `spine.db` | SQLite file holding screenplays and character profiles. Relative to the working directory, so set an absolute path for a deployment. |
+| `CINESPINE_DB_PATH` | `spine.db` | SQLite file holding screenplays and character profiles. Relative to the working directory, so set an absolute path for a deployment. On Google Cloud Run, this survives revision deploys. |
 | `CINESPINE_EXAMPLES_DIR` | `data/examples` | Local folder of example production paperwork. Nothing is committed — see the note below. |
 | `GOOGLE_CLOUD_PROJECT` / `GCS_BUCKET_NAME` | demo values | Google Cloud Storage archival target. |
 | `CINESPINE_GEMINI_FLASH_MODEL` | `gemini-2.5-flash` | First candidate `llm_router` returns. The fallbacks after it are separate quota pools, so a 429 or 503 on one still has somewhere to go. |
