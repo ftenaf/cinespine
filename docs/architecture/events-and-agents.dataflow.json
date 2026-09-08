@@ -1,0 +1,300 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "CineSpine: from paperwork to agents",
+    "output": "docs/architecture/events-and-agents.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      536
+    ],
+    "views": [
+      {
+        "id": "ingest",
+        "label": "A document becomes events",
+        "focus": [
+          "upload",
+          "classifier",
+          "bus",
+          "dispatcher",
+          "spine"
+        ],
+        "note": "Classified, published to a department topic, parsed in-process, appended to the spine."
+      },
+      {
+        "id": "agents",
+        "label": "Agents act on the mirror",
+        "focus": [
+          "spine",
+          "clickhouse",
+          "mcp",
+          "wrap_rescue",
+          "queue_agent",
+          "requirements"
+        ],
+        "note": "Both agents read facts through ClickHouse and write requirements back into the spine."
+      },
+      {
+        "id": "fanout",
+        "label": "People hear about it",
+        "focus": [
+          "requirements",
+          "broker"
+        ],
+        "note": "Requirements and notifications fan out to the crew over SSE."
+      }
+    ]
+  },
+  "stages": [
+    {
+      "label": "Sources"
+    },
+    {
+      "label": "In-process bus"
+    },
+    {
+      "label": "Spine of record"
+    },
+    {
+      "label": "Agents"
+    },
+    {
+      "label": "Outcomes"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "upload",
+      "type": "frontend",
+      "label": "POST /api/upload",
+      "sublabel": "5 departments",
+      "stage": 0,
+      "row": 1,
+      "tag": "paperwork",
+      "width": 124
+    },
+    {
+      "id": "classifier",
+      "type": "backend",
+      "label": "Classifier",
+      "sublabel": "Gemini Flash + rules",
+      "stage": 1,
+      "row": 0,
+      "tag": "doc type, department",
+      "width": 124
+    },
+    {
+      "id": "bus",
+      "type": "messagebus",
+      "label": "raw.<dept> topics",
+      "sublabel": "in-process EventBus",
+      "stage": 1,
+      "row": 1,
+      "tag": "no broker",
+      "width": 124
+    },
+    {
+      "id": "dispatcher",
+      "type": "backend",
+      "label": "IngestionDispatcher",
+      "sublabel": "department parsers",
+      "stage": 1,
+      "row": 2,
+      "tag": "raises on failure",
+      "width": 124
+    },
+    {
+      "id": "spine",
+      "type": "database",
+      "label": "spine_events",
+      "sublabel": "SQLite, append-only",
+      "stage": 2,
+      "row": 1,
+      "tag": "source of truth",
+      "width": 124
+    },
+    {
+      "id": "clickhouse",
+      "type": "database",
+      "label": "ClickHouse",
+      "sublabel": "mirror + projections",
+      "stage": 2,
+      "row": 2,
+      "tag": "best effort",
+      "brand": "clickhouse",
+      "width": 124
+    },
+    {
+      "id": "mcp",
+      "type": "backend",
+      "label": "cinespine-mcp",
+      "sublabel": "read-only SQL",
+      "stage": 3,
+      "row": 2,
+      "tag": "Cloud Run",
+      "width": 150
+    },
+    {
+      "id": "wrap_rescue",
+      "type": "backend",
+      "label": "Wrap Rescue Agent",
+      "sublabel": "ADK LlmAgent, Gemini",
+      "stage": 3,
+      "row": 1,
+      "tag": "ranks blockers",
+      "width": 150
+    },
+    {
+      "id": "queue_agent",
+      "type": "backend",
+      "label": "AE Queue Agent",
+      "sublabel": "deterministic",
+      "stage": 3,
+      "row": 0,
+      "tag": "clean scenes",
+      "width": 150
+    },
+    {
+      "id": "requirements",
+      "type": "database",
+      "label": "Requirements",
+      "sublabel": "+ notifications, audit trail",
+      "stage": 4,
+      "row": 1,
+      "tag": "assigned_to",
+      "width": 150
+    },
+    {
+      "id": "broker",
+      "type": "messagebus",
+      "label": "LiveEventBroker",
+      "sublabel": "SSE /api/events/stream",
+      "stage": 4,
+      "row": 2,
+      "tag": "per handle",
+      "width": 150
+    }
+  ],
+  "flows": [
+    {
+      "from": "upload",
+      "to": "classifier",
+      "label": "document",
+      "classification": "text, PDF, image",
+      "variant": "emphasis",
+      "route": "vertical-channel",
+      "labelDy": -30
+    },
+    {
+      "from": "classifier",
+      "to": "bus",
+      "label": "publish",
+      "classification": "EventEnvelope",
+      "variant": "emphasis",
+      "route": "vertical-channel"
+    },
+    {
+      "from": "bus",
+      "to": "dispatcher",
+      "label": "subscribed handler",
+      "classification": "synchronous",
+      "variant": "emphasis",
+      "route": "vertical-channel"
+    },
+    {
+      "from": "dispatcher",
+      "to": "spine",
+      "label": "append",
+      "classification": "takes, slates",
+      "variant": "emphasis",
+      "route": "vertical-channel",
+      "labelDy": -30
+    },
+    {
+      "from": "spine",
+      "to": "clickhouse",
+      "label": "mirror insert",
+      "classification": "async, + projections",
+      "variant": "default",
+      "route": "vertical-channel"
+    },
+    {
+      "from": "clickhouse",
+      "to": "mcp",
+      "label": "SELECT via MCP",
+      "classification": "list_tables, run_query",
+      "variant": "dashed",
+      "route": "vertical-channel",
+      "labelDy": 53
+    },
+    {
+      "from": "mcp",
+      "to": "wrap_rescue",
+      "label": "discrepancies",
+      "classification": "JSON-RPC, unacked",
+      "variant": "dashed",
+      "route": "vertical-channel"
+    },
+    {
+      "from": "spine",
+      "to": "queue_agent",
+      "label": "clean-scene evidence",
+      "classification": "SQLite read",
+      "variant": "default",
+      "route": "vertical-channel"
+    },
+    {
+      "from": "wrap_rescue",
+      "to": "requirements",
+      "label": "create_requirement",
+      "classification": "blocker → assignee",
+      "variant": "emphasis",
+      "route": "vertical-channel",
+      "labelDy": 53,
+      "labelDx": -52
+    },
+    {
+      "from": "queue_agent",
+      "to": "requirements",
+      "label": "scene cards",
+      "classification": "one per assistant",
+      "variant": "emphasis",
+      "route": "vertical-channel"
+    },
+    {
+      "from": "requirements",
+      "to": "broker",
+      "label": "publish_sync",
+      "classification": "SpineLiveEvent",
+      "variant": "emphasis",
+      "route": "vertical-channel"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "The bus is in-process",
+      "items": [
+        "No broker: the spine is the append-only log; a handler that fails raises EventHandlerError, so no 200 INGESTED covers a lost write",
+        "Rejected documents go to production.events.dlq, which only feeds telemetry"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Two agents, two shapes",
+      "items": [
+        "Wrap Rescue is an ADK LlmAgent run by a crew member for a shoot day; it reads ClickHouse only through cinespine-mcp and drafts with Gemini",
+        "The Assistant Editor Queue is deterministic: paperwork present, offload evidence, no open blockers; both write requirements into SQLite"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "What people see",
+      "items": [
+        "Every requirement, tag and resolution publishes a SpineLiveEvent over SSE, addressed by @handle",
+        "The activity ledger records every mutation, agent runs included"
+      ]
+    }
+  ]
+}

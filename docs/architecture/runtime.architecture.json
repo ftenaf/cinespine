@@ -1,0 +1,305 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "CineSpine runtime architecture",
+    "output": "docs/architecture/runtime-architecture.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1340,
+      580
+    ],
+    "views": [
+      {
+        "id": "primary-path",
+        "label": "A request through the spine",
+        "focus": [
+          "browser",
+          "api",
+          "spine",
+          "clickhouse"
+        ],
+        "note": "Browser to FastAPI, SQLite as the source of truth, ClickHouse as the analytical mirror."
+      },
+      {
+        "id": "agents",
+        "label": "Agents and models",
+        "focus": [
+          "api",
+          "mcp",
+          "clickhouse",
+          "vertex"
+        ],
+        "note": "Wrap Rescue reads ClickHouse only through the MCP service and drafts with Gemini."
+      },
+      {
+        "id": "durability",
+        "label": "Durability and telemetry",
+        "focus": [
+          "spine",
+          "replica",
+          "secrets",
+          "grafana"
+        ],
+        "note": "Litestream keeps spine.db across deploys; every signal lands in Grafana Cloud."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "browser",
+      "type": "frontend",
+      "label": "Browser SPA",
+      "sublabel": "React, Faro, WebMCP",
+      "pos": [
+        40,
+        250
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "grafana",
+      "type": "external",
+      "label": "Grafana Cloud",
+      "sublabel": "OTLP + Faro",
+      "pos": [
+        40,
+        50
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "brand": "grafana"
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "cinespine API",
+      "sublabel": "Cloud Run, FastAPI",
+      "pos": [
+        320,
+        250
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "spine",
+      "type": "database",
+      "label": "spine.db",
+      "sublabel": "SQLite, source of truth",
+      "pos": [
+        600,
+        250
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "replica",
+      "type": "cloud",
+      "label": "Spine replica bucket",
+      "sublabel": "Litestream WAL + snapshots",
+      "pos": [
+        600,
+        450
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "brand": "google-cloud"
+    },
+    {
+      "id": "mcp",
+      "type": "backend",
+      "label": "cinespine-mcp",
+      "sublabel": "mcp-clickhouse, scales to 0",
+      "pos": [
+        860,
+        50
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "clickhouse",
+      "type": "database",
+      "label": "ClickHouse Cloud",
+      "sublabel": "analytical mirror",
+      "pos": [
+        1140,
+        250
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "brand": "clickhouse"
+    },
+    {
+      "id": "vertex",
+      "type": "cloud",
+      "label": "Vertex AI Gemini",
+      "sublabel": "ADK agents, image models",
+      "pos": [
+        600,
+        50
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "brand": "google-gemini"
+    },
+    {
+      "id": "secrets",
+      "type": "security",
+      "label": "Secret Manager",
+      "sublabel": "API keys, OTLP headers",
+      "pos": [
+        320,
+        450
+      ],
+      "size": [
+        170,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "GCP project cinespine / europe-west4",
+      "wraps": [
+        "api",
+        "spine",
+        "replica",
+        "mcp",
+        "vertex",
+        "secrets"
+      ],
+      "pad": 22
+    },
+    {
+      "kind": "security-group",
+      "label": "cinespine-run service account only",
+      "wraps": [
+        "replica",
+        "secrets"
+      ],
+      "pad": 14
+    }
+  ],
+  "connections": [
+    {
+      "from": "browser",
+      "to": "api",
+      "label": "HTTPS /api + SSE",
+      "variant": "emphasis"
+    },
+    {
+      "from": "api",
+      "to": "spine",
+      "label": "SQLite writes first",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "from": "spine",
+      "to": "clickhouse",
+      "label": "best-effort mirror insert",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "from": "spine",
+      "to": "replica",
+      "label": "Litestream WAL, 1 s",
+      "variant": "security",
+      "route": "orthogonal-v"
+    },
+    {
+      "from": "api",
+      "to": "mcp",
+      "label": "MCP JSON-RPC",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "from": "mcp",
+      "to": "clickhouse",
+      "label": "read-only SQL",
+      "variant": "dashed"
+    },
+    {
+      "from": "api",
+      "to": "vertex",
+      "label": "Gemini generate_content",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "from": "secrets",
+      "to": "api",
+      "label": "env at deploy",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDy": -30
+    },
+    {
+      "from": "api",
+      "to": "grafana",
+      "label": "OTLP traces/metrics/logs",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "right"
+    },
+    {
+      "from": "browser",
+      "to": "grafana",
+      "label": "Faro beacons",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Primary path",
+      "items": [
+        "Browser calls same-origin /api on one Cloud Run instance; live updates return over SSE",
+        "Every write lands in spine.db first; ClickHouse is a best-effort mirror"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Trust boundaries",
+      "items": [
+        "The Cloud Run URL is public and unauthenticated; identity is a self-declared @handle",
+        "Only the cinespine-run service account reads secrets and the replica bucket; ClickHouse and Grafana are external SaaS over TLS"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Durability and agents",
+      "items": [
+        "max-instances=1 is an invariant: two Litestream writers corrupt the replica; a revision restores before uvicorn starts and never starts empty",
+        "Wrap Rescue reaches ClickHouse only through cinespine-mcp; Gemini calls use a 4-model fallback router"
+      ]
+    }
+  ]
+}

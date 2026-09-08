@@ -1,0 +1,340 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Where CineSpine uses AI",
+    "output": "docs/architecture/ai-usage.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1340,
+      600
+    ],
+    "views": [
+      {
+        "id": "paperwork",
+        "label": "Reading paperwork",
+        "focus": [
+          "ingest",
+          "gcloud_ai",
+          "router",
+          "gemini"
+        ],
+        "note": "Classification, camera-report vision and multimodal extraction on the ingest path."
+      },
+      {
+        "id": "studio",
+        "label": "Script Studio generation",
+        "focus": [
+          "studio",
+          "router",
+          "gemini"
+        ],
+        "note": "Character profiles, shot breakdowns, DoP presets, portraits and storyboards."
+      },
+      {
+        "id": "agents",
+        "label": "Agents and tools",
+        "focus": [
+          "webmcp",
+          "status",
+          "agents",
+          "mcp",
+          "clickhouse",
+          "gemini"
+        ],
+        "note": "ADK agents read the analytical spine through MCP; browser agents drive the page and ask for a ranked status through WebMCP."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "webmcp",
+      "type": "frontend",
+      "label": "WebMCP tools",
+      "sublabel": "document.modelContext, 8 tools",
+      "pos": [
+        40,
+        190
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "status",
+      "type": "backend",
+      "label": "Production status",
+      "sublabel": "GET /productions/{id}/status",
+      "pos": [
+        300,
+        490
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "ingest",
+      "type": "backend",
+      "label": "Ingestion parsers",
+      "sublabel": "classifier, report vision",
+      "pos": [
+        300,
+        40
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "studio",
+      "type": "backend",
+      "label": "Script Studio AI",
+      "sublabel": "profiles, shots, images",
+      "pos": [
+        300,
+        190
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "agents",
+      "type": "backend",
+      "label": "ADK agents",
+      "sublabel": "Wrap Rescue, AE Queue",
+      "pos": [
+        300,
+        340
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "router",
+      "type": "backend",
+      "label": "llm_router",
+      "sublabel": "4-model fallback + cache",
+      "pos": [
+        560,
+        190
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "mcp",
+      "type": "backend",
+      "label": "cinespine-mcp",
+      "sublabel": "mcp-clickhouse, read-only",
+      "pos": [
+        560,
+        340
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "gcloud_ai",
+      "type": "cloud",
+      "label": "Google Cloud AI APIs",
+      "sublabel": "Document AI, Speech, Video",
+      "pos": [
+        820,
+        40
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "brand": "google-cloud"
+    },
+    {
+      "id": "gemini",
+      "type": "cloud",
+      "label": "Gemini",
+      "sublabel": "text + image models",
+      "pos": [
+        820,
+        190
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "brand": "google-gemini"
+    },
+    {
+      "id": "clickhouse",
+      "type": "database",
+      "label": "ClickHouse Cloud",
+      "sublabel": "analytical mirror",
+      "pos": [
+        820,
+        340
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "brand": "clickhouse"
+    },
+    {
+      "id": "grafana",
+      "type": "external",
+      "label": "Grafana Cloud",
+      "sublabel": "GenAI spans, tokens",
+      "pos": [
+        1080,
+        190
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "brand": "grafana"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "cinespine backend (Cloud Run)",
+      "wraps": [
+        "ingest",
+        "studio",
+        "agents",
+        "router",
+        "mcp",
+        "status"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "from": "webmcp",
+      "to": "studio",
+      "label": "set DoP, render, select",
+      "variant": "dashed",
+      "route": "straight",
+      "labelDy": -26
+    },
+    {
+      "from": "webmcp",
+      "to": "agents",
+      "label": "run Wrap Rescue",
+      "variant": "dashed"
+    },
+    {
+      "from": "webmcp",
+      "to": "status",
+      "label": "summarize_production_status",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          125,
+          522
+        ]
+      ]
+    },
+    {
+      "from": "ingest",
+      "to": "gcloud_ai",
+      "label": "OCR, transcripts, shot detection",
+      "route": "straight"
+    },
+    {
+      "from": "ingest",
+      "to": "router",
+      "label": "classify, read reports",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "studio",
+      "to": "router",
+      "label": "JSON prompts",
+      "variant": "emphasis",
+      "route": "straight",
+      "labelDy": -26
+    },
+    {
+      "from": "agents",
+      "to": "router",
+      "label": "LlmAgent model",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "from": "router",
+      "to": "gemini",
+      "label": "generate_content",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "from": "agents",
+      "to": "mcp",
+      "label": "list_tables, run_query",
+      "variant": "dashed",
+      "route": "straight",
+      "labelDy": -26
+    },
+    {
+      "from": "mcp",
+      "to": "clickhouse",
+      "label": "SELECT only",
+      "variant": "dashed",
+      "route": "straight"
+    },
+    {
+      "from": "gemini",
+      "to": "grafana",
+      "label": "GenAI instrumentation",
+      "variant": "dashed",
+      "route": "straight",
+      "labelDy": -26
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Generative uses",
+      "items": [
+        "Character profiles, shot breakdowns and DoP preset copy are Gemini Flash JSON with a deterministic fallback when the model is unavailable",
+        "Portraits and storyboards try three Gemini image models, then serve a labelled placeholder rather than a fake render"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Reading, not writing",
+      "items": [
+        "Uploads are classified by Gemini Flash plus rules; camera reports go through vision; Document AI, Speech and Video Intelligence extract text from scans, audio and footage",
+        "The discrepancy assistant explains a take from spine facts; it never edits them"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Agents and guardrails",
+      "items": [
+        "Wrap Rescue is an ADK LlmAgent that reaches ClickHouse only through cinespine-mcp; the AE Queue agent is deterministic and uses no model",
+        "summarize_production_status gives an agent one ranked answer (done, running, blocking, left, missing; severity then age); llm_router walks four Gemini models on 503 and caches by prompt hash"
+      ]
+    }
+  ]
+}

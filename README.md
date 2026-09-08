@@ -40,6 +40,16 @@ When a script supervisor notes a take as *False Start*, but the sound recordist 
 
 > *See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for full C4 Level 1–4 diagrams and sequence flows.*
 
+### 3. Interactive diagrams (open the HTML)
+Three self-contained, explorable diagrams with guided views, search and export, generated from checked
+JSON specs beside them in `docs/architecture/`:
+
+| Diagram | Question it answers |
+|---|---|
+| [`runtime-architecture.html`](docs/architecture/runtime-architecture.html) | Where does a request go, what is inside the GCP project, what is external, what only the service account may touch. |
+| [`events-and-agents.html`](docs/architecture/events-and-agents.html) | How a document becomes spine events, how the two agents read the mirror and write requirements back, how people hear about it. |
+| [`ai-usage.html`](docs/architecture/ai-usage.html) | Every place a model is used: parsers, Script Studio, agents, the model router and its guardrails, WebMCP tools. |
+
 ### Level 1: System Context Diagram
 
 ```mermaid
@@ -279,6 +289,22 @@ It counts actions, not effort, and says so on the card.
 * Backed by **ClickHouse** and SQLite for zero-data-loss event streaming.
 * Real-time Server-Sent Events (SSE) dispatching live updates to crew members based on department handle (`@director`, Sound, Camera, Editorial).
 
+### 5. 🧭 Production status in one call
+`GET /api/productions/{id}/status` folds requirements, the reconciler's discrepancies, editorial tags and
+paperwork coverage into five ranked buckets: **done, running, blocking, left, missing**. Every item carries a
+severity and an age and each bucket is sorted worst-and-oldest first, so the first line of *blocking* is the
+sentence a producer wants. *Missing* is inference and each item names the rule that inferred it (a department
+that filed on other days but not this one, no crew, no linked screenplay, no paperwork at all).
+
+### 6. 🤖 WebMCP tools for browser agents
+The SPA registers tools on `document.modelContext` (the W3C WebMCP draft), so an agent driving the browser
+can act on the page instead of scraping it: navigate, set DoP settings, render a test frame, select a
+character, run Wrap Rescue, run the demo, and `summarize_production_status`, which returns the ranked
+status above as JSON plus a plain-text summary. Tools resolve through a ref so an agent always runs the
+latest React state; the one destructive tool is named `wipe_all_production_data`, carries
+`destructiveHint`, and refuses without `confirm=true`. No shipping browser exposes `document.modelContext`
+yet outside Chrome's early preview, so nothing changes for ordinary users.
+
 ---
 
 ## ☁️ Google Cloud & Partner Integration (Runtime Verified)
@@ -396,7 +422,7 @@ any of it, degrading gracefully rather than failing.
 | `CINESPINE_GEMINI_MODEL` | `gemini-3.6-flash` | Model used for character inference. |
 | `CINESPINE_AI_CHARACTER_TIMEOUT` | `60` | Seconds before inference is abandoned. A timeout discards the whole inference, so leave headroom: measured round trips on a five-scene script are 22–27s. |
 | `CINESPINE_DISABLE_AI_CHARACTER_INFERENCE` | *unset* | Set to `1` to skip inference entirely. Useful for offline work and required for a hermetic test run. |
-| `CINESPINE_DB_PATH` | `spine.db` | SQLite file holding screenplays and character profiles. Relative to the working directory, so set an absolute path for a deployment. On Google Cloud Run, this survives revision deploys. |
+| `CINESPINE_DB_PATH` | `spine.db` | SQLite file holding the eleven stores (productions, requirements, screenplays, tags, activity…). Relative to the working directory, so set an absolute path for a deployment. On Cloud Run it is replicated to `gs://cinespine-spine-db` by Litestream and restored before uvicorn starts, so a revision deploy keeps the data; the Hackathon Demo's **Factory Reset** is what empties it. |
 | `CINESPINE_EXAMPLES_DIR` | `data/examples` | Local folder of example production paperwork. Nothing is committed — see the note below. |
 | `GOOGLE_CLOUD_PROJECT` / `GCS_BUCKET_NAME` | demo values | Google Cloud Storage archival target. |
 | `CINESPINE_GEMINI_FLASH_MODEL` | `gemini-2.5-flash` | First candidate `llm_router` returns. The fallbacks after it are separate quota pools, so a 429 or 503 on one still has somewhere to go. |
@@ -446,6 +472,8 @@ npm run dev
 | `POST /api/script/characters/generate-portrait` | Photorealistic 85mm portrait locking a character's likeness. |
 | `POST /api/script/breakdown` | Scene → multi-camera shot proposals. |
 | `POST /api/script/generate-storyboard` | Render a camera frame. |
+| `GET /api/script/demo` | The demo screenplay from `data/examples/demo_script.fountain`, what the Load Demo button parses. |
+| `GET /api/productions/{id}/status` | Done, running, blocking, left, missing, each ranked by severity then age. |
 
 Every parse returns a **`script_id`** derived from the screenplay text, plus **`parse_warnings`**.
 
@@ -465,7 +493,7 @@ uv run pytest
 ```
 
 ```
-975 passed, 11 skipped in 100s
+1038 passed, 11 skipped in 106s
 ```
 
 The 11 skips are environmental, not silent failures: seven need real production
@@ -529,7 +557,7 @@ cinespine/
 │   │   ├── main.py                      # FastAPI application gateway
 │   │   ├── api/routes.py                # REST & SSE gateway
 │   │   ├── agents/                      # multimodal extractors and Wrap Rescue Agent
-│   │   ├── core/telemetry.py            # Prometheus metrics
+│   │   ├── core/telemetry.py            # OTel resource, spans, business metrics, JSON logs
 │   │   ├── integrations/
 │   │   │   └── google_cloud.py          # google-genai & GCS client
 │   │   ├── normalizers/                 # Roll, slate, take, shoot-day normalisation
@@ -540,18 +568,21 @@ cinespine/
 │   │   │   ├── character_ai.py          # AI character inference + vagueness validator
 │   │   │   ├── breakdown_engine.py      # Multi-camera coverage engine
 │   │   │   ├── dop_presets.py           # Master DoP style presets
-│   │   │   ├── ai_image_service.py      # Google Imagen generation
+│   │   │   ├── ai_image_service.py      # Gemini image models, placeholder fallback
 │   │   │   └── storyboard_generator.py  # 35mm still generator
 │   │   ├── spine/
 │   │   │   ├── writer.py                # Append-only event & document store
 │   │   │   ├── character_store.py       # Durable character profiles (SQLite)
+│   │   │   ├── activity_store.py        # user_activity ledger, every mutation route writes it
+│   │   │   ├── status_summary.py        # done / running / blocking / left / missing
 │   │   │   └── schema.py
 │   │   └── streaming/                   # SSE broker, event bus, dispatcher
-│   └── tests/                           # 142 pytest tests + conftest fixtures
+│   └── tests/                           # 1038 pytest tests + conftest fixtures
 ├── frontend/
 │   ├── src/
 │   │   ├── App.tsx                      # Set & Editorial Spine (root application)
 │   │   ├── components/ScriptStudio.tsx  # Screenplay, cast profiler & DoP Studio
+│   │   ├── hooks/useWebMCP.ts           # document.modelContext tool registration
 │   │   ├── optics.ts                    # Sensor geometry, angle of view, depth of field
 │   │   ├── api.ts / types.ts
 │   └── package.json
@@ -560,7 +591,9 @@ cinespine/
 │   ├── DEVPOST_SUBMISSION.md            # Hackathon submission package
 │   ├── GOOGLE_CLOUD_INTEGRATION.md      # Google Cloud architecture guide
 │   ├── DEMO_VIDEO_SCRIPT.md             # Demo walkthrough script
-│   └── architecture/                    # C4 doc + animated SMIL SVG diagrams
+│   ├── CLOUD_RUN_DEPLOY.md              # Deploy recipe, Litestream persistence, recovery
+│   ├── OBSERVABILITY.md                 # OTel resource, spans, metrics, Faro, SLOs
+│   └── architecture/                    # C4 doc, animated SVGs, archify HTML diagrams + specs
 └── README.md
 ```
 
