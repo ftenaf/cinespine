@@ -723,7 +723,11 @@ async def breakdown_scene_to_shots(
                         aspect_ratio=aspect_ratio,
                         characters_in_shot=setup.get("characters", scene.characters),
                         character_profiles_map=char_map,
-                        action_text=setup.get("subject_description", "")
+                        # The parameter is subject_action. This said action_text
+                        # and raised TypeError on every run where Gemini answered,
+                        # so the agent path 500'd and only the deterministic
+                        # fallback ever reached the screen (2026-09-08).
+                        subject_action=setup.get("subject_description", ""),
                     )
                     
                     cam_prop = CameraAngleProposal(

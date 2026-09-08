@@ -721,12 +721,17 @@ export const ScriptStudio: React.FC<{ productionId?: string }> = ({ productionId
 
   // Per-Scene Breakdown Loading Map
   const [breakingDownSceneMap, setBreakingDownSceneMap] = useState<Record<string, boolean>>({});
+  // Why the last breakdown of a scene produced nothing. A failed request used
+  // to end in console.error only, which on screen looked like a button that
+  // does nothing.
+  const [breakdownErrorMap, setBreakdownErrorMap] = useState<Record<string, string>>({});
 
   // Run AI Multi-Camera Breakdown for a Specific Scene
   const handleBreakdownScene = async (sceneToBreakdown: ScreenplayScene, sceneIdx?: number) => {
     if (!sceneToBreakdown) return;
     const scNum = sceneToBreakdown.scene_number;
     setBreakingDownSceneMap(prev => ({ ...prev, [scNum]: true }));
+    setBreakdownErrorMap(prev => { const next = { ...prev }; delete next[scNum]; return next; });
     if (typeof sceneIdx === 'number') {
       setSelectedSceneIndex(sceneIdx);
     }
@@ -766,13 +771,18 @@ export const ScriptStudio: React.FC<{ productionId?: string }> = ({ productionId
         if (shots.length > 0) {
           setSelectedShotId(shots[0].id);
           setActiveCamLetter('A');
+        } else {
+          setBreakdownErrorMap(prev => ({ ...prev, [scNum]: 'The breakdown came back with no setups for this scene.' }));
         }
       } else {
         const err = await res.json().catch(() => ({}));
+        const detail = typeof err?.detail === 'string' ? err.detail : `the server answered ${res.status}`;
         console.error('Breakdown API error:', err);
+        setBreakdownErrorMap(prev => ({ ...prev, [scNum]: `Breakdown failed: ${detail}` }));
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to generate shot breakdown:', err);
+      setBreakdownErrorMap(prev => ({ ...prev, [scNum]: `Breakdown failed: ${err?.message ?? 'could not reach the server'}` }));
     } finally {
       setBreakingDownSceneMap(prev => ({ ...prev, [scNum]: false }));
     }
@@ -1675,6 +1685,11 @@ export const ScriptStudio: React.FC<{ productionId?: string }> = ({ productionId
                     ? `${currentShots.length} ${currentShots.length === 1 ? 'setup' : 'setups'}`
                     : 'No breakdown yet'}
                 </p>
+                {currentScene && breakdownErrorMap[currentScene.scene_number] && (
+                  <p className="text-[11px] text-rose-300 mt-1" role="alert">
+                    {breakdownErrorMap[currentScene.scene_number]}
+                  </p>
+                )}
               </div>
               {/* The breakdown is a proposal. A DoP who wants a setup the model
                   did not think of should not have to re-run the scene and lose

@@ -621,3 +621,43 @@ def test_a_portrait_for_a_character_nobody_stored_is_not_reported_as_saved(clien
     body = _generate(client, script_id, {**maya, "id": "char_nobody"})
     assert body["saved"] is False
     assert body["image_url"]
+
+
+@pytest.mark.asyncio
+async def test_the_agent_path_builds_shots_from_gemini_setups(monkeypatch):
+    """
+    When Gemini answers, its setups become shots. This path raised TypeError
+    on a misnamed keyword for weeks and nobody noticed because the fallback
+    hid it: the deterministic breakdown ran whenever Gemini failed, so the
+    feature only broke when the model worked.
+    """
+    from backend.app.script import breakdown_engine
+
+    scene = ScreenplayScene(
+        scene_number="7", heading="INT. VAULT - NIGHT", environment="INT", location="VAULT",
+        time_of_day="NIGHT", action_blocks=["MARA counts the seconds."], characters=["MARA"],
+        raw_content="INT. VAULT - NIGHT\n\nMARA counts the seconds.",
+    )
+    fake_setups = [{
+        "setup_name": "The count", "dramatic_beat": "tension", "subject_description": "Mara counts",
+        "characters": ["MARA"],
+        "cameras": [
+            {"camera_letter": "A", "camera_role": "Master", "shot_size": "MS", "focal_length": 35,
+             "aperture": "T2.8", "camera_angle": "EYE_LEVEL", "camera_movement": "STATIC",
+             "coverage_description": "two shot"},
+            {"camera_letter": "B", "shot_size": "CU", "focal_length": 85},
+        ],
+    }]
+
+    monkeypatch.setattr(breakdown_engine, "is_agent_enabled", lambda: True)
+
+    async def fake_agent(*_args, **_kwargs):
+        return fake_setups
+
+    monkeypatch.setattr(breakdown_engine, "run_dop_agent", fake_agent)
+
+    shots = await breakdown_scene_to_shots(scene, character_profiles=[])
+    assert len(shots) == 1, "one Gemini setup, one shot; the fallback would have made two"
+    assert shots[0].shot_name.endswith("(The count)")
+    assert [c.camera_letter for c in shots[0].cameras] == ["A", "B"]
+    assert "Mara counts" in shots[0].cameras[0].prompt
