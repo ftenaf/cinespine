@@ -106,3 +106,6 @@ gcp-credentials.json
 
 # Cloud Run deployment env, which names the ClickHouse host and is per-deployment.
 deploy/cloudrun.env.yaml
+
+# archify browser-evidence sidecars; the specs and HTML are tracked
+docs/architecture/*.visual-check.*
