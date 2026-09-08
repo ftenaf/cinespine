@@ -5,7 +5,7 @@
 
 [![CI Test Suite](https://img.shields.io/badge/Pytest-975%20passed-brightgreen.svg)](https://github.com/ftenaf/cinespine/actions)
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11%20%7C%203.14-blue.svg)](https://python.org)
-[![Google Cloud: Gemini Enterprise & Imagen 3](https://img.shields.io/badge/Google%20Cloud-Gemini%20Enterprise%20%26%20Imagen%203-4285F4.svg)](https://cloud.google.com/vertex-ai)
+[![Google Cloud: Gemini Enterprise & Gemini image models](https://img.shields.io/badge/Google%20Cloud-Gemini%20Enterprise%20%26%20Gemini%20image%20models-4285F4.svg)](https://cloud.google.com/vertex-ai)
 [![Event Spine: ClickHouse](https://img.shields.io/badge/Event%20Spine-ClickHouse%20OLAP-FEE000.svg)](https://clickhouse.com)
 [![Observability: Grafana Cloud](https://img.shields.io/badge/Observability-Grafana%20Cloud%20%26%20GenAI%20OTel-F46800.svg)](https://grafana.com)
 [![Deployed on Cloud Run](https://img.shields.io/badge/Deployed-Google%20Cloud%20Run-4285F4.svg?logo=googlecloud&logoColor=white)](https://cinespine-35447568692.europe-west4.run.app)
@@ -67,7 +67,7 @@ C4Context
 
   System_Ext(sound_dev, "Sound Devices 664 / 8-Series", "Generates BEXT timecoded poly-WAVs and Sound Reports")
   System_Ext(silverstack, "Pomfort Silverstack Lab", "Generates offload volume XMLs and thumbnail contact sheets")
-  System_Ext(gemini_api, "Google Cloud Gemini & Imagen 3", "Extracts semantic narrative tension & synthesizes 35mm concept stills")
+  System_Ext(gemini_api, "Google Cloud Gemini text & image models", "Extracts semantic narrative tension & synthesizes 35mm concept stills")
   System_Ext(gcs_bucket, "Google Cloud Storage (GCS)", "Archives screenplay PDFs and verified production media assets")
   System_Ext(clickhouse_cloud, "ClickHouse Cloud + mcp-clickhouse", "Operational memory queried by the Wrap Rescue Agent")
   System_Ext(grafana_cloud, "Grafana Cloud", "OTLP traces/logs, Prometheus metrics, Faro RUM, and Agent Observability reading GenAI semantic-convention spans")
@@ -79,7 +79,7 @@ C4Context
   Rel(editorial, cinespine, "Inspects takes, tracks requirements, resolves discrepancies", "HTTPS / SSE")
   Rel(director, cinespine, "Uploads screenplay, selects DoP styles, edits camera prompts", "HTTPS / UI")
 
-  Rel(cinespine, gemini_api, "Executes semantic breakdown & Imagen 3 synthesis", "google.genai SDK")
+  Rel(cinespine, gemini_api, "Executes semantic breakdown & Gemini image synthesis", "google.genai SDK")
   Rel(cinespine, gcs_bucket, "Archives source scripts & media bytes", "google.cloud.storage SDK")
   Rel(cinespine, clickhouse_cloud, "Appends event projections and runs agent queries", "Native / HTTPS + MCP")
   Rel(cinespine, grafana_cloud, "Pushes operational telemetry & lag metrics", "Prometheus / OTLP")
@@ -149,7 +149,7 @@ Every department on a film set acts as an **independent witness**. When a user i
 
 | User Type / Role | Emitted Event Types | Description & Semantic Payload | Target Subsystems |
 | :--- | :--- | :--- | :--- |
-| **🎬 Director & DoP** | `SCREENPLAY_PARSED`<br/>`CHARACTER_LOOK_LOCKED`<br/>`3CAM_PREVIZ_RENDERED`<br/>`CAMERA_ANGLE_ADDED`<br/>`CAMERA_ANGLE_DELETED`<br/>`DOP_OPTICS_CONFIGURED` | Uploads script (`.fountain`, `.md`, `.pdf`), extracts cast profiles, adjusts optical framing ($2.39:1$), spawns extra angles (Crane Cam D, Macro Cam E), and renders Imagen 3 concept stills. | Screenplay Previz Studio, Cast Profiler, Optical Viewfinder |
+| **🎬 Director & DoP** | `SCREENPLAY_PARSED`<br/>`CHARACTER_LOOK_LOCKED`<br/>`3CAM_PREVIZ_RENDERED`<br/>`CAMERA_ANGLE_ADDED`<br/>`CAMERA_ANGLE_DELETED`<br/>`DOP_OPTICS_CONFIGURED` | Uploads script (`.fountain`, `.md`, `.pdf`), extracts cast profiles, adjusts optical framing ($2.39:1$), spawns extra angles (Crane Cam D, Macro Cam E), and renders Gemini image-model concept stills. | Screenplay Previz Studio, Cast Profiler, Optical Viewfinder |
 | **📝 Script Supervisor** | `SCRIPT_REPORT_INGESTED`<br/>`TAKE_LOGGED`<br/>`CIRCLED_TAKE_FLAGGED`<br/>`FALSE_START_RECORDED`<br/>`DIRECTOR_NOTE_APPENDED` | Logs lined pages, continuity notes, False Starts, and circled takes on set. Asserts the "Set Belief" axis. | 3-Axis Reconciliation Engine, Composed Master Sheet |
 | **🎙️ Sound Mixer** | `SOUND_ALE_INGESTED`<br/>`POLY_WAV_TRACKS_MAPPED`<br/>`WILD_TRACK_LOGGED`<br/>`TIMECODE_SYNC_ASSERTED` | Ingests Sound Devices 8-Series BEXT logs, maps ISO tracks (Boom, Lav 1, Lav 2), logs Wild Tracks (`WT 104`), asserts audio existence. | Card & Roll Map, Sequences Matrix, Audio Verifier |
 | **💾 DIT & Data Manager** | `CARD_OFFLOAD_VERIFIED`<br/>`SILVERSTACK_MANIFEST_INGESTED`<br/>`CHECKSUM_VALIDATED`<br/>`RAW_CLIP_REGISTERED` | Offloads camera magazines ($A031$), computes MD5/XXHash64 checksums, parses Silverstack XML manifests, asserts "Physical Existence" axis. | Master Sheet, Roll Map, Storage Verifier |
@@ -332,12 +332,18 @@ for model in get_model_candidates(prompt, task_complexity="simple"):
     except Exception:
         continue  # 404 retired / 429 quota / 503 overloaded -> next candidate
 
-# Google Imagen 3 Photorealistic 35mm Previz Synthesis
-result = client.models.generate_images(
-    model="imagen-3.0-generate-002",
-    prompt=compiled_dop_prompt,
-    config=dict(number_of_images=1, aspect_ratio="16:9")
-)
+# Photorealistic 35mm previz stills come from Gemini image models through
+# generate_content, tried fastest-first until one returns an inline image
+# (CINESPINE_IMAGE_MODELS overrides the list). Imagen is not used: on a
+# Developer API key the SDK refuses generate_images and :predict 404s.
+for model in image_models():  # gemini-3.1-flash-image, gemini-3-pro-image, gemini-2.5-flash-image
+    response = client.models.generate_content(
+        model=model,
+        contents=compiled_dop_prompt,
+        config=genai_types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
+    )
+    if any(p.inline_data for c in response.candidates for p in c.content.parts):
+        break
 
 # 2. Official Google Cloud Storage (GCS) Media Ingest
 from google.cloud import storage as gcs_storage
@@ -349,7 +355,7 @@ blob.upload_from_string(file_bytes, content_type="application/pdf")
 | Partner / Service | Role in CineSpine | Verification |
 | :--- | :--- | :--- |
 | **Google Cloud (Gemini Enterprise)** | Screenplay semantic analysis, cast inference, DoP prompt compilation, and Wrap Rescue memo drafting | Wrap Rescue prefers `google-adk` / Gemini Enterprise Agent Platform runtime, with Vertex AI or Gemini credentials for model calls |
-| **Google Cloud (Imagen 3)** | Photorealistic 35mm cinematic concept art generation | Model `imagen-3.0-generate-002` |
+| **Google Cloud (Gemini image models)** | Photorealistic 35mm cinematic concept art generation | `gemini-3.1-flash-image` → `gemini-3-pro-image` → `gemini-2.5-flash-image` via `generate_content`; a labelled placeholder when none answers |
 | **Google Cloud Storage (GCS)** | Screenplay PDF & high-res media archival | Bucket `gs://cinespine-production-media/` |
 | **ClickHouse** | Agent-queryable operational memory | Official `mcp-clickhouse` tool calls plus event projections |
 | **Grafana Cloud** | OTLP traces and logs, Prometheus metrics, Faro RUM, and [Agent Observability](https://grafana.com/docs/grafana-cloud/observe-and-act/agent-observability/) for the ADK agents | `GoogleGenAiSdkInstrumentor` emits OTel GenAI semantic-convention spans for `generate_content` and `execute_tool` — the shape Agent Observability reads for generations, tool calls and token usage. See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |

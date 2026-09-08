@@ -49,7 +49,7 @@ C4Context
 
   System_Ext(sound_dev, "Sound Devices 664 / 8-Series", "Generates BEXT timecoded poly-WAVs and Sound Reports")
   System_Ext(silverstack, "Pomfort Silverstack Lab", "Generates offload volume XMLs and thumbnail contact sheets")
-  System_Ext(gemini_api, "Google Cloud Gemini & Imagen 3", "Extracts semantic narrative tension & synthesizes 35mm concept stills")
+  System_Ext(gemini_api, "Google Cloud Gemini text & image models", "Extracts semantic narrative tension & synthesizes 35mm concept stills")
   System_Ext(gcs_bucket, "Google Cloud Storage (GCS)", "Archives screenplay PDFs and verified production media assets")
   System_Ext(clickhouse_cloud, "ClickHouse Cloud", "Analytical OLAP storage for historical event replays & audit logs")
   System_Ext(grafana_cloud, "Grafana Cloud Lighthouse", "Real-time production sync lag and telemetry dashboards")
@@ -64,7 +64,7 @@ C4Context
   Rel(sound_dev, sound_mixer, "Exports sound files & reports")
   Rel(silverstack, dit_crew, "Exports offload reports & checksums")
 
-  Rel(cinespine, gemini_api, "Executes semantic breakdown & Imagen 3 synthesis", "google.genai SDK")
+  Rel(cinespine, gemini_api, "Executes semantic breakdown & Gemini image synthesis", "google.genai SDK")
   Rel(cinespine, gcs_bucket, "Archives source scripts & media bytes", "google.cloud.storage SDK")
   Rel(cinespine, clickhouse_cloud, "Appends immutable production events", "Native / HTTPS")
   Rel(cinespine, grafana_cloud, "Pushes operational telemetry & lag metrics", "Prometheus / OTLP")
@@ -137,7 +137,7 @@ C4Component
     Component(char_store, "Character Profile Store", "backend.app.spine.character_store", "SQLite persistence of screenplays and hand-edited character profiles")
     Component(breakdown, "Multi-Camera Previz Engine", "backend.app.script.breakdown_engine", "Calculates synchronized camera rigs per setup")
     Component(dop_presets, "DoP Style Presets", "backend.app.script.dop_presets", "Master cinematographer style profiles and override resolution")
-    Component(ai_service, "AI Generative Service", "backend.app.script.ai_image_service", "Calls Google Imagen with the compiled DoP prompt")
+    Component(ai_service, "AI Generative Service", "backend.app.script.ai_image_service", "Calls Gemini image models with the compiled DoP prompt")
     Component(gcp_client, "Google Cloud Integration Client", "backend.app.integrations.google_cloud", "Wraps google.genai and google.cloud.storage clients")
     Component(recon, "3-Axis Reconciliation Engine", "backend.app.reconciliation.engine", "Executes multi-witness diffing algorithms")
     Component(spine, "Append-Only Event Spine", "backend.app.spine.writer", "ClickHouse / in-memory append-only event and document store")
@@ -151,7 +151,7 @@ C4Component
   Rel(routes, breakdown, "Generates multi-camera coverage")
   Rel(breakdown, dop_presets, "Applies master DoP style")
   Rel(routes, ai_service, "Executes prompt-to-image synthesis")
-  Rel(ai_service, gcp_client, "Calls Google GenAI & Imagen 3")
+  Rel(ai_service, gcp_client, "Calls Google GenAI text & image models")
   Rel(routes, gcp_client, "Archives uploaded scripts to GCS")
   Rel(routes, recon, "Runs discrepancy reconciliation")
   Rel(recon, spine, "Appends discrepancy events")
@@ -177,7 +177,7 @@ sequenceDiagram
     participant UI as React Script Studio
     participant API as FastAPI Gateway
     participant DoP as DoP Compiler
-    participant GCP as Google GenAI SDK (Imagen 3)
+    participant GCP as Google GenAI SDK (Gemini image models)
     participant GCS as Google Cloud Storage
     participant Spine as ClickHouse Event Spine
 
@@ -186,11 +186,11 @@ sequenceDiagram
     UI->>API: POST /api/script/generate-storyboard (prompt, Cam C, 85mm T1.4, Deakins 5600K, 4:1)
     API->>DoP: compile_dop_generative_prompt()
     DoP-->>API: 35mm Motion Picture Cinema Still, 85mm Macro T1.4, 5600K, Kodak 500T...
-    API->>GCP: client.models.generate_images(model="imagen-3.0-generate-002", prompt=...)
+    API->>GCP: client.models.generate_content(model="gemini-3.1-flash-image", contents=..., response_modalities=[TEXT, IMAGE])
     GCP-->>API: Returns 8K Generated Image Bytes
     API->>GCS: upload_media_to_google_cloud_storage(image_bytes, "previz/shot_27_cam_c.jpg")
     API->>Spine: append_event("PREVIZ_FRAME_GENERATED", {shot_id, cam_letter: "C", uri})
-    API-->>UI: 200 OK (image_url, compiled_prompt, provider: "Google Imagen 3")
+    API-->>UI: 200 OK (image_url, compiled_prompt, provider: "Google Gemini image (gemini-3.1-flash-image)")
     UI-->>User: Displays new photorealistic 35mm film still with "Live AI Diffusion" badge
 ```
 

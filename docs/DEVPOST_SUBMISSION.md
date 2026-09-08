@@ -85,7 +85,7 @@ flowchart TB
 
     subgraph PartnerStack["3. Partner Ecosystem & AI Stack"]
         CH[("ClickHouse Event Spine")]
-        GEM["Google Cloud Gemini / Imagen 3"]
+        GEM["Google Cloud Gemini text + image models"]
         GF["Grafana Observability & Telemetry"]
     end
 
@@ -106,12 +106,12 @@ flowchart TB
 ### **The Enterprise Technology Stack:**
 - **Google Cloud & Gemini Enterprise Agent Platform:**
   - **Gemini 1.5 / 2.0:** Semantic screenplay decomposition, narrative tension extraction, and technical cinematography compilation.
-  - **Google Imagen 3 (`imagen-3.0-generate-002`):** Photorealistic 35mm cinema concept frame synthesis.
+  - **Gemini image models (`gemini-3.1-flash-image` → `gemini-3-pro-image` → `gemini-2.5-flash-image`, via `generate_content`):** Photorealistic 35mm cinema concept frame synthesis; a labelled placeholder when none answers.
 - **ClickHouse (High-Throughput Event Spine):**
   - High-performance, append-only time-series storage storing millions of immutable events (takes, checksums, logs, reconciliation diffs) with zero data mutation.
 - **Backend Architecture (Python 3.14 + FastAPI + Pydantic v2):**
   - High-performance asynchronous API gateway with SSE event broadcasting.
-  - Google Imagen 3 image generation service for hackathon-safe concept frames.
+  - Gemini image-model generation service for hackathon-safe concept frames.
   - Strict 3-axis reconciliation algorithms.
 - **Frontend Experience (React 18 + Vite + Tailwind CSS + Lucide Icons):**
   - High-contrast, dark-mode cinematic interface engineered for set monitors and DIT carts.

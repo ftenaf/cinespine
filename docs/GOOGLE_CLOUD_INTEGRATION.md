@@ -8,9 +8,9 @@ CineSpine incorporates native, runtime integration with Google Cloud and the Gem
 |                             Google Cloud Platform                             |
 |                                                                               |
 |  +-------------------------+  +----------------------+  +------------------+  |
-|  |      Gemini Flash       |  |       Imagen 3       |  |  Google Cloud    |  |
+|  |      Gemini Flash       |  |  Gemini image models |  |  Google Cloud    |  |
 |  |  Screenplay Breakdown   |  |   35mm Cinema Stills |  |     Storage      |  |
-|  |  & Tension Extraction   |  | (imagen-3.0-generate)|  | (PDFs & Media)   |  |
+|  |  & Tension Extraction   |  | (generate_content)   |  | (PDFs & Media)   |  |
 |  +------------^------------+  +-----------^----------+  +--------^---------+  |
 |               |                           |                      |            |
 +---------------|---------------------------|----------------------|------------+
@@ -45,7 +45,7 @@ CineSpine incorporates native, runtime integration with Google Cloud and the Gem
   is metered per model, so falling through is what keeps the feature working.
   Pro routing is opt-in via `CINESPINE_GEMINI_PRO_MODEL`: a free-tier key is quota'd
   at zero on pro models, not merely throttled.
-* **Image synthesis (`imagen-3.0-generate-002`):** Photorealistic 35mm stills per camera, with a REST fallback if the SDK path fails.
+* **Image synthesis (Gemini image models via `generate_content`):** Photorealistic 35mm stills per camera. `gemini-3.1-flash-image`, `gemini-3-pro-image`, `gemini-2.5-flash-image` are tried in order (`CINESPINE_IMAGE_MODELS` overrides); Imagen is not used, since on a Developer API key `generate_images` is refused and `:predict` 404s.
 
 ### B. `google-cloud-storage` SDK
 * **Module:** [`backend/app/integrations/google_cloud.py`](backend/app/integrations/google_cloud.py)
@@ -83,7 +83,7 @@ credentials at all.
 ## 3. Endpoints & Telemetry
 * `GET /api/integrations/google-cloud`: Returns JSON telemetry detailing active SDK connections, project IDs, bucket status, and model readiness.
 * `POST /api/script/upload`: Automatically uploads and archives the ingested screenplay to GCS.
-* `POST /api/script/generate-storyboard`: Compiles DoP optics and executes prompt-to-image synthesis using Gemini / Imagen 3.
+* `POST /api/script/generate-storyboard`: Compiles DoP optics and executes prompt-to-image synthesis using Gemini image models.
 
 ---
 

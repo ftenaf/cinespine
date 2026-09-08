@@ -236,10 +236,10 @@
       <text x="12" y="38" font-size="8.5" fill="#94a3b8">Screenplay breakdown &amp; DoP prompt compilation</text>
     </g>
 
-    <!-- Imagen 3 Card -->
+    <!-- Gemini image Card -->
     <g transform="translate(15, 108)">
       <rect width="260" height="52" rx="8" fill="#1e293b" stroke="#a855f7" stroke-width="1" />
-      <text x="12" y="20" font-size="10.5" font-weight="800" fill="#d8b4fe">Imagen 3 (imagen-3.0-generate)</text>
+      <text x="12" y="20" font-size="10.5" font-weight="800" fill="#d8b4fe">Gemini image models (google.genai)</text>
       <text x="12" y="38" font-size="8.5" fill="#94a3b8">Photorealistic 35mm concept still generation</text>
     </g>
 

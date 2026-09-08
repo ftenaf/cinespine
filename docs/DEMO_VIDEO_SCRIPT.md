@@ -16,7 +16,7 @@ This script is specifically tuned to maximize the **ClickHouse** and **Grafana L
 2. **Verify Production Services.** Since the app is deployed to production, just ensure your live production URL is loaded and the Wrap Rescue Agent is successfully talking to the production ClickHouse MCP server.
 3. **Open Grafana Cloud.** Have your Grafana Cloud dashboard open in another tab, logged in. Navigate to the **Alerting -> Alert Rules** page, and have a trace containing `GoogleGenAiSdkInstrumentor` ready to show in the **Explore** view.
 4. **Load the script studio first.** "Screenplay & Previz Studio" opens completely empty. Click **Load Demo Script** and wait for "3 Scenes Extracted" before you start talking.
-5. **Image generation needs billing enabled.** Ensure your Google AI project has billing enabled or the Imagen 3 render will fail.
+5. **Image generation needs billing enabled.** Ensure your Google AI project has billing enabled or the Gemini image render falls back to the labelled placeholder.
 
 ---
 
@@ -62,7 +62,7 @@ This script is specifically tuned to maximize the **ClickHouse** and **Grafana L
 
 **Visual:** Switch to the `🎬 Screenplay & Previz Studio` tab. Briefly show the 3-camera setups and click **Execute & Render Camera A AI Concept**.
 
-> Finally, our Previz Studio parses screenplays to generate 3-camera cinematic concepts using Google Imagen 3, simulating real optical physics. 
+> Finally, our Previz Studio parses screenplays to generate 3-camera cinematic concepts using Gemini image models, simulating real optical physics. 
 > Four departments, one spine, total clarity. Thank you.
 
 ---
