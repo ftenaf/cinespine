@@ -357,24 +357,28 @@ export const ScriptStudio: React.FC<{ productionId?: string }> = ({ productionId
    * reload emptied the studio. The id is remembered here; on mount it is
    * asked for whole, and forgotten if the server no longer has it.
    */
+  /** Puts a stored screenplay on screen. The one place that knows which state a load touches. */
+  const showStoredScreenplay = (data: any, fallbackId: string) => {
+    if (data.title) setScriptTitle(data.title);
+    setScriptId(data.script_id || fallbackId);
+    setParseWarnings([]);
+    setParsedScenes(data.scenes || []);
+    setCharacters(data.characters || []);
+    if (data.characters && data.characters.length > 0) {
+      setSelectedCharId(data.characters[0].id);
+    }
+    setSelectedSceneIndex(0);
+    setShotsMap(data.shots || {});
+    setUploadedFileName(data.filename || null);
+  };
+
   useEffect(() => {
     if (typeof localStorage === 'undefined') return;
     const remembered = localStorage.getItem(STUDIO_SCRIPT_KEY);
     if (!remembered) return;
     let live = true;
     fetchScreenplay(remembered)
-      .then(data => {
-        if (!live) return;
-        if (data.title) setScriptTitle(data.title);
-        setScriptId(data.script_id || remembered);
-        setParseWarnings([]);
-        setParsedScenes(data.scenes || []);
-        setCharacters(data.characters || []);
-        if (data.characters && data.characters.length > 0) {
-          setSelectedCharId(data.characters[0].id);
-        }
-        setSelectedSceneIndex(0);
-      })
+      .then(data => { if (live) showStoredScreenplay(data, remembered); })
       .catch(() => {
         if (live) localStorage.removeItem(STUDIO_SCRIPT_KEY);
       });
@@ -394,33 +398,32 @@ export const ScriptStudio: React.FC<{ productionId?: string }> = ({ productionId
   const scriptIdRef = useRef<string | null>(null);
   scriptIdRef.current = scriptId;
 
+  /** The script the production in the dropdown is linked to, or null when it has none. */
+  const [linkedScriptId, setLinkedScriptId] = useState<string | null>(null);
+
+  /**
+   * Loads the screenplay a production is shooting. Returns the linked id, or
+   * null when the production has none. Does nothing when that script is
+   * already on screen, so re-selecting a production is free.
+   */
+  const loadProductionScript = async (pid: string, isLive: () => boolean = () => true): Promise<string | null> => {
+    const res = await fetch(`/api/script/link?production_id=${encodeURIComponent(pid)}`);
+    const data = res.ok ? await res.json() : null;
+    const linked: string | null = data?.script_id || null;
+    if (!isLive()) return linked;
+    setLinkedScriptId(linked);
+    if (linked && linked !== scriptIdRef.current) {
+      const scriptData = await fetchScreenplay(linked);
+      if (isLive()) showStoredScreenplay(scriptData, linked);
+    }
+    return linked;
+  };
+
   useEffect(() => {
     if (!productionId) return;
     let live = true;
-    fetch(`/api/script/link?production_id=${encodeURIComponent(productionId)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (!live) return;
-        if (data && data.script_id && data.script_id !== scriptIdRef.current) {
-          fetchScreenplay(data.script_id)
-            .then(scriptData => {
-              if (!live) return;
-              if (scriptData.title) setScriptTitle(scriptData.title);
-              setScriptId(data.script_id);
-              setParseWarnings([]);
-              setParsedScenes(scriptData.scenes || []);
-              setCharacters(scriptData.characters || []);
-              if (scriptData.characters && scriptData.characters.length > 0) {
-                setSelectedCharId(scriptData.characters[0].id);
-              }
-              setSelectedSceneIndex(0);
-              setShotsMap(scriptData.shots || {});
-              setAttachedProductionId(productionId);
-            })
-            .catch(() => {});
-        }
-      })
-      .catch(() => {});
+    setAttachedProductionId(productionId);
+    loadProductionScript(productionId, () => live).catch(() => {});
     return () => { live = false; };
   }, [productionId]);
 
@@ -676,12 +679,21 @@ export const ScriptStudio: React.FC<{ productionId?: string }> = ({ productionId
    * and a reload would make an existing link look absent.
    */
   useEffect(() => {
-    if (!scriptId) { setAttachedProductionId(''); return; }
+    if (!scriptId) return;
     let live = true;
     fetch(`/api/script/link?script_id=${encodeURIComponent(scriptId)}`)
       .then(res => res.json())
       .then(data => {
-        if (live) setAttachedProductionId(data?.production_ids?.[0] ?? '');
+        if (!live) return;
+        const owner = data?.production_ids?.[0];
+        // A script that is attached somewhere selects that production. One
+        // that is attached nowhere leaves the selection alone: the dropdown
+        // is the production being worked on, and a fresh upload is exactly
+        // when the "attach this script instead" offer is wanted.
+        if (owner) {
+          setAttachedProductionId(owner);
+          setLinkedScriptId(scriptId);
+        }
       })
       .catch(() => {
         // Leave the control offering to attach; the attempt itself will say
@@ -696,26 +708,49 @@ export const ScriptStudio: React.FC<{ productionId?: string }> = ({ productionId
    * One script per production: a production with two scripts has no answer to
    * "what is scene 119", so attaching a second one replaces the first.
    */
-  const handleAttachToProduction = async (productionId: string) => {
-    setAttachedProductionId(productionId);
+  const handleAttachToProduction = async (targetProductionId: string) => {
     setAttachError(null);
-    if (!productionId || !scriptId) return;
+    if (!targetProductionId || !scriptId) return;
     setIsAttaching(true);
     try {
       const res = await fetch('/api/script/link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ production_id: productionId, script_id: scriptId })
+        body: JSON.stringify({ production_id: targetProductionId, script_id: scriptId })
       });
       if (!res.ok) {
-        setAttachedProductionId('');
         setAttachError('Could not attach this script. Try loading it again.');
+      } else {
+        setLinkedScriptId(scriptId);
       }
     } catch {
-      setAttachedProductionId('');
       setAttachError('Could not reach the server to attach this script.');
     } finally {
       setIsAttaching(false);
+    }
+  };
+
+  /**
+   * Choosing a production in the studio switches to it.
+   *
+   * If the production has a screenplay, that screenplay loads; the studio
+   * used to require going back to the Productions view to change what it
+   * showed. If it has none and a script is on screen, the script is attached
+   * to it, which is what the dropdown always did. If it has a different
+   * script from the one on screen, nothing is replaced silently: the linked
+   * one loads and an explicit button offers to attach the current one
+   * instead.
+   */
+  const handleSelectProduction = async (pid: string) => {
+    setAttachedProductionId(pid);
+    setAttachError(null);
+    if (!pid) { setLinkedScriptId(null); return; }
+    const before = scriptIdRef.current;
+    try {
+      const linked = await loadProductionScript(pid);
+      if (!linked && before) await handleAttachToProduction(pid);
+    } catch {
+      setAttachError('Could not load that production\'s screenplay.');
     }
   };
 
@@ -1378,20 +1413,29 @@ export const ScriptStudio: React.FC<{ productionId?: string }> = ({ productionId
             <Link2 className={`w-3.5 h-3.5 ${attachedProductionId ? 'text-spine-success' : 'text-gray-500'}`} />
             <select
               value={attachedProductionId}
-              onChange={e => handleAttachToProduction(e.target.value)}
-              disabled={!scriptId || isAttaching || productions.length === 0}
-              title="The production shooting this script"
+              onChange={e => handleSelectProduction(e.target.value)}
+              disabled={isAttaching || productions.length === 0}
+              title="Switch production: loads its screenplay, or attaches this one if it has none"
               className="bg-slate-800 border border-slate-700 text-gray-200 text-xs rounded-md px-2 py-1.5 disabled:opacity-50"
             >
               <option value="">
-                {productions.length === 0 ? 'No productions yet' : 'Attach to production...'}
+                {productions.length === 0 ? 'No productions yet' : 'Choose a production...'}
               </option>
               {productions.map(p => (
                 <option key={p.production_id} value={p.production_id}>{p.name}</option>
               ))}
             </select>
-            {attachedProductionId && !isAttaching && !attachError && (
+            {attachedProductionId && !isAttaching && !attachError && scriptId && linkedScriptId === scriptId && (
               <Check className="w-3.5 h-3.5 text-spine-success" />
+            )}
+            {attachedProductionId && !isAttaching && scriptId && linkedScriptId && linkedScriptId !== scriptId && (
+              <button
+                onClick={() => handleAttachToProduction(attachedProductionId)}
+                className="text-[10px] px-2 py-1 rounded-md border border-amber-600/50 text-amber-200 hover:bg-amber-500/10"
+                title="Replace the production's screenplay with the one on screen"
+              >
+                Attach this script instead
+              </button>
             )}
             {attachError && (
               <span className="text-[10px] text-red-400 max-w-[10rem]">{attachError}</span>
