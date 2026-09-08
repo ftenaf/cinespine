@@ -396,3 +396,41 @@ def test_user_edits_survive_reupload_with_inference(monkeypatch, tmp_path):
     again = client.post("/api/script/upload", files=files).json()
     maya_again = next(c for c in again["characters"] if c["name"] == "MAYA")
     assert maya_again["look_and_costume"] == "Red raincoat, silver locket"
+
+
+def test_a_large_cast_is_inferred_in_concurrent_batches(monkeypatch):
+    """
+    One call for the whole cast timed out on a feature-length script. The cast
+    is split into batches that run together; a batch that times out costs its
+    own characters, named in the warning, and the rest are still inferred.
+    """
+    monkeypatch.delenv("CINESPINE_DISABLE_AI_CHARACTER_INFERENCE", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(character_ai, "BATCH_SIZE", 3)
+
+    names = [f"CHAR{i}" for i in range(7)]
+    lines = "\n\n".join(f"INT. ROOM {i} - DAY\n\n{n} walks in.\n\n{n}\nLine {i}." for i, n in enumerate(names))
+    sp = parse_fountain_screenplay("CAST\n\n" + lines, title="cast")
+    assert len(sp.characters) == 7
+
+    prompts = []
+
+    def responder(prompt):
+        prompts.append(prompt)
+        batch = [n for n in names if f"\"name\": \"{n}\"" in prompt or n in prompt]
+        if "CHAR3" in batch:
+            raise asyncio.TimeoutError()
+        return json.dumps([{
+            "name": n, "actor_reference": GOOD_ACTOR_REF,
+            "look_and_costume": GOOD_COSTUME, "facial_features": GOOD_FACE,
+        } for n in batch])
+
+    monkeypatch.setattr(character_ai, "_call_gemini", responder)
+    result = asyncio.run(character_ai.enrich_screenplay_characters(sp))
+
+    assert len(prompts) == 3, "seven characters in batches of three is three calls"
+    inferred = [c.name for c in result.characters if c.look_and_costume == GOOD_COSTUME]
+    assert len(inferred) >= 4, "the batches that answered were applied"
+    assert "CHAR3" not in inferred
+    timed_out = [w for w in result.parse_warnings if "timed out" in w]
+    assert timed_out and "CHAR3" in timed_out[0]

@@ -30,16 +30,27 @@ from backend.app.script.cache_service import (
     get_cached_response,
     set_cached_response,
 )
-from backend.app.script.parser import Screenplay, ScreenplayScene
+from backend.app.script.parser import CharacterProfile, Screenplay, ScreenplayScene
 from backend.app.script.character_agent import fallback_enrich_characters
 
 logger = logging.getLogger(__name__)
 
 MODEL = os.environ.get("CINESPINE_GEMINI_MODEL", "gemini-3.6-flash")
-# A timeout discards the whole inference, so the default is generous: measured
-# round trips on a five-scene script run ~23s, which left too little headroom
-# at the previous 30s.
-TIMEOUT_SECONDS = float(os.environ.get("CINESPINE_AI_CHARACTER_TIMEOUT", "60"))
+# Per batch, and batches run together, so this is the wall time of the whole
+# inference, not a sum. 90 s because on a feature-length script one batch of
+# eight profiles measured 60 s on the API-key path and timed out at the old
+# limit while the other three answered.
+TIMEOUT_SECONDS = float(os.environ.get("CINESPINE_AI_CHARACTER_TIMEOUT", "90"))
+
+# Characters per Gemini call. One call for the whole cast worked for a
+# five-scene demo and timed out on a feature: Blade Runner parses to 28
+# characters and ~7k prompt tokens, and the JSON answer for 28 profiles is the
+# slow part, not the reading. Batches run concurrently, so wall time is one
+# batch's, and a batch that fails costs its eight characters, not all of them.
+BATCH_SIZE = int(os.environ.get("CINESPINE_AI_CHARACTER_BATCH", "8"))
+# Concurrent batches. Enough to cover a feature in one round; few enough to
+# stay clear of per-minute quota on an API key.
+MAX_PARALLEL_BATCHES = int(os.environ.get("CINESPINE_AI_CHARACTER_PARALLEL", "4"))
 
 # Per character, how much evidence to send. Keeps the prompt bounded on
 # feature-length scripts.
@@ -186,16 +197,23 @@ CORRECT - this level of specificity is required:
 """
 
 
-def build_prompt(screenplay: Screenplay, retry_feedback: Optional[str] = None) -> str:
+def build_prompt(
+    screenplay: Screenplay,
+    retry_feedback: Optional[str] = None,
+    characters: Optional[List[CharacterProfile]] = None,
+) -> str:
     """
-    Builds a single grounded prompt covering the whole cast.
+    Builds a single grounded prompt covering the given characters, or the
+    whole cast.
 
     `retry_feedback` names characters whose first response was too vague, so the
-    correction is targeted rather than a blind re-ask.
+    correction is targeted rather than a blind re-ask. `characters` is one
+    batch of the cast; the scene list and settings are always the whole
+    screenplay, because a character's evidence lives wherever they appear.
     """
     cast = [
         collect_character_evidence(profile.name, screenplay.scenes)
-        for profile in screenplay.characters
+        for profile in (characters if characters is not None else screenplay.characters)
     ]
     settings = [scene.heading for scene in screenplay.scenes][:12]
 
@@ -537,42 +555,85 @@ async def enrich_screenplay_characters(screenplay: Screenplay) -> Screenplay:
         )
         return fallback_enrich_characters(screenplay)
 
-    try:
-        raw = await asyncio.wait_for(
-            asyncio.to_thread(_call_gemini, build_prompt(screenplay)),
-            timeout=TIMEOUT_SECONDS,
-        )
-    except asyncio.TimeoutError:
-        screenplay.parse_warnings.append(
-            f"AI character inference timed out after {TIMEOUT_SECONDS:.0f}s; "
-            "showing details derived from the script text."
-        )
-        return fallback_enrich_characters(screenplay)
-    except Exception as exc:  # noqa: BLE001 - inference must never fail an upload
-        logger.warning("Character inference failed: %s", exc)
-        screenplay.parse_warnings.append(
-            "AI character inference was unavailable; showing details derived from "
-            "the script text."
-        )
+    # Leads first, so if a round is cut short the people with the most lines
+    # got the model's attention. Each batch is its own call with its own
+    # timeout; batches run together.
+    ordered = sorted(screenplay.characters, key=lambda c: -int(c.dialogue_count or 0))
+    batches = [ordered[i:i + BATCH_SIZE] for i in range(0, len(ordered), BATCH_SIZE)]
+    gate = asyncio.Semaphore(max(1, MAX_PARALLEL_BATCHES))
+
+    async def infer(batch: List[CharacterProfile]) -> str:
+        async with gate:
+            return await asyncio.wait_for(
+                asyncio.to_thread(_call_gemini, build_prompt(screenplay, characters=batch)),
+                timeout=TIMEOUT_SECONDS,
+            )
+
+    results = await asyncio.gather(*(infer(b) for b in batches), return_exceptions=True)
+
+    inferred: Dict[str, Dict[str, Any]] = {}
+    timed_out: List[str] = []
+    failed: List[str] = []
+    empty: List[str] = []
+    for batch, outcome in zip(batches, results):
+        names = [c.name for c in batch]
+        if isinstance(outcome, asyncio.TimeoutError):
+            timed_out.extend(names)
+        elif isinstance(outcome, BaseException):
+            logger.warning("Character inference failed for %s: %s", ", ".join(names), outcome)
+            failed.extend(names)
+        else:
+            parsed = parse_ai_response(outcome)
+            if not parsed:
+                empty.extend(names)
+            inferred.update(parsed)
+
+    if not inferred:
+        if timed_out and not failed and not empty:
+            screenplay.parse_warnings.append(
+                f"AI character inference timed out after {TIMEOUT_SECONDS:.0f}s; "
+                "showing details derived from the script text."
+            )
+        elif failed and not timed_out and not empty:
+            screenplay.parse_warnings.append(
+                "AI character inference was unavailable; showing details derived from "
+                "the script text."
+            )
+        else:
+            screenplay.parse_warnings.append(
+                "AI character inference returned nothing usable; showing details derived "
+                "from the script text."
+            )
         return fallback_enrich_characters(screenplay)
 
-    inferred = parse_ai_response(raw)
-    if not inferred:
+    # Partial rounds say who was left to the script text, so a producer knows
+    # which profiles to look at rather than trusting them all equally.
+    if timed_out:
         screenplay.parse_warnings.append(
-            "AI character inference returned nothing usable; showing details derived "
-            "from the script text."
+            f"AI inference timed out after {TIMEOUT_SECONDS:.0f}s for "
+            f"{', '.join(sorted(timed_out))}; those details come from the script text."
         )
-        return fallback_enrich_characters(screenplay)
+    if failed:
+        screenplay.parse_warnings.append(
+            f"AI inference was unavailable for {', '.join(sorted(failed))}; "
+            "those details come from the script text."
+        )
 
     # A prompt cannot guarantee specificity, so check the output and ask once
     # more for whatever came back too generic to render.
     weak = find_vague_characters(inferred)
     if weak:
+        # Only the characters that came back generic, not the whole cast again.
+        weak_profiles = [c for c in screenplay.characters if c.name.upper() in weak]
         try:
             retry_raw = await asyncio.wait_for(
                 asyncio.to_thread(
                     _call_gemini,
-                    build_prompt(screenplay, retry_feedback=build_retry_feedback(weak)),
+                    build_prompt(
+                        screenplay,
+                        retry_feedback=build_retry_feedback(weak),
+                        characters=weak_profiles or None,
+                    ),
                 ),
                 timeout=TIMEOUT_SECONDS,
             )
@@ -600,7 +661,7 @@ async def enrich_screenplay_characters(screenplay: Screenplay) -> Screenplay:
 
     applied = apply_inferred_profiles(screenplay, inferred)
     missed = len(screenplay.characters) - applied
-    if missed > 0:
+    if missed > 0 and not (timed_out or failed):
         screenplay.parse_warnings.append(
             f"AI inferred details for {applied} of {len(screenplay.characters)} characters."
         )
