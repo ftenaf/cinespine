@@ -589,6 +589,15 @@ export async function fetchDashboard(
 // Script context: the scene behind a slate
 // ==========================================
 
+/** Where a production stands: done, running, blocking, left, missing, each ranked by severity then age. */
+export async function fetchProductionStatus(
+  productionId: string,
+): Promise<import('./types').ProductionStatus> {
+  const res = await fetch(`${API_BASE}/productions/${encodeURIComponent(productionId)}/status`);
+  if (!res.ok) throw await apiError(res, 'Failed to read the production status');
+  return res.json();
+}
+
 /** The demo screenplay's text, served from data/examples so it is one file, not a bundled string. */
 export async function fetchDemoScript(): Promise<{ filename: string; script_text: string }> {
   const res = await fetch(`${API_BASE}/script/demo`);

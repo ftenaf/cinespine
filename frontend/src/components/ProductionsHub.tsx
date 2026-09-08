@@ -14,6 +14,9 @@ import { AnalyticsPanel } from './AnalyticsPanel';
 import { RequirementsBoard } from './RequirementsBoard';
 import { AssistantEditorialPanel } from './AssistantEditorialPanel';
 import { WrapRescueAgentPanel } from './WrapRescueAgentPanel';
+import { useWebMCP } from '../hooks/useWebMCP';
+import { fetchProductionStatus } from '../api';
+import { formatStatusSummary } from '../statusSummary';
 
 /**
  * The productions section: every production in one place, with the progress
@@ -413,6 +416,41 @@ export function ProductionsHub({
 }: HubProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [statuses, setStatuses] = useState<string[]>([]);
+
+  /**
+   * "How is this production doing?" for a browser agent. One backend call,
+   * five ranked buckets, and a plain-text summary the agent can read out.
+   * Defaults to the production selected on screen so the question needs no
+   * arguments; names one explicitly to ask about another.
+   */
+  useWebMCP([
+    {
+      name: 'summarize_production_status',
+      description: 'Summarize a production: what is done, running, blocking, left and missing, each ranked by severity then age. Read-only. Defaults to the production selected on screen.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          production_id: { type: 'string', description: 'Production to summarize. Defaults to the selected one.' },
+          limit: { type: 'integer', minimum: 1, maximum: 25, description: 'Items per bucket in the text summary. Default 5.' },
+        },
+      },
+      annotations: { readOnlyHint: true },
+      execute: async (inputs: { production_id?: string; limit?: number }) => {
+        const id = inputs?.production_id || selectedProductionId;
+        if (!id) {
+          return { error: 'No production selected and none named. Known: ' + productions.map(p => p.production_id).join(', ') };
+        }
+        try {
+          const status = await fetchProductionStatus(id);
+          return { summary: formatStatusSummary(status, inputs?.limit ?? 5), status };
+        } catch (e: any) {
+          // An error object, not a throw: the agent reads it and can pick
+          // another production id from the list.
+          return { error: e?.detail ?? e?.message ?? 'Could not read the production status', known: productions.map(p => p.production_id) };
+        }
+      },
+    },
+  ]);
   const [scripts, setScripts] = useState<Record<string, LinkedScript | null>>({});
   const [requirements, setRequirements] = useState<Record<string, Requirement[]>>({});
   // Bumped whenever the board changes something, so the cards' counts follow.

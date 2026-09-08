@@ -666,6 +666,42 @@ export interface CrewWorkload {
   by_member: CrewWorkloadMember[];
 }
 
+/* One production, five questions, ranked. Served by GET /productions/{id}/status;
+   see backend/app/spine/status_summary.py for what each bucket means. */
+export type StatusBucket = 'done' | 'running' | 'blocking' | 'left' | 'missing';
+export type StatusSeverity = 'critical' | 'high' | 'medium' | 'low';
+
+export interface StatusItem {
+  bucket: StatusBucket;
+  kind: string;
+  id: string;
+  title: string;
+  severity: StatusSeverity;
+  since: string | null;
+  age_hours: number | null;
+  detail?: string;
+  shoot_day?: string | null;
+  target?: string | null;
+  owner?: string | null;
+  status?: string | null;
+  count?: number;
+  [extra: string]: unknown;
+}
+
+export interface ProductionStatus {
+  production_id: string;
+  generated_at: string;
+  shoot_days: string[];
+  counts: Record<StatusBucket, number>;
+  headline: string;
+  urgent: StatusItem[];
+  done: StatusItem[];
+  running: StatusItem[];
+  blocking: StatusItem[];
+  left: StatusItem[];
+  missing: StatusItem[];
+}
+
 export interface ProductionDashboard {
   production_id: string;
   shots: ProgressAxis;

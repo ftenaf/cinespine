@@ -20,6 +20,7 @@ from backend.app.spine import production_store
 from backend.app.spine import crew_store
 from backend.app.spine import requirement_store
 from backend.app.spine import workload
+from backend.app.spine import status_summary
 from backend.app.spine import breakdown_store
 from backend.app.spine import tag_store
 from backend.app.reconciliation.engine import ReconciliationEngine
@@ -440,6 +441,23 @@ def get_production(production_id: str):
     if not production:
         raise HTTPException(status_code=404, detail=f"No production {production_id}")
     return production
+
+
+@router.get("/productions/{production_id}/status")
+def get_production_status(production_id: str):
+    """
+    Where a production stands, in five ranked buckets: done, running,
+    blocking, left, missing.
+
+    Built for one question asked by a person or a browser agent: "how is this
+    production doing?" Everything the dashboard, the requirements board and
+    the reconciler know, folded into items that each carry a severity and an
+    age, sorted worst-and-oldest first. See spine/status_summary.py for what
+    each bucket means and which items are inference.
+    """
+    if not spine_writer.get_production(production_id):
+        raise HTTPException(status_code=404, detail=f"No production {production_id}")
+    return status_summary.production_status(spine_writer, mcp_server, production_id)
 
 
 @router.patch("/productions/{production_id}")
