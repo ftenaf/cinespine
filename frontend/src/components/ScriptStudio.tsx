@@ -381,6 +381,19 @@ export const ScriptStudio: React.FC<{ productionId?: string }> = ({ productionId
     return () => { live = false; };
   }, []);
 
+  /**
+   * The production's linked screenplay loads when the production changes,
+   * and only then.
+   *
+   * This used to re-run on every scriptId change too. Uploading a new script
+   * set the new id, the effect fired, found the production still linked to
+   * the previous script, and put the previous script back: a fresh upload
+   * looked like it had not happened. The current id is read through a ref so
+   * the comparison stays correct without making it a dependency.
+   */
+  const scriptIdRef = useRef<string | null>(null);
+  scriptIdRef.current = scriptId;
+
   useEffect(() => {
     if (!productionId) return;
     let live = true;
@@ -388,7 +401,7 @@ export const ScriptStudio: React.FC<{ productionId?: string }> = ({ productionId
       .then(res => res.json())
       .then(data => {
         if (!live) return;
-        if (data && data.script_id && data.script_id !== scriptId) {
+        if (data && data.script_id && data.script_id !== scriptIdRef.current) {
           fetchScreenplay(data.script_id)
             .then(scriptData => {
               if (!live) return;
@@ -402,13 +415,14 @@ export const ScriptStudio: React.FC<{ productionId?: string }> = ({ productionId
               }
               setSelectedSceneIndex(0);
               setShotsMap(scriptData.shots || {});
+              setAttachedProductionId(productionId);
             })
             .catch(() => {});
         }
       })
       .catch(() => {});
     return () => { live = false; };
-  }, [productionId, scriptId]);
+  }, [productionId]);
 
   useEffect(() => {
     if (typeof localStorage === 'undefined' || !scriptId) return;
