@@ -109,3 +109,4 @@ deploy/cloudrun.env.yaml
 
 # archify browser-evidence sidecars; the specs and HTML are tracked
 docs/architecture/*.visual-check.*
+.agents/

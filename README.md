@@ -610,3 +610,4 @@ cinespine/
 * **License:** [MIT License](LICENSE)
 * **Hackathon:** Built for [Agentic Cinema: The Blockbuster Hackathon](https://agentic-cinema.devpost.com/)
 * **Created by:** Francisco & The CineSpine Team
+* **Development tooling disclosure:** an AI coding assistant (Anthropic's Claude Code) was used during development, as a developer tool alongside the editor and terminal. The product itself calls Google Cloud AI only: Gemini models through the Google GenAI SDK and Vertex AI, Google's Agent Development Kit, and the official ClickHouse MCP server. No Anthropic, OpenAI or other non-Google model, agent framework or AI API is used by, bundled with, or called from the submitted software.

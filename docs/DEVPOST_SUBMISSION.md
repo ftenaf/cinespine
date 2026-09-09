@@ -118,6 +118,7 @@ flowchart TB
   - 3-Camera switcher, interactive multi-view grid, and full-screen lightbox inspection.
 - **ClickHouse Cloud (partner track):** the analytical mirror of the spine: `production_events`, `takes_meta`, `audit_discrepancies`, `requirement_events`, `editorial_tag_events`, `user_activity`. Every analytics panel, the crew workload ledger and the production status endpoint are ClickHouse queries; the Wrap Rescue Agent reads it through `mcp-clickhouse` (`list_tables`, `run_select_query`) and never with a direct connection.
 - **Observability (supporting):** OTLP traces, metrics and logs to Grafana Cloud; every Gemini generation and MCP tool call is a span with token counts.
+- **Development tooling disclosure:** an AI coding assistant (Anthropic's Claude Code) was used during development, as a developer tool. The submitted software calls Google Cloud AI only (Gemini via the GenAI SDK and Vertex AI, Google ADK) plus the official ClickHouse MCP server. No non-Google model, agent framework or AI API is used by or bundled with the project.
 
 ---
 
