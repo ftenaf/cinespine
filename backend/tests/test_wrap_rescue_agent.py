@@ -247,3 +247,39 @@ def test_wrap_rescue_endpoint_returns_trace(monkeypatch):
     assert data["actor"] == "@editor"
     assert data["mcp_status"]["available"] is True
     assert data["steps"][0]["step"] == "rank_blockers"
+
+
+def test_the_memo_reaches_the_runner_and_the_producers(monkeypatch):
+    """
+    The memo used to exist only in the panel of whoever clicked Run. It now
+    lands as a notification for that person and for the crew whose role is
+    to act on it, so an agent that "reports to the producer" does.
+    """
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
+
+    spine = SpineWriter()
+    spine.register_production(production_id="PROD", name="Prod")
+    spine.upsert_production_crew_member({"production_id": "PROD", "handle": "@producer_one", "name": "P", "role": "Line Producer", "department": "production"})
+    spine.upsert_production_crew_member({"production_id": "PROD", "handle": "@dit", "name": "D", "role": "DIT / Data Manager", "department": "dit"})
+    agent = WrapRescueAgent(
+        spine_writer=spine,
+        reconciler=ReconciliationEngine(),
+        legacy_mcp_server=FakeLegacyMCP(),
+        clickhouse_mcp=FakeClickHouseMCP(),
+    )
+
+    result = asyncio.run(agent.run("PROD", "31", actor="@assistant_editor"))
+    assert result.final_memo
+
+    def inbox(handle):
+        return [n for n in spine.list_notifications(recipient_handle=handle) if n["notification_type"] == "COMMENT"]
+
+    runner = inbox("@assistant_editor")
+    producer = inbox("@producer_one")
+    assert len(runner) == 1 and len(producer) == 1
+    assert runner[0]["title"].startswith("Wrap Rescue memo, Day 31")
+    assert runner[0]["actor_handle"] == "@wrap_rescue_agent"
+    assert runner[0]["message"] == result.final_memo.strip()[:900] or runner[0]["message"].endswith("…")
+    assert inbox("@dit") == [], "the DIT gets requirements, not the memo"

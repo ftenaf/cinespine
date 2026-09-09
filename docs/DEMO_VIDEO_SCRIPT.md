@@ -17,7 +17,7 @@ The brief asks for Gemini plus Google Cloud Agent Builder, integrated with one p
 2. **Record on the live URL**, `https://cinespine-35447568692.europe-west4.run.app`, not localhost. Confirm `/api/health` shows the version you deployed.
 3. **Warm the Wrap Rescue Agent.** Run it once for Day 31 off-camera. The MCP service scales to zero and its cold start is ~20 s; the second run is fast. Confirm the panel shows `mcp_available: true` and a Gemini memo.
 4. **Warm the status endpoint.** Open `/api/productions/DEMO_PRODUCTION/status` once; it reconciles every shoot day and the first call is the slow one.
-5. **Load the studio.** Open **Screenplay & Previz Studio**, choose **Demo Production** in the dropdown, wait for "6 Scenes Extracted". Pick a scene with a `CUT TO:` transition; that is the path that uses Gemini for the breakdown, and the deterministic path looks the same but is not the story.
+5. **Load the studio.** Open **Screenplay & Previz Studio**, choose **Demo Production** in the dropdown, wait for "6 Scenes Extracted". Use **Scene 1** or **Scene 4**: both carry a `CUT TO:`, which is the path where Gemini writes the breakdown. Scenes without a cut use the deterministic engine, which looks the same on screen but is not the story.
 6. **Grafana, one tab.** Explore view, a trace of the warm-up Wrap Rescue run expanded so the span tree reads ADK → `mcp-clickhouse` → ClickHouse → Gemini. One screen, ready to switch to.
 7. **Image generation needs billing enabled**, or the render falls back to the labelled placeholder. Either is honest; know which one you will get.
 
@@ -49,9 +49,9 @@ The brief asks for Gemini plus Google Cloud Agent Builder, integrated with one p
 > It never touches the database directly. It talks to the official ClickHouse MCP server, `mcp-clickhouse`, running as its own Cloud Run service: `list_tables`, then SQL, tool call by tool call, all of it on screen.
 > Gemini ranks the blockers and drafts the memo. Then the agent acts: it files a requirement for each blocker, assigned to the department that owns it.
 
-**Visual:** Switch to the Requirements board. The new `[Wrap Rescue]` requirements are there, assigned, with the alert badge lit for that handle.
+**Visual:** Click the alert bell. The Wrap Rescue memo is there as a notification from `@wrap_rescue_agent`, and the Requirements board shows the new `[Wrap Rescue]` requirements, assigned.
 
-> Those land in the same spine, get mirrored back to ClickHouse, and the people responsible are notified. The loop closes.
+> The memo goes to whoever ran it and to the producers on the crew. The requirements land in the same spine, get mirrored back to ClickHouse, and the departments responsible are notified. The loop closes.
 
 ---
 

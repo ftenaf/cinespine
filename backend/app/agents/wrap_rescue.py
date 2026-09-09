@@ -32,6 +32,12 @@ from backend.app.spine.writer import SpineWriter
 logger = logging.getLogger(__name__)
 
 WRAP_RESCUE_ACTOR = "@wrap_rescue_agent"
+
+# Who gets the memo besides the person who asked for it. Matched on the crew
+# role, case-insensitively, because the roster is free text. Module level:
+# the agent is a pydantic model and treats class attributes as fields.
+MEMO_ROLES = ("director", "producer", "post production supervisor", "post supervisor")
+MEMO_MAX_CHARS = 900
 SOURCE_MARKER = "WrapRescueSource:"
 
 # What `mcp-clickhouse` calls the tool that runs a SELECT. It was addressed as
@@ -1063,6 +1069,7 @@ class WrapRescueAgent(LlmAgent):
             generated_at=datetime.now(timezone.utc).isoformat(),
         )
         self._record_agent_event(result)
+        self._deliver_memo(result)
         analytics.capture(actor, "wrap_rescue_agent_run", {
             "production_id": production_id,
             "shoot_day": shoot_day,
@@ -1328,6 +1335,52 @@ class WrapRescueAgent(LlmAgent):
                 "target_label": created["target_label"],
             })
         return created
+
+    def _deliver_memo(self, result: WrapRescueResult) -> None:
+        """
+        Sends the memo to the people it was written for.
+
+        The memo used to live only in the panel of whoever clicked Run, which
+        made an agent that "reports to the producer" report to nobody. It now
+        lands as a COMMENT notification for the person who ran it and for the
+        production's director, producers and post supervisors, so it reaches
+        the alert badge and the SSE stream like any other requirement change.
+        Never fatal: a memo that failed to deliver is still in the result.
+        """
+        if not result.final_memo:
+            return
+        recipients: List[str] = []
+        if result.actor and result.actor.lower() != WRAP_RESCUE_ACTOR:
+            recipients.append(result.actor)
+        try:
+            crew = self.spine_writer.list_production_crew(result.production_id, active_only=True)
+        except Exception:  # noqa: BLE001 - a roster problem must not lose the memo
+            crew = []
+        for member in crew:
+            role = str(member.get("role") or "").lower()
+            handle = member.get("handle")
+            if handle and any(r in role for r in MEMO_ROLES) and handle not in recipients:
+                recipients.append(handle)
+        memo = result.final_memo.strip()
+        if len(memo) > MEMO_MAX_CHARS:
+            memo = memo[: MEMO_MAX_CHARS - 1].rstrip() + "…"
+        blockers = len(result.blockers)
+        title = f"Wrap Rescue memo, Day {result.shoot_day}: {blockers} blocker{'s' if blockers != 1 else ''}"
+        for handle in recipients:
+            try:
+                self.spine_writer.create_notification({
+                    "production_id": result.production_id,
+                    "recipient_handle": handle,
+                    "actor_handle": WRAP_RESCUE_ACTOR,
+                    "notification_type": "COMMENT",
+                    "title": title,
+                    "message": memo,
+                    "target_type": "production",
+                    "target_id": result.production_id,
+                    "target_label": f"Day {result.shoot_day}",
+                })
+            except Exception as exc:  # noqa: BLE001 - see docstring
+                logger.warning("Wrap Rescue memo not delivered to %s: %s", handle, exc)
 
     def _record_agent_event(self, result: WrapRescueResult) -> None:
         self.spine_writer.append_event({
