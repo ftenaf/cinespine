@@ -176,3 +176,12 @@ def test_it_still_publishes_nothing_it_cannot_measure():
     ])
     assert not [a for a, _ in metric_points("cinespine.department_sync_lag")
                 if a["production_id"] == "GAUGE_UNMEASURED"]
+
+
+def test_enum_members_count_the_same_as_their_values():
+    """model_dump() hands the gauge enum members, not strings; both must count."""
+    TelemetryExporter.record_discrepancies("GAUGE_E", "31", [
+        {"severity": Severity.WARNING, "discrepancy_type": DiscrepancyType.TIMECODE_DRIFT, "is_resolved": False},
+        {"severity": "WARNING", "discrepancy_type": "TIMECODE_DRIFT", "is_resolved": False},
+    ])
+    assert series()[("GAUGE_E", "31", "WARNING", "TIMECODE_DRIFT")] == 2

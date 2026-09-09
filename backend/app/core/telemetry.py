@@ -143,7 +143,13 @@ class TelemetryExporter:
         for d in discrepancies:
             if d.get("is_resolved"):
                 continue
-            key = (str(d.get("severity", "")), str(d.get("discrepancy_type", "")))
+            # The reconciler hands over model_dump() dicts, so severity and kind
+            # arrive as enum members; str() on a str-Enum renders "Severity.WARNING",
+            # which matches nothing above and left every series at zero. Read the
+            # value, and accept a plain string the same way.
+            sev = d.get("severity", "")
+            kind = d.get("discrepancy_type", "")
+            key = (str(getattr(sev, "value", sev)), str(getattr(kind, "value", kind)))
             if key in counts:
                 counts[key] += 1
 
