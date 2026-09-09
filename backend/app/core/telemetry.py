@@ -465,6 +465,29 @@ def backport_fastapi_route_details() -> None:
     otel_fastapi._get_route_details = _get_route_details
 
 
+def trace_sampler():
+    """
+    Samples every span started here, whatever the caller's traceparent says.
+
+    Cloud Run's front end puts a ``traceparent`` on every request it forwards,
+    with the sampled flag off. The SDK's default sampler is parent-based, so
+    it honoured that flag: any request that did not arrive with its own
+    sampled traceparent -- curl, an agent trigger, a health check, anything
+    not sent by the Faro-instrumented browser -- started an unsampled trace,
+    and not one of its spans left the process. The browser's requests carry
+    Faro's flag, so the UI looked traced while the same code path from the
+    API produced nothing, silently: no exporter warning, no dropped-span
+    counter, just an absence in Tempo.
+
+    Root spans and local children keep sampling on. A remote parent that was
+    not sampled is sampled anyway; a remote parent that was sampled stays in
+    its trace, so the browser-to-backend join still works.
+    """
+    from opentelemetry.sdk.trace.sampling import ALWAYS_ON, ParentBased
+
+    return ParentBased(root=ALWAYS_ON, remote_parent_not_sampled=ALWAYS_ON)
+
+
 def setup_otlp(app_name: str = "cinespine-backend"):
     """
     Initializes OpenTelemetry traces and logs export to OTLP.
@@ -506,7 +529,7 @@ def setup_otlp(app_name: str = "cinespine-backend"):
     # can add attributes without a code change.
     resource = Resource.create(attributes)
 
-    tracer_provider = TracerProvider(resource=resource)
+    tracer_provider = TracerProvider(resource=resource, sampler=trace_sampler())
     trace.set_tracer_provider(tracer_provider)
     
     otlp_exporter = OTLPSpanExporter()

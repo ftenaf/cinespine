@@ -631,6 +631,33 @@ denied`). A Grafana service-account token is not accepted there at all.
 
 ---
 
+### The agent, on one screen
+
+`grafana/dashboards/wrap_rescue_agent.json` (Cloud uid `wrap_rescue_agent`) is
+the dashboard to open when somebody asks what the agent did: a traces panel on
+`{ name="cinespine.agent.wrap_rescue" }` so any run opens as its span tree
+(ADK, the `mcp-clickhouse` tool calls, the reconcile, the mirror inserts, the
+Gemini `generate_content` calls with token counts); the ADK metrics
+(`gen_ai_invoke_agent_*`: runs, tool calls per run, p95); Gemini tokens by model
+and direction and call latency; and `cinespine_active_discrepancies` as the
+number the agent exists to bring down. The gauge is read with `last_over_time`
+because it is recorded when a day is opened, not scraped, so a plain instant
+query goes stale within five minutes of the last look. The Hackathon Demo page
+links to it. Pushed with the recipe in the `verify-observability` skill; the
+stack namespace on create is `stacks-1814743`.
+
+The panel was empty for every run triggered outside the browser, and the
+reason is worth keeping: Cloud Run's front end forwards every request with a
+`traceparent` whose sampled flag is off, and the SDK's default parent-based
+sampler honoured it. A request from the Faro-instrumented UI carries Faro's
+flag, so those traces arrived; the same endpoint hit by curl, an uptime probe
+or an agent trigger started an unsampled trace and exported nothing, with no
+warning anywhere. `trace_sampler()` in `backend/app/core/telemetry.py` now
+samples under an unsampled remote parent too, and the health endpoints are
+excluded from the FastAPI instrumentation so they do not become most of Tempo.
+If a trace is missing and nothing is logged, check the sampled flag before
+the exporter.
+
 ## 7. Verifying it end to end
 
 Backend, from the logs: find any line written inside a request and confirm

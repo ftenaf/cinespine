@@ -33,7 +33,9 @@ from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 # Before instrument_app: the 0.63b1 route walker 500s on a wrong-method
 # request to any included route. See the function for why 0.64b0 is not here.
 backport_fastapi_route_details()
-FastAPIInstrumentor.instrument_app(app)
+# Health checks arrive about twice a minute from Cloud Run and the uptime
+# probes; now that every request is sampled they would be most of Tempo.
+FastAPIInstrumentor.instrument_app(app, excluded_urls="/api/health,/api/health/deep")
 HTTPXClientInstrumentor().instrument()
 
 # Enable CORS for the React frontend (local Vite dev server on 5173; the

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RefreshCw, PlayCircle, Terminal } from 'lucide-react';
+import { RefreshCw, PlayCircle, Terminal, Activity } from 'lucide-react';
 import { useWebMCP } from '../hooks/useWebMCP';
 
 const API_BASE_URL = '/api';
@@ -118,6 +118,17 @@ export const HackathonDemo: React.FC = () => {
         <p className="text-gray-400 mb-6">
           Executes the end-to-end flow showcasing Google Cloud Document AI, Gemini Flash routing, and ClickHouse event spine ingestion.
         </p>
+        {/* The agent is traced end to end; this is the one screen that proves
+            it. Kept next to the demo so a recording can cut to it in a click. */}
+        <a
+          href="https://mightyyak1491.grafana.net/d/wrap_rescue_agent/wrap-rescue-agent-cinespine?orgId=1&from=now-6h&to=now"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-2 mb-6 text-xs text-gray-300 hover:text-white border border-slate-700 rounded-lg px-3 py-1.5"
+        >
+          <Activity size={14} className="text-emerald-300" />
+          Open the Wrap Rescue trace dashboard in Grafana Cloud
+        </a>
 
         <div className="flex gap-4 mb-8">
           <button
