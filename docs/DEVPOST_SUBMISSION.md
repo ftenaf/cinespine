@@ -1,8 +1,8 @@
 # CineSpine — Devpost Submission Package
 **Hackathon:** [Agentic Cinema: The Blockbuster Hackathon (Google Cloud & Partners)](https://agentic-cinema.devpost.com/)  
-**Track:** ClickHouse / Google Cloud Gemini Enterprise / Grafana Labs  
+**Track:** ClickHouse (one partner track per entry). Gemini and Google Cloud Agent Development Kit throughout; ClickHouse Cloud reached by the agents only through the official `mcp-clickhouse` MCP server.  
 **Repository:** [https://github.com/ftenaf/cinespine](https://github.com/ftenaf/cinespine)  
-**Live Application:** Localhost / Cloud Hosted  
+**Live Application:** [https://cinespine-35447568692.europe-west4.run.app](https://cinespine-35447568692.europe-west4.run.app) (Google Cloud Run, europe-west4)  
 
 ---
 
@@ -116,7 +116,8 @@ flowchart TB
 - **Frontend Experience (React 18 + Vite + Tailwind CSS + Lucide Icons):**
   - High-contrast, dark-mode cinematic interface engineered for set monitors and DIT carts.
   - 3-Camera switcher, interactive multi-view grid, and full-screen lightbox inspection.
-- **Grafana Labs:** Production telemetry, event ingestion throughput, and discrepancy resolution rate dashboards.
+- **ClickHouse Cloud (partner track):** the analytical mirror of the spine: `production_events`, `takes_meta`, `audit_discrepancies`, `requirement_events`, `editorial_tag_events`, `user_activity`. Every analytics panel, the crew workload ledger and the production status endpoint are ClickHouse queries; the Wrap Rescue Agent reads it through `mcp-clickhouse` (`list_tables`, `run_select_query`) and never with a direct connection.
+- **Observability (supporting):** OTLP traces, metrics and logs to Grafana Cloud; every Gemini generation and MCP tool call is a span with token counts.
 
 ---
 
