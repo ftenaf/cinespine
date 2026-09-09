@@ -661,3 +661,17 @@ async def test_the_agent_path_builds_shots_from_gemini_setups(monkeypatch):
     assert shots[0].shot_name.endswith("(The count)")
     assert [c.camera_letter for c in shots[0].cameras] == ["A", "B"]
     assert "Mara counts" in shots[0].cameras[0].prompt
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("DR. SCHLECHT.", "DR. SCHLECHT"),
+    ("SCHLECHT:", "SCHLECHT"),
+    ("CHEW'S VOICE", "CHEW"),
+    ("CHEW’S VOICE (V.O.)", "CHEW"),
+    ("RACHAEL (CONT'D)", "RACHAEL"),
+    ("WALL SPEAKER", "WALL SPEAKER"),
+])
+def test_cue_variants_collapse_to_one_character(raw, expected):
+    """A trailing period or a possessive voice cue must not mint a second profile."""
+    from backend.app.script.parser import clean_character_name
+    assert clean_character_name(raw) == expected

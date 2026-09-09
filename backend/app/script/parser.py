@@ -219,7 +219,14 @@ def clean_character_name(raw_name: str) -> str:
     """
     cleaned = re.sub(r"\s*\([^)]*\)", "", raw_name)
     cleaned = re.sub(r"^[#*_\s]+|[#*_\s]+$", "", cleaned)
-    return cleaned.strip().upper()
+    cleaned = cleaned.strip().upper()
+    # A cue typed with a trailing period ("DR. SCHLECHT.") or as a voice
+    # ("CHEW'S VOICE") is the same person as the plain cue. Blade Runner alone
+    # produced three SCHLECHTs and a CHEW'S VOICE beside CHEW, and each one
+    # became a profile the model was asked to invent a face for.
+    cleaned = re.sub(r"[.:,;]+$", "", cleaned).strip()
+    cleaned = re.sub(r"['’]S\s+VOICE$", "", cleaned).strip()
+    return cleaned
 
 
 def extract_character_relationships(

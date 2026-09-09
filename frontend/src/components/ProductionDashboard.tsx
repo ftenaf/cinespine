@@ -10,6 +10,7 @@ import {
 import { fetchDashboard } from '../api';
 import { collapseFeed } from '../tagFeed';
 import { ActivityCard } from './ActivityCard';
+import { StatusCard } from './StatusCard';
 
 /**
  * Where a production has got to, and what it is waiting on.
@@ -364,6 +365,9 @@ export function ProductionDashboardPanel({ productionId, reloadKey }: {
           Refresh
         </button>
       </div>
+
+      {/* The producer's question first. Same endpoint the WebMCP tool reads. */}
+      <StatusCard productionId={productionId} reloadKey={reloadKey} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ProgressBar axis={board.shots} label="Shots" vocabulary={board.vocabulary} />

@@ -129,7 +129,14 @@ export const HackathonDemo: React.FC = () => {
             {isRunning ? 'Running Demo...' : 'Run Full Demo'}
           </button>
           <button
-            onClick={factoryReset}
+            onClick={() => {
+              // Truncates every table in the spine; on 2026-09-06 this button
+              // was the first step of a data-loss afternoon. The WebMCP tool
+              // already demands confirm=true; the button now asks too.
+              if (window.confirm('Factory Reset deletes every production, requirement, screenplay and event in the spine. This cannot be undone. Continue?')) {
+                void factoryReset();
+              }
+            }}
             disabled={isRunning}
             className="flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl border border-slate-700 transition disabled:opacity-50"
           >
