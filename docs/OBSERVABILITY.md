@@ -452,6 +452,20 @@ anything.
 purpose: without the day, the second day observed overwrites the first and the
 board shows whichever day was opened last while looking like a total.
 
+**Until 2026-09-09 every series of that gauge read 0**, with three findings
+open on Day 31 and the "Active discrepancies now" tile green. The count was
+keyed by `str(severity)` and `str(discrepancy_type)`, but the reconciler hands
+over `model_dump()` dicts whose values are enum members, and `str()` on a
+`str`-mixin `Enum` renders `Severity.WARNING`, not `WARNING`. No key matched,
+so the explicit-zeros loop wrote zeros for every combination and nothing
+else. The test only ever fed plain strings, so it was green the whole time;
+the API looked right too, because FastAPI serialises the enums on the way out.
+The gauge now reads `.value` when there is one (`0cfc491`), and
+`test_discrepancy_gauge.py` feeds one enum member and one string and expects
+both to count. The general lesson: a metric that can only ever be zero is
+indistinguishable from a working one on a dashboard; assert on a non-zero
+value after driving traffic, not on the series existing.
+
 ### 4d. Alerting in Cloud
 
 Until 2026-09-04 nothing in Grafana Cloud notified anyone: the root
@@ -642,7 +656,10 @@ Gemini `generate_content` calls with token counts); the ADK metrics
 and direction and call latency; and `cinespine_active_discrepancies` as the
 number the agent exists to bring down. The gauge is read with `last_over_time`
 because it is recorded when a day is opened, not scraped, so a plain instant
-query goes stale within five minutes of the last look. The Hackathon Demo page
+query goes stale within five minutes of the last look. Opening the day means
+any `GET /api/discrepancies?production_id=…&shoot_day=…`, which the Day view
+issues; a `curl` of the same URL does it without a browser. It read 0 for
+every day until 2026-09-09 for the enum reason in §4b. The Hackathon Demo page
 links to it. Pushed with the recipe in the `verify-observability` skill; the
 stack namespace on create is `stacks-1814743`.
 
