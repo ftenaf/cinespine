@@ -43,8 +43,8 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Agent runs (since deploy)",
-      "description": "gen_ai_invoke_agent_duration_seconds_count from the ADK instrumentation, latest value: a cumulative counter that resets when the instance restarts, so this is runs on the current instance.",
+      "title": "Agent runs",
+      "description": "cinespine.agent.wrap_rescue spans in the range, counted from Tempo, cloudrun only.",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -52,24 +52,26 @@
         "y": 0
       },
       "datasource": {
-        "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "type": "tempo",
+        "uid": "grafanacloud-traces"
       },
       "targets": [
         {
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "type": "tempo",
+            "uid": "grafanacloud-traces"
           },
-          "expr": "sum(max_over_time(gen_ai_invoke_agent_duration_seconds_count[$__range])) or vector(0)",
-          "legendFormat": "runs"
+          "queryType": "traceql",
+          "query": "{ resource.deployment.environment=\"cloudrun\" && name=\"cinespine.agent.wrap_rescue\" } | count_over_time()",
+          "limit": 20,
+          "tableType": "traces"
         }
       ],
       "options": {
         "reduceOptions": {
           "calcs": [
-            "lastNotNull"
+            "sum"
           ],
           "fields": "",
           "values": false
@@ -93,8 +95,8 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "Tool calls per run",
-      "description": "list_tables plus every run_select_query the agent made through mcp-clickhouse, averaged over the range.",
+      "title": "MCP tool calls",
+      "description": "cinespine.mcp.tool spans in the range: list_tables plus every run_select_query the agent made through mcp-clickhouse. Divide by runs for the per-run figure; it is 6 by design.",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -102,24 +104,26 @@
         "y": 0
       },
       "datasource": {
-        "type": "prometheus",
-        "uid": "grafanacloud-prom"
+        "type": "tempo",
+        "uid": "grafanacloud-traces"
       },
       "targets": [
         {
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "grafanacloud-prom"
+            "type": "tempo",
+            "uid": "grafanacloud-traces"
           },
-          "expr": "sum(max_over_time(gen_ai_invoke_agent_tool_calls_sum[$__range])) / sum(max_over_time(gen_ai_invoke_agent_tool_calls_count[$__range]))",
-          "legendFormat": "tool calls"
+          "queryType": "traceql",
+          "query": "{ resource.deployment.environment=\"cloudrun\" && name=\"cinespine.mcp.tool\" } | count_over_time()",
+          "limit": 20,
+          "tableType": "traces"
         }
       ],
       "options": {
         "reduceOptions": {
           "calcs": [
-            "lastNotNull"
+            "sum"
           ],
           "fields": "",
           "values": false
@@ -131,7 +135,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "decimals": 1,
+          "decimals": 0,
           "color": {
             "mode": "fixed",
             "fixedColor": "blue"
@@ -144,7 +148,7 @@
       "id": 3,
       "type": "stat",
       "title": "Agent run p95",
-      "description": "Wall time of a whole run: ClickHouse queries, ranking, memo drafting, requirements filed.",
+      "description": "Wall time of the ADK memo agent, cumulative histogram on the current instance. The MCP queries and the requirement writes come before it; the whole run is the trace below.",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -162,7 +166,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (max_over_time(gen_ai_invoke_agent_duration_seconds_bucket[$__range])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (max_over_time(gen_ai_invoke_agent_duration_seconds_bucket{deployment_environment=\"cloudrun\"}[$__range])))",
           "legendFormat": "p95"
         }
       ],
@@ -194,7 +198,7 @@
       "id": 4,
       "type": "stat",
       "title": "Gemini tokens (since deploy)",
-      "description": "Input plus output tokens across every model the agent and the studio called.",
+      "description": "Input plus output tokens across every model the agent and the studio called on the current instance; resets on deploy.",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -212,7 +216,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "sum(max_over_time(gen_ai_client_token_usage_sum[$__range])) or vector(0)",
+          "expr": "sum(max_over_time(gen_ai_client_token_usage_sum{deployment_environment=\"cloudrun\"}[$__range])) or vector(0)",
           "legendFormat": "tokens"
         }
       ],
@@ -305,9 +309,9 @@
     },
     {
       "id": 6,
-      "type": "traces",
+      "type": "table",
       "title": "Agent runs as traces: ADK -> mcp-clickhouse -> ClickHouse -> Gemini",
-      "description": "Every cinespine.agent.wrap_rescue span in the range. Click one to open the span tree: the MCP tool calls, the reconcile, the mirror inserts, and the Gemini generate_content calls with their token counts.",
+      "description": "Every cinespine.agent.wrap_rescue span in the range, newest first. Click a trace ID to open the span tree: the MCP tool calls, the reconcile, the mirror inserts, and the Gemini generate_content calls with their token counts.",
       "gridPos": {
         "h": 11,
         "w": 24,
@@ -326,12 +330,19 @@
             "uid": "grafanacloud-traces"
           },
           "queryType": "traceql",
-          "query": "{ name=\"cinespine.agent.wrap_rescue\" }",
+          "query": "{ resource.deployment.environment=\"cloudrun\" && name=\"cinespine.agent.wrap_rescue\" }",
           "limit": 20,
           "tableType": "traces"
         }
       ],
-      "options": {}
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 7,
@@ -355,7 +366,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "sum by (gen_ai_request_model, gen_ai_token_type) (increase(gen_ai_client_token_usage_sum[$__rate_interval]))",
+          "expr": "sum by (gen_ai_request_model, gen_ai_token_type) (increase(gen_ai_client_token_usage_sum{deployment_environment=\"cloudrun\"}[$__rate_interval]))",
           "legendFormat": "{{gen_ai_request_model}} {{gen_ai_token_type}}"
         }
       ],
@@ -404,7 +415,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(gen_ai_client_operation_duration_seconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(gen_ai_client_operation_duration_seconds_bucket{deployment_environment=\"cloudrun\"}[$__rate_interval])))",
           "legendFormat": "p50"
         },
         {
@@ -413,7 +424,7 @@
             "type": "prometheus",
             "uid": "grafanacloud-prom"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(gen_ai_client_operation_duration_seconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gen_ai_client_operation_duration_seconds_bucket{deployment_environment=\"cloudrun\"}[$__rate_interval])))",
           "legendFormat": "p95"
         }
       ],

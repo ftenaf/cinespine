@@ -655,6 +655,11 @@ or an agent trigger started an unsampled trace and exported nothing, with no
 warning anywhere. `trace_sampler()` in `backend/app/core/telemetry.py` now
 samples under an unsampled remote parent too, and the health endpoints are
 excluded from the FastAPI instrumentation so they do not become most of Tempo.
+`SampledParentOnlyPropagator` goes one step further and ignores an unsampled
+incoming parent altogether, so an API-triggered request starts its own trace
+instead of hanging off a front-end span that never arrives ("root span not
+yet received", blank service and route in the traces table). A sampled
+parent, which is what the Faro-instrumented browser sends, is kept.
 If a trace is missing and nothing is logged, check the sampled flag before
 the exporter.
 

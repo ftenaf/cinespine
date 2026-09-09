@@ -18,7 +18,7 @@ The brief asks for Gemini plus Google Cloud Agent Builder, integrated with one p
 3. **Warm the Wrap Rescue Agent.** Run it once for Day 31 off-camera. The MCP service scales to zero and its cold start is ~20 s; the second run is fast. Confirm the panel shows `mcp_available: true` and a Gemini memo.
 4. **Warm the status endpoint.** Open `/api/productions/DEMO_PRODUCTION/status` once; it reconciles every shoot day and the first call is the slow one.
 5. **Load the studio.** Open **Screenplay & Previz Studio**, choose **Demo Production** in the dropdown, wait for "6 Scenes Extracted". Use **Scene 1** or **Scene 4**: both carry a `CUT TO:`, which is the path where Gemini writes the breakdown. Scenes without a cut use the deterministic engine, which looks the same on screen but is not the story.
-6. **Grafana, one tab.** Explore view, a trace of the warm-up Wrap Rescue run expanded so the span tree reads ADK → `mcp-clickhouse` → ClickHouse → Gemini. One screen, ready to switch to.
+6. **Grafana, one tab.** The Wrap Rescue Agent dashboard (linked from the Hackathon Demo page), range last 1 hour, and the warm-up run clicked open in the traces panel so the span tree reads ADK → `mcp-clickhouse` → ClickHouse → Gemini. One screen, ready to switch to.
 7. **Image generation needs billing enabled**, or the render falls back to the labelled placeholder. Either is honest; know which one you will get.
 
 ---

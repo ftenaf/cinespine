@@ -9,7 +9,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.sampling import Decision
 from opentelemetry.trace import SpanContext, TraceFlags
 
-from backend.app.core.telemetry import trace_sampler
+from backend.app.core.telemetry import SampledParentOnlyPropagator, trace_sampler
 
 
 def _remote_parent(sampled: bool):
@@ -39,3 +39,31 @@ def test_provider_records_under_an_unsampled_remote_parent():
     with tracer.start_as_current_span("child", context=_remote_parent(False)) as span:
         assert span.is_recording()
         assert span.get_span_context().trace_flags.sampled
+
+
+def _extract(traceparent: str):
+    ctx = SampledParentOnlyPropagator().extract({"traceparent": traceparent})
+    return trace.get_current_span(ctx).get_span_context()
+
+
+def test_unsampled_incoming_traceparent_is_ignored():
+    # What Cloud Run's front end sends: valid ids, sampled flag off.
+    parent = _extract("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00")
+    assert not parent.is_valid
+
+
+def test_sampled_incoming_traceparent_is_kept():
+    # What the Faro-instrumented browser sends.
+    parent = _extract("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+    assert parent.is_valid
+    assert parent.trace_id == 0x4BF92F3577B34DA6A3CE929D0E0E4736
+    assert parent.is_remote
+
+
+def test_inject_still_carries_the_current_trace():
+    provider = TracerProvider(sampler=trace_sampler())
+    carrier = {}
+    with provider.get_tracer("test").start_as_current_span("out"):
+        SampledParentOnlyPropagator().inject(carrier)
+    flags = int(carrier["traceparent"].rsplit("-", 1)[1], 16)
+    assert flags & TraceFlags.SAMPLED

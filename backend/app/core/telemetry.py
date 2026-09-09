@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 from opentelemetry import metrics as otel_metrics
 from opentelemetry import trace as otel_trace
+from opentelemetry.context import Context
 
 from backend.app import __version__
 from backend.app.reconciliation.models import DiscrepancyType, Severity
@@ -488,6 +489,43 @@ def trace_sampler():
     return ParentBased(root=ALWAYS_ON, remote_parent_not_sampled=ALWAYS_ON)
 
 
+class SampledParentOnlyPropagator:
+    """
+    W3C trace context, except that an unsampled incoming parent is ignored.
+
+    The sampler above keeps the spans; this keeps the trace readable. With
+    Cloud Run's traceparent honoured as a parent, every API-triggered trace
+    was rooted in a front-end span that never arrives, so Tempo listed it as
+    "root span not yet received" and the service and route columns were
+    blank. A parent that was not sampled is not going to show up, so the
+    request starts its own trace. A sampled parent (the browser's Faro
+    span) is kept, and that join is the one worth having.
+
+    Injection is untouched: outgoing calls still carry this trace.
+    """
+
+    def __init__(self) -> None:
+        from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+        self._inner = TraceContextTextMapPropagator()
+
+    def extract(self, carrier, context=None, getter=None):
+        kwargs = {"getter": getter} if getter is not None else {}
+        extracted = self._inner.extract(carrier, context, **kwargs)
+        parent = otel_trace.get_current_span(extracted).get_span_context()
+        if parent.is_valid and not parent.trace_flags.sampled:
+            return context if context is not None else Context()
+        return extracted
+
+    def inject(self, carrier, context=None, setter=None):
+        kwargs = {"setter": setter} if setter is not None else {}
+        self._inner.inject(carrier, context, **kwargs)
+
+    @property
+    def fields(self):
+        return self._inner.fields
+
+
 def setup_otlp(app_name: str = "cinespine-backend"):
     """
     Initializes OpenTelemetry traces and logs export to OTLP.
@@ -531,6 +569,9 @@ def setup_otlp(app_name: str = "cinespine-backend"):
 
     tracer_provider = TracerProvider(resource=resource, sampler=trace_sampler())
     trace.set_tracer_provider(tracer_provider)
+    from opentelemetry.propagate import set_global_textmap
+
+    set_global_textmap(SampledParentOnlyPropagator())
     
     otlp_exporter = OTLPSpanExporter()
     span_processor = BatchSpanProcessor(otlp_exporter)
