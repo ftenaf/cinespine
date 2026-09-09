@@ -38,6 +38,17 @@ WRAP_RESCUE_ACTOR = "@wrap_rescue_agent"
 # the agent is a pydantic model and treats class attributes as fields.
 MEMO_ROLES = ("director", "producer", "post production supervisor", "post supervisor")
 MEMO_MAX_CHARS = 900
+
+# A model saying "come back later" is worth a short pause before the next
+# candidate; anything else moves on at once. Same markers the vision and
+# character paths use.
+MEMO_TRANSIENT_BACKOFF_SECONDS = 2.0
+_MEMO_TRANSIENT_MARKERS = ("503", "UNAVAILABLE", "high demand", "overloaded", "429", "RESOURCE_EXHAUSTED")
+
+
+def _is_transient_model_error(exc: Exception) -> bool:
+    text = str(exc)
+    return any(marker in text for marker in _MEMO_TRANSIENT_MARKERS)
 SOURCE_MARKER = "WrapRescueSource:"
 
 # What `mcp-clickhouse` calls the tool that runs a SELECT. It was addressed as
@@ -524,12 +535,23 @@ class GeminiEnterpriseMemoRuntime:
 
         prompt = _memo_prompt(production_id, shoot_day, blockers, actions)
 
+        # Every model the router would try, the configured one first. One
+        # model answering 503 "high demand" used to send the whole run to the
+        # deterministic memo; the sibling models are separate quota pools and
+        # almost always available.
+        candidates = self._memo_candidates(prompt)
+        skipped: List[str] = []
+
         if status.adk_available:
-            try:
-                memo = await self._draft_with_adk(status.model, prompt)
-            except Exception as exc:  # noqa: BLE001 - the rescue workflow should still finish
-                logger.warning("Gemini ADK memo generation failed: %s", exc)
-            else:
+            for model in candidates:
+                try:
+                    memo = await self._draft_with_adk(model, prompt)
+                except Exception as exc:  # noqa: BLE001 - the next candidate is the point
+                    logger.warning("Gemini ADK memo generation failed on %s: %s", model, exc)
+                    skipped.append(model)
+                    if _is_transient_model_error(exc):
+                        await asyncio.sleep(MEMO_TRANSIENT_BACKOFF_SECONDS)
+                    continue
                 if memo:
                     return (
                         memo,
@@ -537,13 +559,15 @@ class GeminiEnterpriseMemoRuntime:
                             step="gemini_enterprise_adk_memo",
                             status="ok",
                             detail=(
-                                "Google ADK ran the Gemini Enterprise memo agent from the "
-                                f"{len(blockers)} ranked ClickHouse rows."
+                                f"Google ADK ran the Gemini Enterprise memo agent on {model} from the "
+                                f"{len(blockers)} ranked ClickHouse rows"
+                                + (f" after {', '.join(skipped)} were unavailable." if skipped else ".")
                             ),
                         ),
                     )
+                skipped.append(model)
 
-        def call_model() -> str:
+        def call_model(model: str) -> str:
             from backend.app.integrations import google_cloud
 
             if os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "").strip().upper() == "TRUE":
@@ -557,46 +581,56 @@ class GeminiEnterpriseMemoRuntime:
                     api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
                 )
             response = client.models.generate_content(
-                model=status.model,
+                model=model,
                 contents=prompt,
                 config={"temperature": 0.0},
             )
             return (response.text or "").strip()
 
-        try:
-            memo = await asyncio.to_thread(call_model)
-        except Exception as exc:  # noqa: BLE001 - the rescue workflow should still finish
-            logger.warning("Gemini memo generation failed: %s", exc)
-            return (
-                _deterministic_memo(production_id, shoot_day, blockers, actions),
-                AgentStep(
-                    step="gemini_enterprise_memo",
-                    status="warning",
-                    detail=f"Gemini failed; deterministic memo used instead: {exc}",
-                ),
-            )
+        last_error: Optional[Exception] = None
+        for model in candidates:
+            try:
+                memo = await asyncio.to_thread(call_model, model)
+            except Exception as exc:  # noqa: BLE001 - the next candidate is the point
+                logger.warning("Gemini memo generation failed on %s: %s", model, exc)
+                last_error = exc
+                if _is_transient_model_error(exc):
+                    await asyncio.sleep(MEMO_TRANSIENT_BACKOFF_SECONDS)
+                continue
+            if memo:
+                return (
+                    memo,
+                    AgentStep(
+                        step="gemini_enterprise_memo",
+                        status="warning" if not status.adk_available else "ok",
+                        detail=(
+                            f"Gemini ({model}) drafted the handoff memo from {len(blockers)} ranked rows"
+                            + (f" after {', '.join(skipped)} were unavailable" if skipped else "")
+                            + ("." if status.adk_available else "; google-adk is not installed, so the GenAI SDK was used.")
+                        ),
+                    ),
+                )
+            skipped.append(model)
 
-        if not memo:
-            return (
-                _deterministic_memo(production_id, shoot_day, blockers, actions),
-                AgentStep(
-                    step="gemini_enterprise_memo",
-                    status="warning",
-                    detail="Gemini returned no text; deterministic memo used instead.",
-                ),
-            )
         return (
-            memo,
+            _deterministic_memo(production_id, shoot_day, blockers, actions),
             AgentStep(
                 step="gemini_enterprise_memo",
-                status="warning" if not status.adk_available else "ok",
+                status="warning",
                 detail=(
-                    f"Gemini drafted the handoff memo from {len(blockers)} ranked rows."
-                    if status.adk_available
-                    else "google-adk is not installed; memo used the Google GenAI SDK fallback."
+                    f"No Gemini model answered ({', '.join(candidates)}); deterministic memo used instead"
+                    + (f": {last_error}" if last_error else ".")
                 ),
             ),
         )
+
+    def _memo_candidates(self, prompt: str) -> List[str]:
+        """The configured model first, then the router's fallback chain, no repeats."""
+        from backend.app.script.llm_router import get_model_candidates
+
+        chain = get_model_candidates(prompt, "simple")
+        ordered = [self.model] if self.model else []
+        return ordered + [m for m in chain if m not in ordered]
 
     async def _draft_with_adk(self, model: str, prompt: str) -> str:
         from google.adk.agents import LlmAgent

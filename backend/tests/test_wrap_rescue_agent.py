@@ -283,3 +283,62 @@ def test_the_memo_reaches_the_runner_and_the_producers(monkeypatch):
     assert runner[0]["actor_handle"] == "@wrap_rescue_agent"
     assert runner[0]["message"] == result.final_memo.strip()[:900] or runner[0]["message"].endswith("…")
     assert inbox("@dit") == [], "the DIT gets requirements, not the memo"
+
+
+def test_a_busy_model_does_not_cost_the_gemini_memo(monkeypatch):
+    """
+    One model answering 503 used to send the run to the deterministic memo.
+    The runtime now walks the router's chain; the memo comes from the first
+    model that answers and the step says which ones were skipped.
+    """
+    from backend.app.agents import wrap_rescue as wr
+
+    monkeypatch.setattr(wr, "MEMO_TRANSIENT_BACKOFF_SECONDS", 0)
+    runtime = wr.GeminiEnterpriseMemoRuntime(model="gemini-2.5-flash")
+    monkeypatch.setattr(runtime, "status", lambda: wr.GeminiEnterpriseStatus(
+        configured=True, genai_available=True, adk_available=True,
+        model="gemini-2.5-flash", provider="test", reason=None,
+    ))
+    tried = []
+
+    async def fake_adk(model, prompt):
+        tried.append(model)
+        if model == "gemini-2.5-flash":
+            raise RuntimeError("503 UNAVAILABLE: This model is currently experiencing high demand.")
+        return f"MEMO from {model}"
+
+    monkeypatch.setattr(runtime, "_draft_with_adk", fake_adk)
+
+    memo, step = asyncio.run(runtime.draft_memo("PROD", "31", [], []))
+
+    assert memo == "MEMO from gemini-3.5-flash"
+    assert tried == ["gemini-2.5-flash", "gemini-3.5-flash"]
+    assert step.status == "ok"
+    assert "gemini-2.5-flash were unavailable" in step.detail
+
+
+def test_every_model_failing_still_yields_a_memo(monkeypatch):
+    from backend.app.agents import wrap_rescue as wr
+
+    monkeypatch.setattr(wr, "MEMO_TRANSIENT_BACKOFF_SECONDS", 0)
+    runtime = wr.GeminiEnterpriseMemoRuntime(model="")
+    monkeypatch.setattr(runtime, "status", lambda: wr.GeminiEnterpriseStatus(
+        configured=True, genai_available=True, adk_available=False,
+        model="x", provider="test", reason=None,
+    ))
+
+    class Boom:
+        class models:
+            @staticmethod
+            def generate_content(**_kwargs):
+                raise RuntimeError("503 UNAVAILABLE")
+
+    from backend.app.integrations import google_cloud
+    monkeypatch.setattr(google_cloud, "genai", type("G", (), {"Client": staticmethod(lambda **_k: Boom())}))
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
+
+    memo, step = asyncio.run(runtime.draft_memo("PROD", "31", [], []))
+    assert memo, "the deterministic memo still exists"
+    assert step.status == "warning"
+    assert "No Gemini model answered" in step.detail
